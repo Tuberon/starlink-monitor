@@ -1,5 +1,7 @@
 # Starlink Mini Monitor & Watchdog — Raspberry Pi Zero 2 W
 
+<img width="1658" height="990" alt="Знімок екрана 2026-07-12 211938" src="https://github.com/user-attachments/assets/cd90d2fd-403e-4f73-8551-10aebeba1abe" />
+
 Пристрій на базі RPi Zero 2 W, який:
 
 1. Підключається до WiFi Starlink Mini як клієнт.
