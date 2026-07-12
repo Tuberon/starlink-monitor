@@ -1,0 +1,27 @@
+[Unit]
+Description=Starlink Mini Watchdog Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/starlink-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/venv/bin/python -m app.monitor
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Обмеження, щоб процес не міг зашкодити системі поза потрібним обсягом
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/starlink-monitor
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Starlink Monitor - Auto Update Check (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/opt/starlink-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/venv/bin/python -m app.updater
+StandardOutput=journal
+StandardError=journal

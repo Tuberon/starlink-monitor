@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dish Watch — Starlink Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --sky-950: #060a12;
+    --sky-900: #0b1220;
+    --sky-800: #121b2e;
+    --sky-700: #1b2740;
+    --line: #24304a;
+    --signal: #5ee6c4;
+    --signal-dim: #2a6b5c;
+    --warn: #ffb454;
+    --crit: #ff6b6b;
+    --text-hi: #eaf1fb;
+    --text-mid: #93a4c3;
+    --text-low: #5b6b8c;
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background: radial-gradient(ellipse 120% 80% at 50% -10%, #101c33 0%, var(--sky-950) 55%);
+    color: var(--text-hi);
+    font-family: var(--font-display);
+    min-height:100vh;
+    padding: 28px 20px 60px;
+  }
+  .wrap{max-width:1080px; margin:0 auto;}
+
+  /* ---- header / signature element: orbital status ring ---- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:20px; flex-wrap:wrap;
+    margin-bottom:28px;
+    padding-bottom:20px;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex; align-items:center; gap:16px;}
+  .ring{
+    width:52px; height:52px; border-radius:50%;
+    position:relative;
+    background: conic-gradient(var(--signal) var(--ring-pct, 75%), var(--sky-700) 0);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .ring::before{
+    content:''; position:absolute; inset:5px; border-radius:50%;
+    background: var(--sky-950);
+  }
+  .ring-dot{
+    width:8px; height:8px; border-radius:50%; background:var(--signal);
+    z-index:1; box-shadow:0 0 12px 2px var(--signal);
+  }
+  .brand h1{font-size:1.35rem; font-weight:700; letter-spacing:-0.01em;}
+  .brand p{font-family:var(--font-mono); font-size:0.72rem; color:var(--text-low); letter-spacing:0.04em; text-transform:uppercase; margin-top:2px;}
+
+  .status-pill{
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border:1px solid var(--line);
+    background: var(--sky-900);
+    display:flex; align-items:center; gap:8px;
+  }
+  .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--text-low);}
+  .status-pill.online .dot{background: var(--signal); box-shadow:0 0 8px var(--signal);}
+  .status-pill.offline .dot{background: var(--crit); box-shadow:0 0 8px var(--crit);}
+
+  /* ---- metric grid ---- */
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap:1px;
+    background: var(--line);
+    border:1px solid var(--line);
+    border-radius:14px;
+    overflow:hidden;
+    margin-bottom:24px;
+  }
+  .metric{
+    background: var(--sky-900);
+    padding:18px 20px;
+  }
+  .metric .label{
+    font-family:var(--font-mono); font-size:0.68rem; text-transform:uppercase;
+    letter-spacing:0.06em; color:var(--text-low); margin-bottom:8px;
+  }
+  .metric .value{
+    font-family:var(--font-mono); font-size:1.6rem; font-weight:600; color:var(--text-hi);
+    line-height:1;
+  }
+  .metric .value.warn{color:var(--warn);}
+  .metric .value.crit{color:var(--crit);}
+  .metric .unit{font-size:0.9rem; color:var(--text-mid); font-weight:400; margin-left:2px;}
+
+  /* ---- panels ---- */
+  .panel{
+    background: var(--sky-900);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:20px 22px;
+    margin-bottom:20px;
+  }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .panel-head h2{font-size:0.95rem; font-weight:600;}
+  .panel-head .sub{font-family:var(--font-mono); font-size:0.7rem; color:var(--text-low);}
+
+  canvas{max-height:220px;}
+
+  /* ---- events log ---- */
+  .log{font-family:var(--font-mono); font-size:0.78rem;}
+  .log-row{
+    display:grid; grid-template-columns: 92px 110px 1fr;
+    gap:12px; padding:9px 0; border-bottom:1px solid var(--sky-800);
+    color:var(--text-mid);
+  }
+  .log-row:last-child{border-bottom:none;}
+  .log-row .time{color:var(--text-low);}
+  .log-row .kind{
+    color:var(--text-hi); text-transform:uppercase; font-size:0.68rem;
+    letter-spacing:0.04em; align-self:center;
+  }
+  .log-row.fail .kind{color:var(--crit);}
+  .log-row.ok .kind{color:var(--signal);}
+
+  /* ---- controls ---- */
+  .controls{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
+  button.reboot-btn{
+    font-family:var(--font-mono);
+    background: var(--sky-800);
+    color: var(--text-hi);
+    border:1px solid var(--line);
+    padding:11px 18px;
+    border-radius:9px;
+    font-size:0.78rem;
+    letter-spacing:0.02em;
+    cursor:pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  button.reboot-btn:hover{border-color:var(--crit); background:#1a1420;}
+  button.reboot-btn:disabled{opacity:0.5; cursor:not-allowed;}
+  .hint{font-family:var(--font-mono); font-size:0.68rem; color:var(--text-low);}
+
+  footer{
+    text-align:center; margin-top:32px;
+    font-family:var(--font-mono); font-size:0.68rem; color:var(--text-low);
+  }
+
+  @media (max-width:600px){
+    .grid{grid-template-columns: repeat(2, 1fr);}
+    .log-row{grid-template-columns: 70px 90px 1fr; font-size:0.7rem;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="ring" id="ring"><div class="ring-dot"></div></div>
+      <div>
+        <h1>Dish Watch</h1>
+        <p>Starlink Mini · Автономний монітор</p>
+      </div>
+    </div>
+    <div class="status-pill" id="statusPill">
+      <span class="dot"></span>
+      <span id="statusText">З'єднання...</span>
+    </div>
+  </header>
+
+  <div class="grid" id="metricsGrid">
+    <div class="metric"><div class="label">Стан</div><div class="value" id="mState">—</div></div>
+    <div class="metric"><div class="label">Downlink</div><div class="value" id="mDown">—<span class="unit">Мбіт/с</span></div></div>
+    <div class="metric"><div class="label">Uplink</div><div class="value" id="mUp">—<span class="unit">Мбіт/с</span></div></div>
+    <div class="metric"><div class="label">Затримка</div><div class="value" id="mPing">—<span class="unit">мс</span></div></div>
+    <div class="metric"><div class="label">Втрати пакетів</div><div class="value" id="mDrop">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">Обструкція</div><div class="value" id="mObs">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">Uptime dish</div><div class="value" id="mUptime">—</div></div>
+    <div class="metric"><div class="label">Доступність 24г</div><div class="value" id="mAvail">—<span class="unit">%</span></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Пропускна здатність</h2>
+      <span class="sub">останні опитування</span>
+    </div>
+    <canvas id="throughputChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Затримка та втрати пакетів</h2>
+      <span class="sub">останні опитування</span>
+    </div>
+    <canvas id="latencyChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Керування</h2>
+    </div>
+    <div class="controls">
+      <button class="reboot-btn" id="rebootBtn">⟲ Перезавантажити Starlink</button>
+      <span class="hint" id="rebootHint">Ручний reboot dish через локальний gRPC API</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Журнал подій</h2>
+      <span class="sub">reboot, оновлення, попередження</span>
+    </div>
+    <div class="log" id="eventLog">
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+    </div>
+  </div>
+
+  <footer>DISH ADDR 192.168.100.1:9200 · Raspberry Pi Zero 2 W</footer>
+</div>
+
+<script src="/static/dashboard.js"></script>
+</body>
+</html>
