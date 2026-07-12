@@ -1,16 +1,68 @@
 """
-Клієнт для локального gRPC API Starlink dish.
+Клієнт для локального gRPC API Starlink dish та роутера Starlink Mini.
+
+Starlink Mini складається з ДВОХ логічних пристроїв в одному корпусі
+(підтверджено офіційним застосунком Starlink Live та живими викликами):
+  - dish (тарілка): 192.168.100.1:9200, id "ut...", hw "mini1_panda_prod2"
+  - router (роутер): 192.168.1.1:9000, id "Router-...", hw "v4"
+Кожен має ВЛАСНУ версію прошивки, яка оновлюється незалежно.
 
 get_status(): використовує starlink_grpc.get_status() з проєкту
 starlink-grpc-tools (https://github.com/sparky8512/starlink-grpc-tools).
 Ця функція повертає СИРИЙ protobuf-об'єкт DishGetStatusResponse
 (не dict, не namedtuple) — поля читаються напряму через атрибути,
-структура підтверджена реальним дампом з живого dish:
+структура підтверджена реальним дампом з живого dish, а поля оновлення
+та попереджень - через grpcurl describe напряму на dish користувача:
 
   device_info { hardware_version, software_version, ... }
   device_state { uptime_s }
   obstruction_stats { fraction_obstructed, ... }
   downlink_throughput_bps, uplink_throughput_bps, pop_ping_latency_ms
+  software_update_stats {
+    software_update_state: enum SOFTWARE_UPDATE_STATE_UNKNOWN|IDLE|FETCHING|
+      PRE_CHECK|WRITING|POST_CHECK|REBOOT_REQUIRED|DISABLED|FAULTED
+    software_update_progress: float 0.0-1.0
+    update_requires_reboot: bool
+    reboot_scheduled_utc_time: int64
+  }
+  alerts { motors_stuck, thermal_shutdown, thermal_throttle,
+    unexpected_location, mast_not_near_vertical, slow_ethernet_speeds,
+    roaming, install_pending, is_heating, power_supply_thermal_throttle,
+    is_power_save_idle, dbf_telem_stale, low_motor_current,
+    lower_signal_than_predicted, slow_ethernet_speeds_100,
+    obstruction_map_reset, dish_water_detected, router_water_detected,
+    upsu_router_port_slow, no_ethernet_link - усі bool }
+
+get_router_info(): звертається на ОКРЕМУ адресу роутера (192.168.1.1:9000,
+не 192.168.100.1:9200 — dish на цю адресу не відповідає своїми даними,
+target_id в запиті на адресу dish ігнорується) з payload
+{"get_status":{}} (не {"get_device_info":{}} — той дає лише статичну
+DeviceInfo без стану оновлення/попереджень):
+  grpcurl -plaintext -d '{"get_status":{}}' 192.168.1.1:9000 \
+    SpaceX.API.Device.Device/Handle
+Повертає WifiGetStatusResponse зі СВОЄЮ окремою схемою, відмінною від
+dish (підтверджено grpcurl describe на живому роутері):
+  device_info { hardware_version, software_version, ... }
+  software_update_stats: WifiSoftwareUpdateStats {
+    state: enum WifiSoftwareUpdateState NOT_RUN|GETTING_TARGET_VERSION|
+      DOWNLOADING_UPDATE_IMAGE|FLASHING|NO_UPDATE_REQUIRED|REBOOT_PENDING|
+      GETTING_TARGET_VERSION_FAILED|GETTING_TARGET_VERSION_EXHAUSTED|
+      NO_VALID_ARTIFACT|ILLEGAL_ARTIFACT|DOWNLOADING_UPDATE_IMAGE_FAILED|
+      DOWNLOADING_UPDATE_IMAGE_EXHAUSTED|FLASHING_FAILED
+    software_download_progress: float
+    running_version, version_in_progress: string
+  }
+  alerts: WifiAlerts { thermal_throttle, install_pending, freshly_fused,
+    lan_eth_slow_link_10/100, wan_eth_poor_connection,
+    mesh_topology_changing_often, mesh_unreliable_backhaul,
+    radius_missing_process, eth_switch_error, poe_on_dish_unreachable,
+    poe_fuse_blown, poe_router_overcurrent, poe_off_current_nominal,
+    poe_vin_overvoltage, poe_vin_undervoltage, high_cable_ping_drop_rate,
+    sandbox_disabled, only_overflight_blocked, offline_networks_disabled,
+    wired_mesh_not_using_wan_iface - усі bool }
+Використовує grpcurl subprocess + JSON-парсинг (не starlink_grpc, яка
+заточена під схему DishGetStatusResponse dish, а не WifiGetStatusResponse
+роутера).
 
 reboot_dish(): викликає grpcurl як subprocess замість використання
 внутрішніх protobuf-класів starlink_grpc, оскільки:
@@ -20,17 +72,108 @@ reboot_dish(): викликає grpcurl як subprocess замість вико�
   2. Не залежить від генерації protobuf-модулів через fetch_starlink_grpc.sh,
      яка може не спрацювати (grpcurl уже встановлюється в install.sh і потрібен
      для генерації модулів так чи інакше).
+Reboot виконується ЛИШЕ через dish_addr (192.168.100.1:9200) - dish і
+router фізично один пристрій ("cohoused"), тож reboot dish перезавантажує
+обидва логічні компоненти одночасно. Окремого reboot_router() немає.
 """
+import json
 import logging
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, asdict
-from typing import Optional
+from dataclasses import dataclass, asdict, field
+from typing import List
 
 from app import config
 
 logger = logging.getLogger("starlink_client")
+
+
+def _snake_to_camel(name: str) -> str:
+    """grpcurl видає JSON-ключі в camelCase, а grpcurl describe - назви полів
+    у snake_case. Конвертація потрібна, щоб мапити ROUTER_ALERT_FIELD_NAMES
+    (snake_case, для збереження в БД/показу) на реальні ключі відповіді."""
+    parts = name.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
+
+# Точна відповідність до enum SpaceX.API.Device.SoftwareUpdateState
+SOFTWARE_UPDATE_STATE_NAMES = {
+    0: "SOFTWARE_UPDATE_STATE_UNKNOWN",
+    1: "IDLE",
+    2: "FETCHING",
+    3: "PRE_CHECK",
+    4: "WRITING",
+    5: "POST_CHECK",
+    6: "REBOOT_REQUIRED",
+    7: "DISABLED",
+    8: "FAULTED",
+}
+
+# Точна відповідність до полів message DishAlerts (номери полів з grpcurl describe)
+ALERT_FIELD_NAMES = [
+    "motors_stuck",
+    "thermal_shutdown",
+    "thermal_throttle",
+    "unexpected_location",
+    "mast_not_near_vertical",
+    "slow_ethernet_speeds",
+    "roaming",
+    "install_pending",
+    "is_heating",
+    "power_supply_thermal_throttle",
+    "is_power_save_idle",
+    "dbf_telem_stale",
+    "low_motor_current",
+    "lower_signal_than_predicted",
+    "slow_ethernet_speeds_100",
+    "obstruction_map_reset",
+    "dish_water_detected",
+    "router_water_detected",
+    "upsu_router_port_slow",
+    "no_ethernet_link",
+]
+
+# Точна відповідність до enum SpaceX.API.Device.WifiSoftwareUpdateState (роутер)
+ROUTER_UPDATE_STATE_NAMES = {
+    0: "NOT_RUN",
+    1: "GETTING_TARGET_VERSION",
+    2: "DOWNLOADING_UPDATE_IMAGE",
+    3: "FLASHING",
+    4: "NO_UPDATE_REQUIRED",
+    5: "REBOOT_PENDING",
+    6: "GETTING_TARGET_VERSION_FAILED",
+    7: "GETTING_TARGET_VERSION_EXHAUSTED",
+    8: "NO_VALID_ARTIFACT",
+    9: "ILLEGAL_ARTIFACT",
+    10: "DOWNLOADING_UPDATE_IMAGE_FAILED",
+    11: "DOWNLOADING_UPDATE_IMAGE_EXHAUSTED",
+    12: "FLASHING_FAILED",
+}
+
+# Точна відповідність до полів message WifiAlerts (номери полів з grpcurl describe)
+ROUTER_ALERT_FIELD_NAMES = [
+    "thermal_throttle",
+    "install_pending",
+    "freshly_fused",
+    "lan_eth_slow_link_10",
+    "lan_eth_slow_link_100",
+    "wan_eth_poor_connection",
+    "mesh_topology_changing_often",
+    "mesh_unreliable_backhaul",
+    "radius_missing_process",
+    "eth_switch_error",
+    "poe_on_dish_unreachable",
+    "poe_fuse_blown",
+    "poe_router_overcurrent",
+    "poe_off_current_nominal",
+    "poe_vin_overvoltage",
+    "poe_vin_undervoltage",
+    "high_cable_ping_drop_rate",
+    "sandbox_disabled",
+    "only_overflight_blocked",
+    "offline_networks_disabled",
+    "wired_mesh_not_using_wan_iface",
+]
 
 try:
     from app.vendor import starlink_grpc
@@ -54,18 +197,48 @@ class DishStatus:
     ping_drop_ratio: float = 0.0
     obstruction_fraction: float = 0.0
     currently_obstructed: bool = False
-    snr: Optional[float] = None
     software_version: str = ""
     hardware_version: str = ""
     error: str = ""
+    # Стан оновлення ПЗ dish
+    update_state: str = ""
+    update_progress_pct: float = 0.0
+    update_requires_reboot: bool = False
+    update_install_pending: bool = False
+    # Попередження dish (активні alert-прапорці)
+    active_alerts: List[str] = field(default_factory=list)
 
     def to_dict(self):
-        return asdict(self)
+        d = asdict(self)
+        d["active_alerts"] = json.dumps(d["active_alerts"], ensure_ascii=False)
+        return d
+
+
+@dataclass
+class RouterInfo:
+    timestamp: float
+    online: bool
+    software_version: str = ""
+    hardware_version: str = ""
+    bootcount: int = 0
+    error: str = ""
+    # Стан оновлення ПЗ роутера (окрема схема WifiSoftwareUpdateStats)
+    update_state: str = ""
+    update_progress_pct: float = 0.0
+    # Попередження роутера (активні WifiAlerts-прапорці)
+    active_alerts: List[str] = field(default_factory=list)
+    update_install_pending: bool = False
+
+    def to_dict(self):
+        d = asdict(self)
+        d["active_alerts"] = json.dumps(d["active_alerts"], ensure_ascii=False)
+        return d
 
 
 class StarlinkClient:
-    def __init__(self, dish_addr: str = None, timeout: float = None):
+    def __init__(self, dish_addr: str = None, router_addr: str = None, timeout: float = None):
         self.dish_addr = dish_addr or config.DISH_ADDR
+        self.router_addr = router_addr or config.ROUTER_ADDR
         self.timeout = timeout or config.DISH_HTTP_TIMEOUT
 
     def get_status(self) -> DishStatus:
@@ -111,6 +284,35 @@ class StarlinkClient:
             disablement = str(getattr(resp, "disablement_code", "") or "")
             state = disablement if disablement and disablement != "OKAY" else "OKAY"
 
+            # Стан оновлення ПЗ: message SoftwareUpdateStats { software_update_state,
+            # software_update_progress, update_requires_reboot, reboot_scheduled_utc_time }
+            update_state = ""
+            update_progress_pct = 0.0
+            update_requires_reboot = False
+            sw_update_stats = getattr(resp, "software_update_stats", None)
+            if sw_update_stats is not None:
+                raw_state = getattr(sw_update_stats, "software_update_state", None)
+                # protobuf enum може прийти як int (значення) - мапимо через
+                # точну таблицю з grpcurl describe; якщо вже рядок - лишаємо як є.
+                if isinstance(raw_state, int):
+                    update_state = SOFTWARE_UPDATE_STATE_NAMES.get(raw_state, str(raw_state))
+                elif raw_state:
+                    update_state = str(raw_state)
+                progress_raw = getattr(sw_update_stats, "software_update_progress", 0.0) or 0.0
+                update_progress_pct = round(progress_raw * 100, 1)
+                update_requires_reboot = bool(getattr(sw_update_stats, "update_requires_reboot", False))
+
+            # Попередження: message DishAlerts - набір bool-прапорців (не список).
+            # Збираємо назви лише тих, що активні (True).
+            active_alerts = []
+            alerts_obj = getattr(resp, "alerts", None)
+            update_install_pending = False
+            if alerts_obj is not None:
+                for name in ALERT_FIELD_NAMES:
+                    if bool(getattr(alerts_obj, name, False)):
+                        active_alerts.append(name)
+                update_install_pending = bool(getattr(alerts_obj, "install_pending", False))
+
             result = DishStatus(
                 timestamp=time.time(),
                 online=True,
@@ -124,6 +326,11 @@ class StarlinkClient:
                 currently_obstructed=currently_obstructed,
                 software_version=software_version,
                 hardware_version=hardware_version,
+                update_state=update_state,
+                update_progress_pct=update_progress_pct,
+                update_requires_reboot=update_requires_reboot,
+                update_install_pending=update_install_pending,
+                active_alerts=active_alerts,
             )
             return result
         except Exception as e:
@@ -135,6 +342,83 @@ class StarlinkClient:
                     context.close()
                 except Exception:
                     pass
+
+    def get_router_info(self) -> RouterInfo:
+        """
+        Опитує ОКРЕМИЙ роутерний компонент Starlink Mini (інша адреса,
+        ніж dish - див. докстрінг модуля). Ніколи не кидає виняток назовні.
+        """
+        grpcurl_bin = shutil.which("grpcurl")
+        if not grpcurl_bin:
+            return RouterInfo(timestamp=time.time(), online=False, error="grpcurl не знайдено в PATH")
+
+        try:
+            result = subprocess.run(
+                [
+                    grpcurl_bin,
+                    "-plaintext",
+                    "-d", '{"get_status":{}}',
+                    self.router_addr,
+                    "SpaceX.API.Device.Device/Handle",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+            if result.returncode != 0:
+                err = (result.stderr or result.stdout or "unknown error").strip()
+                return RouterInfo(timestamp=time.time(), online=False, error=err[:500])
+
+            payload = json.loads(result.stdout)
+            wifi_status = payload.get("wifiGetStatus", {})
+            device_info = wifi_status.get("deviceInfo", {})
+            if not device_info:
+                return RouterInfo(timestamp=time.time(), online=False, error="empty deviceInfo in response")
+
+            # Стан оновлення ПЗ роутера: WifiSoftwareUpdateStats { state, software_download_progress, ... }
+            update_state = ""
+            update_progress_pct = 0.0
+            sw_stats = wifi_status.get("softwareUpdateStats", {})
+            if sw_stats:
+                raw_state = sw_stats.get("state")
+                if isinstance(raw_state, str) and raw_state.isdigit():
+                    raw_state = int(raw_state)
+                if isinstance(raw_state, int):
+                    update_state = ROUTER_UPDATE_STATE_NAMES.get(raw_state, str(raw_state))
+                elif raw_state:
+                    update_state = str(raw_state)
+                update_progress_pct = round(float(sw_stats.get("softwareDownloadProgress", 0.0) or 0.0) * 100, 1)
+
+            # Попередження: WifiAlerts - набір bool-прапорців (не список)
+            active_alerts = []
+            update_install_pending = False
+            alerts_obj = wifi_status.get("alerts", {})
+            if alerts_obj:
+                for name in ROUTER_ALERT_FIELD_NAMES:
+                    camel = _snake_to_camel(name)
+                    if bool(alerts_obj.get(camel, False)):
+                        active_alerts.append(name)
+                update_install_pending = bool(alerts_obj.get("installPending", False))
+
+            return RouterInfo(
+                timestamp=time.time(),
+                online=True,
+                software_version=str(device_info.get("softwareVersion", "")),
+                hardware_version=str(device_info.get("hardwareVersion", "")),
+                bootcount=int(device_info.get("bootcount", 0) or 0),
+                update_state=update_state,
+                update_progress_pct=update_progress_pct,
+                active_alerts=active_alerts,
+                update_install_pending=update_install_pending,
+            )
+        except subprocess.TimeoutExpired:
+            return RouterInfo(timestamp=time.time(), online=False, error="timeout")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("Не вдалося розпарсити відповідь роутера: %s", e)
+            return RouterInfo(timestamp=time.time(), online=False, error=f"parse error: {e}")
+        except Exception as e:
+            logger.warning("Не вдалося отримати статус роутера: %s", e)
+            return RouterInfo(timestamp=time.time(), online=False, error=str(e))
 
     def reboot_dish(self) -> tuple[bool, str]:
         """

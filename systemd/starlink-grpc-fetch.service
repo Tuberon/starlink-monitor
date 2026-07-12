@@ -8,8 +8,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=pi
-Group=pi
+User=__RUN_USER__
+Group=__RUN_USER__
 WorkingDirectory=/opt/starlink-monitor
 Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
 EnvironmentFile=-/etc/starlink-monitor/env

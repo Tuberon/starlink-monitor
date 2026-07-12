@@ -9,6 +9,11 @@ import os
 DISH_ADDR = os.environ.get("STARLINK_DISH_ADDR", "192.168.100.1:9200")
 DISH_HTTP_TIMEOUT = float(os.environ.get("STARLINK_DISH_TIMEOUT", "5"))
 
+# --- Starlink router (окремий логічний пристрій, "cohoused" в тому ж
+# корпусі Mini, зі своєю версією прошивки - відповідає на адресі роутера,
+# а не dish, оскільки роутер сам роздає DHCP в цій підмережі) ---
+ROUTER_ADDR = os.environ.get("STARLINK_ROUTER_ADDR", "192.168.1.1:9000")
+
 # --- Опитування ---
 POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
 
@@ -19,6 +24,14 @@ MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 
 MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "1800"))  # 30 хв
 # Поріг фракції обструкції, вище якого просто попереджаємо (не ребутимо — це фізична перешкода)
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))
+
+# --- Авто-reboot dish при готовому оновленні ПЗ ---
+# Якщо dish повідомляє software_update_state == REBOOT_REQUIRED, або
+# alerts.install_pending == true - оновлення вже завантажене й готове,
+# і dish просто чекає на reboot, щоб застосувати його. Вмикає автоматичний
+# reboot у такому випадку (той самий MIN_REBOOT_INTERVAL_SEC захищає
+# від повторних спроб, якщо перший reboot чомусь не допоміг).
+AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
 
 # --- Автооновлення самого проєкту/системи ---
 AUTO_UPDATE_ENABLED = os.environ.get("STARLINK_AUTO_UPDATE", "1") == "1"

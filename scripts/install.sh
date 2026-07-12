@@ -8,7 +8,12 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-RUN_USER="${SUDO_USER:-pi}"
+if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" ]]; then
+  echo "Запустіть через sudo від імені звичайного користувача"
+  echo "(не з-під прямого root-логіна): sudo bash scripts/install.sh"
+  exit 1
+fi
+RUN_USER="$SUDO_USER"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="/opt/starlink-monitor"
 
@@ -37,9 +42,9 @@ if ! command -v grpcurl >/dev/null 2>&1; then
     esac
     if [[ -n "$GRPCURL_ARCH" ]]; then
       # GitHub asset-файли завжди містять номер версії в імені
-      # (напр. grpcurl_1.9.3_linux_arm64.tar.gz), тому "releases/latest/download/<name>"
-      # без версії в імені не існує. Спершу резолвимо реальний тег останнього релізу
-      # через redirect "releases/latest" -> ".../tag/vX.Y.Z".
+      # (напр. grpcurl_1.9.3_linux_arm64.tar.gz), тому спершу резолвимо
+      # реальний тег останнього релізу через redirect
+      # "releases/latest" -> ".../tag/vX.Y.Z", і лише потім будуємо URL.
       LATEST_TAG="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
         "https://github.com/fullstorydev/grpcurl/releases/latest" | sed -n 's#.*/tag/v##p')"
       if [[ -z "$LATEST_TAG" ]]; then
@@ -101,9 +106,9 @@ visudo -c -f /etc/sudoers.d/starlink-monitor
 echo "==> Вмикаю unattended-upgrades (системний рівень автооновлень безпеки)"
 dpkg-reconfigure -f noninteractive unattended-upgrades || true
 
-echo "==> Встановлюю systemd unit-файли (з підстановкою користувача $RUN_USER замість pi)"
+echo "==> Встановлюю systemd unit-файли (підстановка користувача $RUN_USER)"
 for svc in starlink-monitor.service starlink-webui.service starlink-updater.service starlink-grpc-fetch.service; do
-  sed "s/^User=pi\$/User=$RUN_USER/; s/^Group=pi\$/Group=$RUN_USER/" \
+  sed "s/__RUN_USER__/$RUN_USER/g" \
     "$PROJECT_DIR/systemd/$svc" > "/etc/systemd/system/$svc"
 done
 cp "$PROJECT_DIR/systemd/starlink-updater.timer" /etc/systemd/system/
@@ -134,5 +139,5 @@ echo "    (сервіс starlink-grpc-fetch.service вже запущений у
 echo "    Перевірити прогрес:"
 echo "      journalctl -u starlink-grpc-fetch.service -f"
 echo ""
-echo " 3. Дашборд: http://<ip-цього-pi>:8080"
+echo " 3. Дашборд: http://<ip-пристрою>:8080"
 echo "======================================================================"
