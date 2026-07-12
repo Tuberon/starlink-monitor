@@ -1,20 +1,32 @@
 """
 Клієнт для локального gRPC API Starlink dish.
 
-Використовує бібліотеку starlink_grpc з проєкту starlink-grpc-tools
-(https://github.com/sparky8512/starlink-grpc-tools) для читання статусу,
-і виконує прямий unary gRPC виклик SpaceX.API.Device.Device/Handle
-з payload {"reboot": {}} для перезавантаження.
+get_status(): використовує starlink_grpc.get_status() з проєкту
+starlink-grpc-tools (https://github.com/sparky8512/starlink-grpc-tools).
+Ця функція повертає СИРИЙ protobuf-об'єкт DishGetStatusResponse
+(не dict, не namedtuple) — поля читаються напряму через атрибути,
+структура підтверджена реальним дампом з живого dish:
 
-starlink_grpc.py потрібно покласти поруч (app/vendor/starlink_grpc.py) —
-дивись scripts/install.sh, який його завантажує з upstream репозиторію.
+  device_info { hardware_version, software_version, ... }
+  device_state { uptime_s }
+  obstruction_stats { fraction_obstructed, ... }
+  downlink_throughput_bps, uplink_throughput_bps, pop_ping_latency_ms
+
+reboot_dish(): викликає grpcurl як subprocess замість використання
+внутрішніх protobuf-класів starlink_grpc, оскільки:
+  1. Формат виклику задокументований і стабільний:
+     grpcurl -plaintext -d '{"reboot":{}}' <addr> SpaceX.API.Device.Device/Handle
+     (https://github.com/sparky8512/starlink-grpc-tools/wiki/Useful-grpcurl-commands)
+  2. Не залежить від генерації protobuf-модулів через fetch_starlink_grpc.sh,
+     яка може не спрацювати (grpcurl уже встановлюється в install.sh і потрібен
+     для генерації модулів так чи інакше).
 """
 import logging
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass, asdict
 from typing import Optional
-
-import grpc
 
 from app import config
 
@@ -61,66 +73,103 @@ class StarlinkClient:
         if starlink_grpc is None:
             return DishStatus(timestamp=time.time(), online=False, error="starlink_grpc module missing")
 
+        context = None
         try:
             context = starlink_grpc.ChannelContext(target=self.dish_addr)
-            status = starlink_grpc.get_status(context)
-            # status - namedtuple з полями відповідно до status_field_names()
-            # структура залежить від версії бібліотеки, тому дістаємо обережно
-            d = status._asdict() if hasattr(status, "_asdict") else dict(status)
+            resp = starlink_grpc.get_status(context)
+            # resp - сирий protobuf DishGetStatusResponse. Поля читаємо напряму
+            # (не через dict()/namedtuple - той API нестабільний між версіями).
+            device_state = getattr(resp, "device_state", None)
+            device_info = getattr(resp, "device_info", None)
+            obstruction_stats = getattr(resp, "obstruction_stats", None)
 
-            obstruction = d.get("fraction_obstructed") or 0.0
+            downlink_bps = getattr(resp, "downlink_throughput_bps", 0.0) or 0.0
+            uplink_bps = getattr(resp, "uplink_throughput_bps", 0.0) or 0.0
+            ping_latency = getattr(resp, "pop_ping_latency_ms", 0.0) or 0.0
+            # pop_ping_drop_rate не завжди присутнє в цій версії протоколу;
+            # якщо немає - лишаємо 0 (не є ознакою недоступності dish)
+            ping_drop = getattr(resp, "pop_ping_drop_rate", 0.0) or 0.0
+
+            obstruction_fraction = 0.0
+            currently_obstructed = False
+            if obstruction_stats is not None:
+                obstruction_fraction = getattr(obstruction_stats, "fraction_obstructed", 0.0) or 0.0
+                currently_obstructed = bool(getattr(obstruction_stats, "currently_obstructed", False))
+
+            uptime_s = 0
+            if device_state is not None:
+                uptime_s = int(getattr(device_state, "uptime_s", 0) or 0)
+
+            software_version = ""
+            hardware_version = ""
+            if device_info is not None:
+                software_version = str(getattr(device_info, "software_version", "") or "")
+                hardware_version = str(getattr(device_info, "hardware_version", "") or "")
+
+            # "стан" dish як єдиний рядок для дашборду: беремо disablement_code,
+            # якщо доступний і не "OKAY" - інакше "OKAY"
+            disablement = str(getattr(resp, "disablement_code", "") or "")
+            state = disablement if disablement and disablement != "OKAY" else "OKAY"
+
             result = DishStatus(
                 timestamp=time.time(),
                 online=True,
-                state=str(d.get("state", "")),
-                uptime_s=int(d.get("uptime", 0) or 0),
-                downlink_mbps=round((d.get("downlink_throughput_bps") or 0) / 1e6, 2),
-                uplink_mbps=round((d.get("uplink_throughput_bps") or 0) / 1e6, 2),
-                ping_latency_ms=round(d.get("pop_ping_latency_ms") or 0.0, 1),
-                ping_drop_ratio=round(d.get("pop_ping_drop_rate") or 0.0, 4),
-                obstruction_fraction=round(obstruction, 4),
-                currently_obstructed=bool(d.get("currently_obstructed", False)),
-                software_version=str(d.get("software_version", "")),
-                hardware_version=str(d.get("hardware_version", "")),
+                state=state,
+                uptime_s=uptime_s,
+                downlink_mbps=round(downlink_bps / 1e6, 2),
+                uplink_mbps=round(uplink_bps / 1e6, 2),
+                ping_latency_ms=round(ping_latency, 1),
+                ping_drop_ratio=round(ping_drop, 4),
+                obstruction_fraction=round(obstruction_fraction, 4),
+                currently_obstructed=currently_obstructed,
+                software_version=software_version,
+                hardware_version=hardware_version,
             )
-            context.close()
             return result
         except Exception as e:
             logger.warning("Не вдалося отримати статус dish: %s", e)
             return DishStatus(timestamp=time.time(), online=False, error=str(e))
+        finally:
+            if context is not None and hasattr(context, "close"):
+                try:
+                    context.close()
+                except Exception:
+                    pass
 
     def reboot_dish(self) -> tuple[bool, str]:
         """
         Виконує reboot dish через SpaceX.API.Device.Device/Handle з payload {"reboot": {}}.
+        Використовує grpcurl як subprocess - надійніше за нестабільний внутрішній
+        API starlink_grpc, і не потребує окремо згенерованих protobuf-модулів.
         Повертає (успіх, повідомлення).
         """
-        if starlink_grpc is None:
-            return False, "starlink_grpc module missing"
+        grpcurl_bin = shutil.which("grpcurl")
+        if not grpcurl_bin:
+            return False, "grpcurl не знайдено в PATH (встановіть його через install.sh)"
 
         try:
-            context = starlink_grpc.ChannelContext(target=self.dish_addr)
-            # starlink_grpc надає низькорівневий доступ до stub-а
-            stub = context.get_stub() if hasattr(context, "get_stub") else None
-            if stub is None:
-                # fallback: власний unary виклик через grpc напряму,
-                # використовуючи ті самі згенеровані protobuf-модулі,
-                # що й starlink_grpc (device_pb2, device_pb2_grpc)
-                from app.vendor.spacex.api.device import device_pb2, device_pb2_grpc
-
-                channel = grpc.insecure_channel(self.dish_addr)
-                stub = device_pb2_grpc.DeviceStub(channel)
-                request = device_pb2.Request()
-                request.reboot.SetInParent()
-                stub.Handle(request, timeout=self.timeout)
-                channel.close()
-            else:
-                from app.vendor.spacex.api.device import device_pb2
-                request = device_pb2.Request()
-                request.reboot.SetInParent()
-                stub.Handle(request, timeout=self.timeout)
+            result = subprocess.run(
+                [
+                    grpcurl_bin,
+                    "-plaintext",
+                    "-d", '{"reboot":{}}',
+                    self.dish_addr,
+                    "SpaceX.API.Device.Device/Handle",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=self.timeout + 5,
+            )
+            if result.returncode != 0:
+                err = (result.stderr or result.stdout or "unknown error").strip()
+                logger.error("Помилка reboot dish (grpcurl exit %d): %s", result.returncode, err)
+                return False, err[:500]
 
             logger.info("Reboot dish виконано успішно (%s)", self.dish_addr)
             return True, "reboot command sent"
+        except subprocess.TimeoutExpired:
+            logger.error("Таймаут виконання reboot dish через grpcurl")
+            return False, "timeout"
         except Exception as e:
             logger.error("Помилка reboot dish: %s", e)
             return False, str(e)
