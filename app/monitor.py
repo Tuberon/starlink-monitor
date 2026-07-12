@@ -9,6 +9,7 @@ import time
 
 from app import config, db
 from app.starlink_client import StarlinkClient
+from app.system_metrics import get_system_metrics
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +52,13 @@ class Watchdog:
 
         return status
 
+    def poll_system_metrics(self):
+        try:
+            metrics = get_system_metrics()
+            db.insert_system_metric(metrics)
+        except Exception as e:
+            logger.warning("Не вдалося зібрати системні метрики: %s", e)
+
     def _maybe_reboot(self):
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
             return
@@ -79,12 +87,18 @@ class Watchdog:
     def run_forever(self):
         db.init_db()
         logger.info("Starlink watchdog запущено. Опитування кожні %d с.", config.POLL_INTERVAL_SEC)
+        # "Прогрів" psutil.cpu_percent: перший виклик без базового заміру
+        # завжди повертає 0.0, тому робимо його тут і відкидаємо результат.
+        import psutil
+        psutil.cpu_percent(interval=None)
         last_prune = 0
         while True:
             try:
                 self.poll_once()
             except Exception as e:
                 logger.exception("Неочікувана помилка в циклі опитування: %s", e)
+
+            self.poll_system_metrics()
 
             if time.time() - last_prune > 3600:
                 try:

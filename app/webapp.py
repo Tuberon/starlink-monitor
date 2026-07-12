@@ -33,8 +33,26 @@ def api_history():
 
 @app.route("/api/events")
 def api_events():
-    limit = min(int(request.args.get("limit", 50)), 500)
+    limit = min(int(request.args.get("limit", 30)), 500)
     return jsonify(db.get_recent_events(limit))
+
+
+@app.route("/api/events", methods=["DELETE"])
+def api_clear_events():
+    db.clear_events()
+    return jsonify({"success": True})
+
+
+@app.route("/api/system-status")
+def api_system_status():
+    latest = db.get_latest_system_metric()
+    return jsonify({"latest": latest})
+
+
+@app.route("/api/system-history")
+def api_system_history():
+    limit = min(int(request.args.get("limit", 500)), 5000)
+    return jsonify(db.get_recent_system_metrics(limit))
 
 
 @app.route("/api/reboot-dish", methods=["POST"])

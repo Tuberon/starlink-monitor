@@ -1,0 +1,28 @@
+[Unit]
+Description=Starlink Monitor - Auto-fetch starlink_grpc.py (one-shot, waits for dish WiFi)
+After=network-online.target
+Wants=network-online.target
+# Не блокує основні сервіси - вони й так толерантні до відсутності
+# starlink_grpc.py на старті (просто логують помилку і чекають наступного
+# опитування), а цей сервіс підхопить його, щойно з'явиться WiFi Starlink Mini.
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/opt/starlink-monitor
+Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/scripts/fetch_starlink_grpc.sh --wait-for-dish --restart-services
+StandardOutput=journal
+StandardError=journal
+# Якщо dish за відведений час (за замовчуванням 5 хв) не з'явився,
+# скрипт завершується з помилкою - даємо кілька повторних спроб
+# на випадок повільного підключення WiFi при першому завантаженні.
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

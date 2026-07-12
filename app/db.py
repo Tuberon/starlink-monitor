@@ -32,6 +32,21 @@ CREATE TABLE IF NOT EXISTS events (
     success INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+
+CREATE TABLE IF NOT EXISTS system_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    uptime_s INTEGER,
+    cpu_percent REAL,
+    mem_total_mb REAL,
+    mem_used_mb REAL,
+    mem_free_mb REAL,
+    disk_total_gb REAL,
+    disk_used_gb REAL,
+    disk_free_gb REAL,
+    temp_c REAL
+);
+CREATE INDEX IF NOT EXISTS idx_system_metrics_ts ON system_metrics(ts);
 """
 
 
@@ -91,6 +106,42 @@ def insert_event(kind: str, message: str, success: bool = True):
         )
 
 
+def insert_system_metric(m: dict):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO system_metrics
+               (ts, uptime_s, cpu_percent, mem_total_mb, mem_used_mb, mem_free_mb,
+                disk_total_gb, disk_used_gb, disk_free_gb, temp_c)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                m["timestamp"],
+                m.get("uptime_s", 0),
+                m.get("cpu_percent", 0),
+                m.get("mem_total_mb", 0),
+                m.get("mem_used_mb", 0),
+                m.get("mem_free_mb", 0),
+                m.get("disk_total_gb", 0),
+                m.get("disk_used_gb", 0),
+                m.get("disk_free_gb", 0),
+                m.get("temp_c"),
+            ),
+        )
+
+
+def get_recent_system_metrics(limit: int = 500):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM system_metrics ORDER BY ts DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+
+def get_latest_system_metric():
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM system_metrics ORDER BY ts DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+
 def get_recent_metrics(limit: int = 500):
     with get_conn() as conn:
         rows = conn.execute(
@@ -119,6 +170,12 @@ def prune_old(days: int = None):
     with get_conn() as conn:
         conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
         conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+        conn.execute("DELETE FROM system_metrics WHERE ts < ?", (cutoff,))
+
+
+def clear_events():
+    with get_conn() as conn:
+        conn.execute("DELETE FROM events")
 
 
 def uptime_stats_24h():

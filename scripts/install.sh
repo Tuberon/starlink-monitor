@@ -102,7 +102,7 @@ echo "==> Вмикаю unattended-upgrades (системний рівень ав
 dpkg-reconfigure -f noninteractive unattended-upgrades || true
 
 echo "==> Встановлюю systemd unit-файли (з підстановкою користувача $RUN_USER замість pi)"
-for svc in starlink-monitor.service starlink-webui.service starlink-updater.service; do
+for svc in starlink-monitor.service starlink-webui.service starlink-updater.service starlink-grpc-fetch.service; do
   sed "s/^User=pi\$/User=$RUN_USER/; s/^Group=pi\$/Group=$RUN_USER/" \
     "$PROJECT_DIR/systemd/$svc" > "/etc/systemd/system/$svc"
 done
@@ -112,22 +112,27 @@ systemctl daemon-reload
 systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
 systemctl enable --now starlink-updater.timer
+# starlink-grpc-fetch.service: одноразовий, чекає на WiFi Starlink Mini і сам
+# завантажує starlink_grpc.py + рестартує сервіси. enable (не --now), щоб він
+# також запускався автоматично при кожному наступному завантаженні системи
+# (напр. якщо Pi перезавантажиться і WiFi треба буде піднімати заново),
+# а start запускаємо окремо, щоб не блокувати install.sh очікуванням dish.
+systemctl enable starlink-grpc-fetch.service
+systemctl start starlink-grpc-fetch.service &
 
 echo ""
 echo "======================================================================"
 echo " Базове встановлення завершено."
 echo ""
-echo " НАСТУПНІ КРОКИ (вручну, потребують взаємодії):"
+echo " НАСТУПНІ КРОКИ:"
 echo ""
-echo " 1. Підключіть wlan0 до WiFi Starlink Mini:"
+echo " 1. Підключіть wlan0 до WiFi Starlink Mini (якщо ще не підключений):"
 echo "      sudo nmcli device wifi connect \"<SSID Starlink>\" password \"<пароль>\" ifname wlan0"
 echo ""
-echo " 2. Завантажте starlink_grpc.py (потребує активного WiFi-з'єднання"
-echo "    зі Starlink Mini з кроку 1):"
-echo "      sudo -u $RUN_USER bash $PROJECT_DIR/scripts/fetch_starlink_grpc.sh"
+echo " 2. starlink_grpc.py завантажиться АВТОМАТИЧНО, щойно dish стане доступним"
+echo "    (сервіс starlink-grpc-fetch.service вже запущений у фоні й чекає)."
+echo "    Перевірити прогрес:"
+echo "      journalctl -u starlink-grpc-fetch.service -f"
 echo ""
-echo " 3. Перезапустіть сервіси, щоб підхопити зміни:"
-echo "      sudo systemctl restart starlink-monitor.service starlink-webui.service"
-echo ""
-echo " 4. Дашборд: http://<ip-цього-pi>:8080"
+echo " 3. Дашборд: http://<ip-цього-pi>:8080"
 echo "======================================================================"

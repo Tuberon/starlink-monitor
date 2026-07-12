@@ -1,4 +1,4 @@
-const REFRESH_MS = 5000;
+const REFRESH_MS = 1000;
 
 const el = (id) => document.getElementById(id);
 
@@ -30,7 +30,7 @@ function setValueClass(node, value, warnAt, critAt, higherIsBad = true) {
   }
 }
 
-let throughputChart, latencyChart;
+let throughputChart, latencyChart, cpuTempChart, memChart, diskChart;
 
 function initCharts() {
   const commonOpts = {
@@ -89,6 +89,54 @@ function initCharts() {
         },
       },
     },
+  });
+
+  cpuTempChart = new Chart(el('cpuTempChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'CPU %', data: [], borderColor: '#5ee6c4', backgroundColor: 'rgba(94,230,196,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+        { label: 'Температура °C', data: [], borderColor: '#ff6b6b', backgroundColor: 'transparent', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y1' },
+      ],
+    },
+    options: {
+      ...commonOpts,
+      scales: {
+        ...commonOpts.scales,
+        y: { ...commonOpts.scales.y, max: 100 },
+        y1: {
+          position: 'right',
+          ticks: { color: '#5b6b8c', font: { family: 'JetBrains Mono', size: 10 } },
+          grid: { display: false },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+
+  memChart = new Chart(el('memChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Зайнято МБ', data: [], borderColor: '#7aa2ff', backgroundColor: 'rgba(122,162,255,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+        { label: 'Вільно МБ', data: [], borderColor: '#5ee6c4', backgroundColor: 'transparent', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+      ],
+    },
+    options: commonOpts,
+  });
+
+  diskChart = new Chart(el('diskChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Зайнято ГБ', data: [], borderColor: '#ffb454', backgroundColor: 'rgba(255,180,84,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+        { label: 'Вільно ГБ', data: [], borderColor: '#5ee6c4', backgroundColor: 'transparent', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+      ],
+    },
+    options: commonOpts,
   });
 }
 
@@ -155,6 +203,67 @@ async function refreshHistory() {
   }
 }
 
+async function refreshSystemStatus() {
+  try {
+    const res = await fetch('/api/system-status');
+    const data = await res.json();
+    const latest = data.latest;
+    if (!latest) return;
+
+    el('sUptime').textContent = fmtUptime(latest.uptime_s);
+
+    const temp = latest.temp_c;
+    el('sTemp').innerHTML = `${temp ?? '—'}<span class="unit">°C</span>`;
+    setValueClass(el('sTemp'), temp, 70, 80);
+
+    const cpu = latest.cpu_percent;
+    el('sCpu').innerHTML = `${cpu ?? '—'}<span class="unit">%</span>`;
+    setValueClass(el('sCpu'), cpu, 80, 95);
+
+    const memPct = latest.mem_total_mb ? (latest.mem_used_mb / latest.mem_total_mb * 100).toFixed(1) : null;
+    el('sMem').innerHTML = `${memPct ?? '—'}<span class="unit">%</span>`;
+    setValueClass(el('sMem'), memPct, 80, 95);
+
+    const diskPct = latest.disk_total_gb ? (latest.disk_used_gb / latest.disk_total_gb * 100).toFixed(1) : null;
+    el('sDisk').innerHTML = `${diskPct ?? '—'}<span class="unit">%</span>`;
+    setValueClass(el('sDisk'), diskPct, 80, 95);
+
+    el('memSub').textContent = latest.mem_total_mb
+      ? `${latest.mem_used_mb.toFixed(0)} МБ зайнято з ${latest.mem_total_mb.toFixed(0)} МБ`
+      : '—';
+    el('diskSub').textContent = latest.disk_total_gb
+      ? `${latest.disk_used_gb.toFixed(1)} ГБ зайнято з ${latest.disk_total_gb.toFixed(1)} ГБ`
+      : '—';
+  } catch (e) {
+    console.error('system status refresh failed', e);
+  }
+}
+
+async function refreshSystemHistory() {
+  try {
+    const res = await fetch('/api/system-history?limit=120');
+    const rows = await res.json();
+    const labels = rows.map(r => fmtTime(r.ts));
+
+    cpuTempChart.data.labels = labels;
+    cpuTempChart.data.datasets[0].data = rows.map(r => r.cpu_percent);
+    cpuTempChart.data.datasets[1].data = rows.map(r => r.temp_c);
+    cpuTempChart.update('none');
+
+    memChart.data.labels = labels;
+    memChart.data.datasets[0].data = rows.map(r => r.mem_used_mb);
+    memChart.data.datasets[1].data = rows.map(r => r.mem_free_mb);
+    memChart.update('none');
+
+    diskChart.data.labels = labels;
+    diskChart.data.datasets[0].data = rows.map(r => r.disk_used_gb);
+    diskChart.data.datasets[1].data = rows.map(r => r.disk_free_gb);
+    diskChart.update('none');
+  } catch (e) {
+    console.error('system history refresh failed', e);
+  }
+}
+
 async function refreshEvents() {
   try {
     const res = await fetch('/api/events?limit=30');
@@ -195,15 +304,33 @@ async function handleReboot() {
   }
 }
 
+async function handleClearEvents() {
+  const btn = el('clearEventsBtn');
+  if (!confirm('Очистити весь журнал подій? Цю дію не можна скасувати.')) return;
+
+  btn.disabled = true;
+  try {
+    await fetch('/api/events', { method: 'DELETE' });
+    refreshEvents();
+  } catch (e) {
+    console.error('clear events failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function tick() {
   refreshStatus();
   refreshHistory();
+  refreshSystemStatus();
+  refreshSystemHistory();
   refreshEvents();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   initCharts();
   el('rebootBtn').addEventListener('click', handleReboot);
+  el('clearEventsBtn').addEventListener('click', handleClearEvents);
   tick();
   setInterval(tick, REFRESH_MS);
 });

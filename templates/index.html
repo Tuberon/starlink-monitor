@@ -101,6 +101,17 @@
   .metric .value.crit{color:var(--crit);}
   .metric .unit{font-size:0.9rem; color:var(--text-mid); font-weight:400; margin-left:2px;}
 
+  /* ---- section divider ---- */
+  .section-divider{
+    display:flex; align-items:center; gap:14px;
+    margin:32px 0 20px;
+    font-family:var(--font-mono); font-size:0.72rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--text-low);
+  }
+  .section-divider::before, .section-divider::after{
+    content:''; flex:1; height:1px; background:var(--line);
+  }
+
   /* ---- panels ---- */
   .panel{
     background: var(--sky-900);
@@ -151,6 +162,21 @@
   button.reboot-btn:hover{border-color:var(--crit); background:#1a1420;}
   button.reboot-btn:disabled{opacity:0.5; cursor:not-allowed;}
   .hint{font-family:var(--font-mono); font-size:0.68rem; color:var(--text-low);}
+
+  button.clear-btn{
+    font-family:var(--font-mono);
+    background: transparent;
+    color: var(--text-low);
+    border:1px solid var(--line);
+    padding:6px 12px;
+    border-radius:7px;
+    font-size:0.68rem;
+    letter-spacing:0.02em;
+    cursor:pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button.clear-btn:hover{border-color:var(--text-mid); color:var(--text-hi);}
+  button.clear-btn:disabled{opacity:0.5; cursor:not-allowed;}
 
   footer{
     text-align:center; margin-top:32px;
@@ -207,6 +233,42 @@
     <canvas id="latencyChart"></canvas>
   </div>
 
+  <div class="section-divider">
+    <span>Raspberry Pi Zero 2 W</span>
+  </div>
+
+  <div class="grid" id="sysMetricsGrid">
+    <div class="metric"><div class="label">Uptime Pi</div><div class="value" id="sUptime">—</div></div>
+    <div class="metric"><div class="label">Температура</div><div class="value" id="sTemp">—<span class="unit">°C</span></div></div>
+    <div class="metric"><div class="label">CPU</div><div class="value" id="sCpu">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">Пам'ять</div><div class="value" id="sMem">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">Диск</div><div class="value" id="sDisk">—<span class="unit">%</span></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Завантаження CPU та температура</h2>
+      <span class="sub">останні опитування</span>
+    </div>
+    <canvas id="cpuTempChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Оперативна пам'ять</h2>
+      <span class="sub" id="memSub">—</span>
+    </div>
+    <canvas id="memChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Місце на накопичувачі</h2>
+      <span class="sub" id="diskSub">—</span>
+    </div>
+    <canvas id="diskChart"></canvas>
+  </div>
+
   <div class="panel">
     <div class="panel-head">
       <h2>Керування</h2>
@@ -220,7 +282,7 @@
   <div class="panel">
     <div class="panel-head">
       <h2>Журнал подій</h2>
-      <span class="sub">reboot, оновлення, попередження</span>
+      <button class="clear-btn" id="clearEventsBtn" title="Очистити журнал подій">Очистити</button>
     </div>
     <div class="log" id="eventLog">
       <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
