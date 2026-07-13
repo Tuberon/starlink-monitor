@@ -14,6 +14,8 @@ Bot token отримується в @BotFather, chat_id - id чату/корис
 для простої відправки текстових повідомлень.
 """
 import logging
+import os
+import random
 
 import requests
 
@@ -23,6 +25,20 @@ logger = logging.getLogger("telegram_notify")
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 REQUEST_TIMEOUT = 10
+SIGNATURE_PHRASES_PATH = os.path.join(os.path.dirname(__file__), "signature_phrases.txt")
+
+
+def _random_signature_phrase() -> str:
+    """Повертає випадкову фразу з app/signature_phrases.txt (по одній на
+    рядок). Якщо файл відсутній/порожній - повертає порожній рядок,
+    щоб не ламати відправку повідомлень."""
+    try:
+        with open(SIGNATURE_PHRASES_PATH, encoding="utf-8") as f:
+            phrases = [line.strip() for line in f if line.strip()]
+        return random.choice(phrases) if phrases else ""
+    except OSError as e:
+        logger.warning("Не вдалося прочитати signature_phrases.txt: %s", e)
+        return ""
 
 
 def get_telegram_config():
@@ -58,6 +74,9 @@ def send_message(text: str) -> tuple[bool, str]:
     if not chat_ids:
         return False, "Не вказано жодного chat_id"
 
+    phrase = _random_signature_phrase()
+    full_text = f"{text}\n\n{phrase}" if phrase else text
+
     url = API_BASE.format(token=token, method="sendMessage")
     errors = []
     any_ok = False
@@ -65,7 +84,7 @@ def send_message(text: str) -> tuple[bool, str]:
         try:
             resp = requests.post(
                 url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                json={"chat_id": chat_id, "text": full_text, "parse_mode": "HTML"},
                 timeout=REQUEST_TIMEOUT,
             )
             data = resp.json()

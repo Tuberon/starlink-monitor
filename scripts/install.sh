@@ -17,61 +17,95 @@ RUN_USER="$SUDO_USER"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="/opt/starlink-monitor"
 
-echo "==> Встановлюю системні пакети"
-apt-get update
-apt-get install -y --no-install-recommends \
-  python3 python3-venv python3-pip git curl \
-  network-manager
-
-echo "==> Перевіряю наявність grpcurl"
-if ! command -v grpcurl >/dev/null 2>&1; then
-  echo "==> grpcurl не знайдено, встановлюю"
-  # 1) Спроба через apt (Debian trixie+ вже має пакет grpcurl у репозиторіях)
-  if apt-get install -y --no-install-recommends grpcurl 2>/dev/null; then
-    echo "==> grpcurl встановлено через apt"
-  else
-    # 2) Fallback: завантажити готовий бінарник з GitHub releases під поточну архітектуру.
-    #    "latest/download" - стабільне посилання GitHub, що завжди вказує на останній реліз.
-    ARCH="$(dpkg --print-architecture)"
-    case "$ARCH" in
-      arm64)  GRPCURL_ARCH="arm64" ;;
-      armhf)  GRPCURL_ARCH="armv6" ;;
-      amd64)  GRPCURL_ARCH="x86_64" ;;
-      *) echo "!! Невідома архітектура $ARCH, пропускаю авто-встановлення grpcurl"; GRPCURL_ARCH="" ;;
-    esac
-    if [[ -n "$GRPCURL_ARCH" ]]; then
-      # GitHub asset-файли завжди містять номер версії в імені
-      # (напр. grpcurl_1.9.3_linux_arm64.tar.gz), тому спершу резолвимо
-      # реальний тег останнього релізу через redirect
-      # "releases/latest" -> ".../tag/vX.Y.Z", і лише потім будуємо URL.
-      LATEST_TAG="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-        "https://github.com/fullstorydev/grpcurl/releases/latest" | sed -n 's#.*/tag/v##p')"
-      if [[ -z "$LATEST_TAG" ]]; then
-        LATEST_TAG="1.9.3"  # fallback, якщо резолв версії не вдався
-      fi
-      TMP_TGZ="$(mktemp)"
-      curl -fsSL \
-        "https://github.com/fullstorydev/grpcurl/releases/download/v${LATEST_TAG}/grpcurl_${LATEST_TAG}_linux_${GRPCURL_ARCH}.tar.gz" \
-        -o "$TMP_TGZ"
-      tar -xzf "$TMP_TGZ" -C /usr/local/bin grpcurl
-      chmod +x /usr/local/bin/grpcurl
-      rm -f "$TMP_TGZ"
-      echo "==> grpcurl $LATEST_TAG встановлено в /usr/local/bin ($(grpcurl --version 2>&1 | head -1))"
-    fi
-  fi
+if [[ -d "$PROJECT_DIR" ]]; then
+  MODE="update"
+  echo "==> Виявлено існуючу інсталяцію в $PROJECT_DIR — режим оновлення"
 else
-  echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
+  MODE="install"
+  echo "==> Існуючої інсталяції не знайдено — повне встановлення"
 fi
 
-echo "==> Копіюю проєкт у $PROJECT_DIR"
+REQ_CHANGED=1
+if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
+  if diff -q "$SRC_DIR/requirements.txt" "$PROJECT_DIR/requirements.txt" >/dev/null 2>&1; then
+    REQ_CHANGED=0
+  fi
+fi
+
+if [[ "$MODE" == "install" ]]; then
+  echo "==> Встановлюю системні пакети"
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    python3 python3-venv python3-pip git curl \
+    network-manager
+
+  echo "==> Перевіряю наявність grpcurl"
+  if ! command -v grpcurl >/dev/null 2>&1; then
+    echo "==> grpcurl не знайдено, встановлюю"
+    # 1) Спроба через apt (Debian trixie+ вже має пакет grpcurl у репозиторіях)
+    if apt-get install -y --no-install-recommends grpcurl 2>/dev/null; then
+      echo "==> grpcurl встановлено через apt"
+    else
+      # 2) Fallback: завантажити готовий бінарник з GitHub releases під поточну архітектуру.
+      #    "latest/download" - стабільне посилання GitHub, що завжди вказує на останній реліз.
+      ARCH="$(dpkg --print-architecture)"
+      case "$ARCH" in
+        arm64)  GRPCURL_ARCH="arm64" ;;
+        armhf)  GRPCURL_ARCH="armv6" ;;
+        amd64)  GRPCURL_ARCH="x86_64" ;;
+        *) echo "!! Невідома архітектура $ARCH, пропускаю авто-встановлення grpcurl"; GRPCURL_ARCH="" ;;
+      esac
+      if [[ -n "$GRPCURL_ARCH" ]]; then
+        # GitHub asset-файли завжди містять номер версії в імені
+        # (напр. grpcurl_1.9.3_linux_arm64.tar.gz), тому спершу резолвимо
+        # реальний тег останнього релізу через redirect
+        # "releases/latest" -> ".../tag/vX.Y.Z", і лише потім будуємо URL.
+        LATEST_TAG="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+          "https://github.com/fullstorydev/grpcurl/releases/latest" | sed -n 's#.*/tag/v##p')"
+        if [[ -z "$LATEST_TAG" ]]; then
+          LATEST_TAG="1.9.3"  # fallback, якщо резолв версії не вдався
+        fi
+        TMP_TGZ="$(mktemp)"
+        curl -fsSL \
+          "https://github.com/fullstorydev/grpcurl/releases/download/v${LATEST_TAG}/grpcurl_${LATEST_TAG}_linux_${GRPCURL_ARCH}.tar.gz" \
+          -o "$TMP_TGZ"
+        tar -xzf "$TMP_TGZ" -C /usr/local/bin grpcurl
+        chmod +x /usr/local/bin/grpcurl
+        rm -f "$TMP_TGZ"
+        echo "==> grpcurl $LATEST_TAG встановлено в /usr/local/bin ($(grpcurl --version 2>&1 | head -1))"
+      fi
+    fi
+  else
+    echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
+  fi
+else
+  echo "==> Режим оновлення — пропускаю перевірку/оновлення системних пакетів"
+fi
+
+echo "==> Синхронізую файли проєкту в $PROJECT_DIR (лише змінені відносно попередньої інсталяції)"
 mkdir -p "$PROJECT_DIR"
-rsync -a --exclude 'venv' --exclude '.git' "$SRC_DIR/" "$PROJECT_DIR/"
+# -c: порівняння за контрольною сумою (не лише за розміром/часом), --itemize-changes
+# показує, які файли реально змінились - корисно бачити, що саме оновилось.
+RSYNC_OUT="$(rsync -ac --itemize-changes --exclude 'venv' --exclude '.git' "$SRC_DIR/" "$PROJECT_DIR/")"
+echo "$RSYNC_OUT"
+CHANGED_FILES="$(echo "$RSYNC_OUT" | grep -c '^[<>ch]' || true)"
 chown -R "$RUN_USER:$RUN_USER" "$PROJECT_DIR"
 
-echo "==> Створюю Python venv та встановлюю залежності"
-sudo -u "$RUN_USER" python3 -m venv "$PROJECT_DIR/venv"
-sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
-sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+if [[ "$MODE" == "update" && "$CHANGED_FILES" -eq 0 ]]; then
+  echo "==> Змінених файлів не виявлено, файлова частина без змін"
+fi
+
+echo "==> Створюю/оновлюю Python venv та залежності"
+if [[ ! -d "$PROJECT_DIR/venv" ]]; then
+  sudo -u "$RUN_USER" python3 -m venv "$PROJECT_DIR/venv"
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+elif [[ "$REQ_CHANGED" -eq 1 ]]; then
+  echo "==> requirements.txt змінився — оновлюю залежності"
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade -r "$PROJECT_DIR/requirements.txt"
+else
+  echo "==> venv вже існує, requirements.txt без змін — пропускаю pip install"
+fi
 
 echo "==> Каталог даних"
 mkdir -p /var/lib/starlink-monitor
@@ -99,26 +133,44 @@ EOF
 chmod 0440 /etc/sudoers.d/starlink-monitor
 visudo -c -f /etc/sudoers.d/starlink-monitor
 
-echo "==> Встановлюю systemd unit-файли (підстановка користувача $RUN_USER)"
+echo "==> Встановлюю/оновлюю systemd unit-файли (підстановка користувача $RUN_USER)"
+UNITS_UPDATED=0
 for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service; do
-  sed "s/__RUN_USER__/$RUN_USER/g" \
-    "$PROJECT_DIR/systemd/$svc" > "/etc/systemd/system/$svc"
+  NEW_UNIT="$(sed "s/__RUN_USER__/$RUN_USER/g" "$PROJECT_DIR/systemd/$svc")"
+  DEST="/etc/systemd/system/$svc"
+  if [[ ! -f "$DEST" ]] || ! diff -q <(echo "$NEW_UNIT") "$DEST" >/dev/null 2>&1; then
+    echo "$NEW_UNIT" > "$DEST"
+    UNITS_UPDATED=1
+  fi
 done
 
-systemctl daemon-reload
+if [[ "$UNITS_UPDATED" -eq 1 ]]; then
+  systemctl daemon-reload
+fi
+
 systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
-# starlink-grpc-fetch.service: одноразовий, чекає на WiFi Starlink Mini і сам
-# завантажує starlink_grpc.py + рестартує сервіси. enable (не --now), щоб він
-# також запускався автоматично при кожному наступному завантаженні системи
-# (напр. якщо Pi перезавантажиться і WiFi треба буде піднімати заново),
-# а start запускаємо окремо, щоб не блокувати install.sh очікуванням dish.
 systemctl enable starlink-grpc-fetch.service
-systemctl start starlink-grpc-fetch.service &
+
+if [[ "$MODE" == "update" ]]; then
+  if [[ "$CHANGED_FILES" -gt 0 || "$REQ_CHANGED" -eq 1 || "$UNITS_UPDATED" -eq 1 ]]; then
+    echo "==> Виявлено зміни — перезапускаю сервіси"
+    systemctl restart starlink-monitor.service
+    systemctl restart starlink-webui.service
+  else
+    echo "==> Змін не виявлено — сервіси не перезапускаю"
+  fi
+else
+  systemctl start starlink-grpc-fetch.service &
+fi
 
 echo ""
 echo "======================================================================"
-echo " Базове встановлення завершено."
+if [[ "$MODE" == "update" ]]; then
+  echo " Оновлення завершено."
+else
+  echo " Базове встановлення завершено."
+fi
 echo ""
 echo " НАСТУПНІ КРОКИ:"
 echo ""

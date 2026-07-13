@@ -228,4 +228,6 @@ class TelegramBot:
         self._send(token, chat_id, text)
 
     def _send(self, token: str, chat_id: str, text: str):
-        _api_call("sendMessage", token, REQUEST_TIMEOUT_SEND, chat_id=chat_id, text=text, parse_mode="HTML")
+        phrase = telegram_notify._random_signature_phrase()
+        full_text = f"{text}\n\n{phrase}" if phrase else text
+        _api_call("sendMessage", token, REQUEST_TIMEOUT_SEND, chat_id=chat_id, text=full_text, parse_mode="HTML")
