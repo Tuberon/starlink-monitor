@@ -204,12 +204,16 @@ class TelegramBot:
 
     def _cmd_reboot_request(self, token: str, chat_id: str):
         self._pending_reboot_confirm[chat_id] = time.time()
+        phrase = telegram_notify._random_signature_phrase()
+        text = "\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини."
+        if phrase:
+            text = f"{text}\n\n{phrase}"
         _api_call(
             "sendMessage",
             token,
             REQUEST_TIMEOUT_SEND,
             chat_id=chat_id,
-            text="\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини.",
+            text=text,
             reply_markup={
                 "inline_keyboard": [[
                     {"text": "\u2705 Так, перезавантажити", "callback_data": "reboot_confirm"},

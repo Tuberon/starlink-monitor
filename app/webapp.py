@@ -43,12 +43,6 @@ def api_system_status():
     return jsonify({"latest": latest})
 
 
-@app.route("/api/system-history")
-def api_system_history():
-    limit = min(int(request.args.get("limit", 500)), 5000)
-    return jsonify(db.get_recent_system_metrics(limit))
-
-
 @app.route("/api/router-status")
 def api_router_status():
     return jsonify({"latest": db.get_router_status()})

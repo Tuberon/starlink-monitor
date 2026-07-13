@@ -236,14 +236,6 @@ def get_router_status():
         return d
 
 
-def get_recent_system_metrics(limit: int = 500):
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM system_metrics ORDER BY ts DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(r) for r in reversed(rows)]
-
-
 def get_latest_system_metric():
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM system_metrics ORDER BY ts DESC LIMIT 1").fetchone()
