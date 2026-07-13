@@ -44,12 +44,12 @@ REQUEST_TIMEOUT_POLL = POLL_TIMEOUT_SEC + 5  # трохи більше за time
 CONFIRM_TTL_SEC = 120
 
 
-def _api_call(method: str, token: str, timeout: float, **params):
+def _api_call(method: str, token: str, http_timeout: float, **params):
     try:
         resp = requests.post(
             API_BASE.format(token=token, method=method),
             json=params,
-            timeout=timeout,
+            timeout=http_timeout,
         )
         return resp.json()
     except requests.RequestException as e:
