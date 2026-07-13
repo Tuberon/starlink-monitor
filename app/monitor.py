@@ -25,6 +25,7 @@ reboot ВСЬОГО Mini (через reboot_dish() на адресу dish - dish
 Відправка ніколи не блокує основний цикл - помилки Telegram лише
 логуються, не переривають моніторинг.
 """
+import json
 import logging
 import time
 
@@ -154,17 +155,25 @@ class Watchdog:
 
     def _notify_first_dish_connection(self, status):
         """Надсилає в Telegram ID тарілки один раз - лише при першому
-        підключенні цього конкретного dish (за dish_id) до Pi. Прапорець
-        зберігається в settings, тож переживає рестарт сервісу; при
-        підключенні іншої тарілки (інший dish_id) сповіщення прийде знову."""
+        підключенні кожної конкретної тарілки (за dish_id) до Pi. Усі
+        колись бачені ID зберігаються в settings (JSON-список), тож
+        переживають рестарт сервісу; при підключенні НОВОЇ тарілки
+        (ID, якого ще не було в списку) сповіщення прийде знову, навіть
+        якщо до цього вже підключались дві чи більше різних тарілок."""
         if not status.dish_id:
             return
 
-        already_notified_id = db.get_setting("first_dish_id_notified", "")
-        if already_notified_id == status.dish_id:
+        raw = db.get_setting("known_dish_ids", "[]")
+        try:
+            known_ids = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            known_ids = []
+
+        if status.dish_id in known_ids:
             return
 
-        db.set_setting("first_dish_id_notified", status.dish_id)
+        known_ids.append(status.dish_id)
+        db.set_setting("known_dish_ids", json.dumps(known_ids, ensure_ascii=False))
         self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
 
     def poll_system_metrics(self):
