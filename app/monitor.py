@@ -74,6 +74,7 @@ class Watchdog:
                 logger.info("Dish знову online після %d невдалих спроб", self.consecutive_failures)
                 self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
             self.consecutive_failures = 0
+            self._notify_first_dish_connection(status)
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
@@ -150,6 +151,21 @@ class Watchdog:
                 )
 
         self.prev_alerts = current
+
+    def _notify_first_dish_connection(self, status):
+        """Надсилає в Telegram ID тарілки один раз - лише при першому
+        підключенні цього конкретного dish (за dish_id) до Pi. Прапорець
+        зберігається в settings, тож переживає рестарт сервісу; при
+        підключенні іншої тарілки (інший dish_id) сповіщення прийде знову."""
+        if not status.dish_id:
+            return
+
+        already_notified_id = db.get_setting("first_dish_id_notified", "")
+        if already_notified_id == status.dish_id:
+            return
+
+        db.set_setting("first_dish_id_notified", status.dish_id)
+        self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
 
     def poll_system_metrics(self):
         try:

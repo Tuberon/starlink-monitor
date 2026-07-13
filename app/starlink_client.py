@@ -199,6 +199,7 @@ class DishStatus:
     currently_obstructed: bool = False
     software_version: str = ""
     hardware_version: str = ""
+    dish_id: str = ""
     error: str = ""
     # Стан оновлення ПЗ dish
     update_state: str = ""
@@ -275,9 +276,11 @@ class StarlinkClient:
 
             software_version = ""
             hardware_version = ""
+            dish_id = ""
             if device_info is not None:
                 software_version = str(getattr(device_info, "software_version", "") or "")
                 hardware_version = str(getattr(device_info, "hardware_version", "") or "")
+                dish_id = str(getattr(device_info, "id", "") or "")
 
             # "стан" dish як єдиний рядок для дашборду: беремо disablement_code,
             # якщо доступний і не "OKAY" - інакше "OKAY"
@@ -326,6 +329,7 @@ class StarlinkClient:
                 currently_obstructed=currently_obstructed,
                 software_version=software_version,
                 hardware_version=hardware_version,
+                dish_id=dish_id,
                 update_state=update_state,
                 update_progress_pct=update_progress_pct,
                 update_requires_reboot=update_requires_reboot,

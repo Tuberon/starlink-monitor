@@ -207,6 +207,7 @@ async function refreshStatus() {
 
     const sw = latest.software_version || '—';
     const hw = latest.hardware_version || '—';
+    el('mDishId').textContent = latest.dish_id || '—';
     el('mFirmwareDish').textContent = `ПЗ: ${sw}  ·  Апаратна версія: ${hw}`;
 
     renderUpdateStatus(latest);

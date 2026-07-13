@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS metrics (
     currently_obstructed INTEGER,
     software_version TEXT,
     hardware_version TEXT,
+    dish_id TEXT,
     error TEXT,
     update_state TEXT,
     update_progress_pct REAL,
@@ -104,6 +105,7 @@ def init_db():
             "update_install_pending": "INTEGER",
             "active_alerts": "TEXT",
             "hardware_version": "TEXT",
+            "dish_id": "TEXT",
         })
         _migrate_table_columns(conn, "router_status", {
             "update_state": "TEXT",
@@ -129,10 +131,10 @@ def insert_metric(status_dict: dict):
             """INSERT INTO metrics
                (ts, online, state, uptime_s, downlink_mbps, uplink_mbps,
                 ping_latency_ms, ping_drop_ratio, obstruction_fraction,
-                currently_obstructed, software_version, hardware_version, error,
+                currently_obstructed, software_version, hardware_version, dish_id, error,
                 update_state, update_progress_pct, update_requires_reboot,
                 update_install_pending, active_alerts)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 status_dict["timestamp"],
                 int(status_dict["online"]),
@@ -146,6 +148,7 @@ def insert_metric(status_dict: dict):
                 int(status_dict.get("currently_obstructed", False)),
                 status_dict.get("software_version", ""),
                 status_dict.get("hardware_version", ""),
+                status_dict.get("dish_id", ""),
                 status_dict.get("error", ""),
                 status_dict.get("update_state", ""),
                 status_dict.get("update_progress_pct", 0),
