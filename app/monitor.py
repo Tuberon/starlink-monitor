@@ -18,13 +18,19 @@ reboot ВСЬОГО Mini (через reboot_dish() на адресу dish - dish
 щоб у веб-інтерфейсі було видно повну історію проходження оновлення
 та появу/зникнення попереджень, а не лише момент, коли watchdog
 ініціює reboot.
+
+Ключові події (reboot, готовність оновлення, нові попередження,
+відновлення зв'язку) додатково дублюються в Telegram, якщо сповіщення
+налаштовані й увімкнені через веб-інтерфейс (app/telegram_notify.py).
+Відправка ніколи не блокує основний цикл - помилки Telegram лише
+логуються, не переривають моніторинг.
 """
 import logging
 import time
 
 import psutil
 
-from app import config, db
+from app import config, db, telegram_notify
 from app.starlink_client import StarlinkClient
 from app.system_metrics import get_system_metrics
 
@@ -130,6 +136,16 @@ class Watchdog:
         self.prev_router_update_state = None
         self.prev_router_alerts = None
 
+    def _notify(self, text: str):
+        """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток
+        назовні і не блокує основний цикл моніторингу."""
+        try:
+            ok, msg = telegram_notify.send_message(text)
+            if not ok and msg not in ("Telegram сповіщення вимкнені", "Не вказано bot token", "Не вказано жодного chat_id"):
+                logger.warning("Telegram сповіщення не надіслано: %s", msg)
+        except Exception as e:
+            logger.warning("Помилка відправки Telegram-сповіщення: %s", e)
+
     def poll_once(self):
         status = self.client.get_status()
         db.insert_metric(status.to_dict())
@@ -137,6 +153,7 @@ class Watchdog:
         if status.online:
             if self.consecutive_failures > 0:
                 logger.info("Dish знову online після %d невдалих спроб", self.consecutive_failures)
+                self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
             self.consecutive_failures = 0
             self._log_update_state_change(status)
             self._log_alerts_change(status)
@@ -181,6 +198,10 @@ class Watchdog:
                 f"Стан оновлення ПЗ: {label}{detail}",
                 success=(state not in ("FAULTED",)),
             )
+            if state == "REBOOT_REQUIRED":
+                self._notify(f"🔄 Оновлення ПЗ dish готове — очікує перезавантаження{detail}")
+            elif state == "FAULTED":
+                self._notify(f"⚠️ Помилка оновлення ПЗ dish: {label}")
         self.prev_update_state = state
 
     def _log_alerts_change(self, status):
@@ -200,6 +221,7 @@ class Watchdog:
                     f"Нове попередження dish: {label}",
                     success=False,
                 )
+                self._notify(f"⚠️ Нове попередження dish: {label}")
             for alert in sorted(resolved):
                 label = ALERT_LABELS.get(alert, alert)
                 db.insert_event(
@@ -245,11 +267,16 @@ class Watchdog:
             detail = f" ({info.update_progress_pct:.0f}%)"
 
         if self.prev_router_update_state is not None or state != "NOT_RUN":
+            is_failure = "FAILED" in state or "ILLEGAL" in state
             db.insert_event(
                 "router_update_state_change",
                 f"Стан оновлення ПЗ роутера: {label}{detail}",
-                success=("FAILED" not in state and "ILLEGAL" not in state),
+                success=(not is_failure),
             )
+            if state == "REBOOT_PENDING":
+                self._notify(f"🔄 Оновлення ПЗ роутера готове — очікує перезавантаження{detail}")
+            elif is_failure:
+                self._notify(f"⚠️ Помилка оновлення ПЗ роутера: {label}")
         self.prev_router_update_state = state
 
     def _log_router_alerts_change(self, info):
@@ -267,6 +294,7 @@ class Watchdog:
                     f"Нове попередження роутера: {label}",
                     success=False,
                 )
+                self._notify(f"⚠️ Нове попередження роутера: {label}")
             for alert in sorted(resolved):
                 label = ROUTER_ALERT_LABELS.get(alert, alert)
                 db.insert_event(
@@ -310,6 +338,9 @@ class Watchdog:
         db.insert_event("dish_reboot", msg, success=ok)
         if ok:
             self.last_reboot_ts = now
+            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ роутера готове: {reason})")
+        else:
+            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ роутера готове): {msg}")
 
     def _maybe_reboot_for_update(self, status):
         if not db.get_auto_reboot_enabled():
@@ -340,6 +371,9 @@ class Watchdog:
         db.insert_event("dish_reboot", msg, success=ok)
         if ok:
             self.last_reboot_ts = now
+            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ dish готове: {reason})")
+        else:
+            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ dish готове): {msg}")
 
     def _maybe_reboot(self):
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
@@ -354,10 +388,11 @@ class Watchdog:
             )
             return
 
-        logger.warning("Ініціюю автоматичний reboot dish після %d невдалих спроб", self.consecutive_failures)
+        failures = self.consecutive_failures
+        logger.warning("Ініціюю автоматичний reboot dish після %d невдалих спроб", failures)
         db.insert_event(
             "watchdog_trigger",
-            f"{self.consecutive_failures} послідовних невдалих опитувань — ініціюю reboot",
+            f"{failures} послідовних невдалих опитувань — ініціюю reboot",
             success=True,
         )
         ok, msg = self.client.reboot_dish()
@@ -365,6 +400,9 @@ class Watchdog:
         if ok:
             self.last_reboot_ts = now
             self.consecutive_failures = 0
+            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
+        else:
+            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (watchdog, {failures} невдалих спроб): {msg}")
 
     def run_forever(self):
         db.init_db()

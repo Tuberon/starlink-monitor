@@ -278,6 +278,25 @@
     font-family:var(--font-display); font-size:0.85rem; color:var(--text-hi);
   }
 
+  .tg-form{
+    display:flex; flex-direction:column; gap:6px;
+    margin-top:14px; padding-top:14px; border-top:1px solid var(--line);
+  }
+  .tg-label{
+    font-family:var(--font-mono); font-size:0.68rem; text-transform:uppercase;
+    letter-spacing:0.05em; color:var(--text-low); margin-top:8px;
+  }
+  .tg-label:first-child{margin-top:0;}
+  .tg-input{
+    font-family:var(--font-mono); font-size:0.82rem;
+    background: var(--sky-800); color: var(--text-hi);
+    border:1px solid var(--line); border-radius:8px;
+    padding:9px 12px; outline:none;
+    transition: border-color 0.15s;
+  }
+  .tg-input:focus{border-color: var(--signal);}
+  .tg-input::placeholder{color: var(--text-low);}
+
   button.clear-btn{
     font-family:var(--font-mono);
     background: transparent;
@@ -392,6 +411,32 @@
       </label>
       <span class="toggle-label">Автоматичний reboot при готовому оновленні</span>
       <span class="badge" id="autoRebootStatusBadge">—</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Telegram-сповіщення</h2>
+      <span class="sub">reboot, оновлення, попередження</span>
+    </div>
+    <div class="controls">
+      <label class="toggle-switch">
+        <input type="checkbox" id="telegramEnabledToggle">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+      <span class="toggle-label">Увімкнути сповіщення</span>
+      <span class="badge" id="telegramStatusBadge">—</span>
+    </div>
+    <div class="tg-form">
+      <label class="tg-label" for="telegramTokenInput">Bot token</label>
+      <input class="tg-input" type="password" id="telegramTokenInput" placeholder="напр. 123456789:ABCdef...">
+      <label class="tg-label" for="telegramChatIdsInput">Chat ID (через кому, якщо кілька)</label>
+      <input class="tg-input" type="text" id="telegramChatIdsInput" placeholder="напр. 123456789, 987654321">
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="telegramSaveBtn">💾 Зберегти</button>
+      <button class="check-btn" id="telegramTestBtn">✉ Надіслати тестове</button>
+      <span class="hint" id="telegramHint">Bot token отримайте в @BotFather, chat_id — у @userinfobot</span>
     </div>
   </div>
 

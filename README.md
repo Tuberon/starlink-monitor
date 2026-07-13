@@ -1,6 +1,4 @@
-# Starlink Mini Monitor & Watchdog autoupdate and autoreboot— Raspberry Pi Zero 2 W
-
-<img width="1658" height="990" alt="Знімок екрана 2026-07-12 211938" src="https://github.com/user-attachments/assets/cd90d2fd-403e-4f73-8551-10aebeba1abe" />
+# Starlink Mini Monitor & Watchdog — Raspberry Pi Zero 2 W
 
 Пристрій на базі RPi Zero 2 W, який:
 
@@ -21,19 +19,34 @@
      (`REBOOT_PENDING` або `alerts.install_pending`, окрема схема від
      dish — у роутера власний цикл оновлення).
    Усі три тригери діють через спільний захист від reboot-loop.
-5. Автоматично перевіряє та встановлює **системні оновлення** самого
-   Pi (unattended-upgrades + власний апдейтер для python-залежностей
-   і коду цього проєкту з git), з плановим reboot Pi у тихе нічне
-   вікно лише якщо це реально потрібно.
-6. Збирає системні метрики самого Pi: uptime, CPU, пам'ять, диск,
+5. Збирає системні метрики самого Pi: uptime, CPU, пам'ять, диск,
    температура SoC.
-7. Зберігає всю історію в SQLite (з автоматичним очищенням застарілих
+6. Зберігає всю історію в SQLite (з автоматичним очищенням застарілих
    записів).
-8. Надає веб-інтерфейс (Flask + Chart.js): live-метрики Starlink і Pi,
+7. Надає веб-інтерфейс (Flask + Chart.js): live-метрики Starlink і Pi,
    графіки історії, версії прошивок тарілки й роутера, стан оновлення
    обох компонентів з прогрес-баром, список активних попереджень,
    журнал подій з можливістю очищення, кнопки ручного reboot dish і
    ручної перевірки стану оновлень.
+8. Дублює ключові події в Telegram (якщо налаштовано й увімкнено):
+   reboot (успішний і невдалий), готовність оновлення ПЗ (dish і
+   роутера), нові попередження, відновлення зв'язку з dish.
+
+## Telegram-сповіщення
+
+Налаштовуються через веб-інтерфейс, у панелі "Telegram-сповіщення":
+1. Створіть бота через [@BotFather](https://t.me/BotFather), отримайте bot token.
+2. Дізнайтесь свій chat_id через [@userinfobot](https://t.me/userinfobot)
+   (або будь-який інший подібний бот).
+3. Вставте token і chat_id (через кому, якщо отримувачів кілька) у
+   відповідні поля, натисніть "Зберегти", потім "Надіслати тестове"
+   для перевірки.
+4. Увімкніть перемикач "Увімкнути сповіщення".
+
+Bot token зберігається в локальній SQLite-базі на самому Pi (таблиця
+`settings`), не передається нікуди, крім прямих HTTPS-запитів до
+`api.telegram.org` при відправці повідомлень. У веб-інтерфейсі token
+завжди показується замаскованим.
 
 ## Про ручну перевірку оновлень
 
@@ -64,16 +77,14 @@ Starlink Mini роздає власний WiFi (SSID зазвичай `STARLINK`
 оновлень) знадобиться або:
 
 - **Варіант A (рекомендований):** USB-Ethernet адаптер для доступу в
-  "звичайний" інтернет (apt update, git pull), а WiFi лишити виключно
-  для підключення до Starlink Mini.
+  "звичайний" інтернет, а WiFi лишити виключно для підключення до
+  Starlink Mini.
   ```
-  USB-Ethernet ──► Домашня мережа/інтернет (apt update, git pull)
+  USB-Ethernet ──► Домашня мережа/інтернет
   WiFi (wlan0) ──► WiFi Starlink Mini (моніторинг + reboot dish)
   ```
-- **Варіант B:** підключатись лише до WiFi Starlink Mini. Автооновлення
-  системи (`app/updater.py`) тоді не матиме доступу в інтернет і буде
-  просто логувати невдачу apt-get без наслідків для основного
-  моніторингу dish — цей функціонал не залежить від доступності
+- **Варіант B:** підключатись лише до WiFi Starlink Mini. Основний
+  функціонал моніторингу й reboot dish не залежить від доступності
   зовнішнього інтернету.
 
 ## Структура проєкту
@@ -86,7 +97,6 @@ starlink-monitor/
 │   ├── system_metrics.py      # метрики самого Pi (CPU/RAM/диск/темп.)
 │   ├── db.py                  # SQLite шар (metrics, events, system_metrics)
 │   ├── monitor.py             # фоновий цикл опитування + watchdog-логіка
-│   ├── updater.py             # автооновлення системи/проєкту
 │   ├── webapp.py              # Flask веб-інтерфейс + REST API
 │   ├── config.py              # конфігурація (пороги, інтервали)
 │   └── vendor/                # сюди завантажується starlink_grpc.py
@@ -97,7 +107,6 @@ starlink-monitor/
 ├── systemd/
 │   ├── starlink-monitor.service      # фоновий watchdog + збір метрик
 │   ├── starlink-webui.service        # веб-інтерфейс
-│   ├── starlink-updater.service + .timer   # щоденне автооновлення
 │   └── starlink-grpc-fetch.service   # одноразово тягне starlink_grpc.py
 │                                      # при старті, з очікуванням WiFi
 ├── scripts/
@@ -119,9 +128,8 @@ sudo bash scripts/install.sh
   з GitHub releases під архітектуру пристрою) та Python venv
 - копіює проєкт у `/opt/starlink-monitor`
 - налаштовує звужені sudo-права для сервісного користувача (лише
-  конкретні apt/systemctl-команди, не blanket-доступ)
+  конкретні systemctl-команди, не blanket-доступ)
 - встановлює та вмикає всі systemd-сервіси
-- вмикає `unattended-upgrades` для авто-апдейтів ОС
 
 Після встановлення:
 1. Підключіть `wlan0` до WiFi Starlink Mini (якщо ще не підключений):
@@ -145,7 +153,6 @@ sudo bash scripts/install.sh
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `1800` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
-| `STARLINK_AUTO_UPDATE` | `1` | авто-оновлення системи Pi |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 
 Після зміни файлу — перезапустити сервіси:

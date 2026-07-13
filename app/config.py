@@ -33,12 +33,6 @@ OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0
 # від повторних спроб, якщо перший reboot чомусь не допоміг).
 AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
 
-# --- Автооновлення самого проєкту/системи ---
-AUTO_UPDATE_ENABLED = os.environ.get("STARLINK_AUTO_UPDATE", "1") == "1"
-AUTO_UPDATE_REBOOT_IF_NEEDED = os.environ.get("STARLINK_AUTO_UPDATE_REBOOT", "1") == "1"
-# Вікно, у яке дозволено ребутити сам Pi після оновлень ядра/системи (година, 0-23)
-UPDATE_REBOOT_WINDOW_HOUR = int(os.environ.get("STARLINK_UPDATE_REBOOT_HOUR", "4"))
-
 # --- База даних ---
 DB_PATH = os.environ.get("STARLINK_DB_PATH", "/var/lib/starlink-monitor/history.db")
 HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))

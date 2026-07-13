@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
-    kind TEXT NOT NULL,       -- 'dish_reboot', 'system_update', 'system_reboot', 'watchdog_trigger'
+    kind TEXT NOT NULL,       -- 'dish_reboot', 'watchdog_trigger', 'update_state_change', ...
     message TEXT,
     success INTEGER
 );

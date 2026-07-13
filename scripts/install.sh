@@ -21,7 +21,6 @@ echo "==> Встановлюю системні пакети"
 apt-get update
 apt-get install -y --no-install-recommends \
   python3 python3-venv python3-pip git curl \
-  unattended-upgrades apt-listchanges \
   network-manager
 
 echo "==> Перевіряю наявність grpcurl"
@@ -90,12 +89,9 @@ fi
 
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
-# необхідні updater.py для apt-оновлень, рестарту сервісів і reboot.
+# необхідні для рестарту сервісів і reboot dish.
 # Це навмисно вузько — НЕ blanket "ALL=(ALL) NOPASSWD: ALL".
 cat > /etc/sudoers.d/starlink-monitor <<EOF
-$RUN_USER ALL=(root) NOPASSWD: /usr/bin/apt-get update -qq
-$RUN_USER ALL=(root) NOPASSWD: /usr/bin/apt-get -y -qq upgrade
-$RUN_USER ALL=(root) NOPASSWD: /usr/bin/apt-get -y -qq autoremove
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-monitor.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-webui.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl reboot
@@ -103,20 +99,15 @@ EOF
 chmod 0440 /etc/sudoers.d/starlink-monitor
 visudo -c -f /etc/sudoers.d/starlink-monitor
 
-echo "==> Вмикаю unattended-upgrades (системний рівень автооновлень безпеки)"
-dpkg-reconfigure -f noninteractive unattended-upgrades || true
-
 echo "==> Встановлюю systemd unit-файли (підстановка користувача $RUN_USER)"
-for svc in starlink-monitor.service starlink-webui.service starlink-updater.service starlink-grpc-fetch.service; do
+for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service; do
   sed "s/__RUN_USER__/$RUN_USER/g" \
     "$PROJECT_DIR/systemd/$svc" > "/etc/systemd/system/$svc"
 done
-cp "$PROJECT_DIR/systemd/starlink-updater.timer" /etc/systemd/system/
 
 systemctl daemon-reload
 systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
-systemctl enable --now starlink-updater.timer
 # starlink-grpc-fetch.service: одноразовий, чекає на WiFi Starlink Mini і сам
 # завантажує starlink_grpc.py + рестартує сервіси. enable (не --now), щоб він
 # також запускався автоматично при кожному наступному завантаженні системи

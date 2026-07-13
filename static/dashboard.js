@@ -486,6 +486,105 @@ async function handleAutoRebootToggle(e) {
   }
 }
 
+async function loadTelegramConfig() {
+  try {
+    const res = await fetch('/api/telegram-config');
+    const cfg = await res.json();
+    updateTelegramUI(cfg.enabled);
+    el('telegramChatIdsInput').value = (cfg.chat_ids || []).join(', ');
+    if (cfg.token_set) {
+      el('telegramTokenInput').placeholder = cfg.token_masked;
+    }
+  } catch (e) {
+    console.error('telegram config load failed', e);
+  }
+}
+
+function updateTelegramUI(enabled) {
+  const toggle = el('telegramEnabledToggle');
+  const badge = el('telegramStatusBadge');
+  toggle.checked = enabled;
+  badge.textContent = enabled ? 'увімкнено' : 'вимкнено';
+  badge.classList.remove('state-idle', 'state-reboot');
+  badge.classList.add(enabled ? 'state-idle' : 'state-reboot');
+}
+
+async function handleTelegramToggle(e) {
+  const toggle = e.target;
+  const enabled = toggle.checked;
+  toggle.disabled = true;
+  try {
+    const res = await fetch('/api/telegram-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      updateTelegramUI(enabled);
+    } else {
+      toggle.checked = !enabled;
+    }
+  } catch (e) {
+    console.error('telegram toggle failed', e);
+    toggle.checked = !enabled;
+  } finally {
+    toggle.disabled = false;
+  }
+}
+
+async function handleTelegramSave() {
+  const btn = el('telegramSaveBtn');
+  const hint = el('telegramHint');
+  const tokenInput = el('telegramTokenInput');
+  const chatIdsInput = el('telegramChatIdsInput');
+
+  const payload = { chat_ids: chatIdsInput.value };
+  if (tokenInput.value.trim()) {
+    payload.token = tokenInput.value.trim();
+  }
+
+  btn.disabled = true;
+  hint.textContent = 'Зберігаю...';
+  try {
+    const res = await fetch('/api/telegram-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    hint.textContent = data.success ? 'Збережено' : 'Помилка збереження';
+    if (data.success && tokenInput.value.trim()) {
+      tokenInput.value = '';
+      loadTelegramConfig();
+    }
+    refreshEvents();
+  } catch (e) {
+    hint.textContent = 'Помилка мережі при збереженні';
+    console.error('telegram save failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleTelegramTest() {
+  const btn = el('telegramTestBtn');
+  const hint = el('telegramHint');
+
+  btn.disabled = true;
+  hint.textContent = 'Надсилаю тестове повідомлення...';
+  try {
+    const res = await fetch('/api/telegram-test', { method: 'POST' });
+    const data = await res.json();
+    hint.textContent = data.message || (data.success ? 'Успішно' : 'Помилка');
+  } catch (e) {
+    hint.textContent = 'Помилка мережі при тестуванні';
+    console.error('telegram test failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function tick() {
   refreshStatus();
   refreshHistory();
@@ -500,7 +599,11 @@ document.addEventListener('DOMContentLoaded', () => {
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   el('checkUpdatesBtn').addEventListener('click', handleCheckUpdates);
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);
+  el('telegramEnabledToggle').addEventListener('change', handleTelegramToggle);
+  el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
+  el('telegramTestBtn').addEventListener('click', handleTelegramTest);
   loadConfigFlags();
+  loadTelegramConfig();
   tick();
   setInterval(tick, REFRESH_MS);
 });

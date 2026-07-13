@@ -3,7 +3,7 @@ import logging
 
 from flask import Flask, jsonify, render_template, request
 
-from app import config, db
+from app import config, db, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +64,10 @@ def api_router_status():
 def api_reboot_dish():
     ok, msg = client.reboot_dish()
     db.insert_event("dish_reboot", f"Ручний reboot через веб-інтерфейс: {msg}", success=ok)
+    if ok:
+        telegram_notify.send_message("🔁 Starlink Mini перезавантажено вручну через веб-інтерфейс")
+    else:
+        telegram_notify.send_message(f"❌ Не вдалося перезавантажити Starlink Mini вручну: {msg}")
     return jsonify({"success": ok, "message": msg})
 
 
@@ -118,7 +122,6 @@ def api_config():
         "poll_interval_sec": config.POLL_INTERVAL_SEC,
         "max_consecutive_failures": config.MAX_CONSECUTIVE_FAILURES,
         "min_reboot_interval_sec": config.MIN_REBOOT_INTERVAL_SEC,
-        "auto_update_enabled": config.AUTO_UPDATE_ENABLED,
         "auto_reboot_on_update_ready": db.get_auto_reboot_enabled(),
     })
 
@@ -137,6 +140,57 @@ def api_set_auto_reboot():
         success=True,
     )
     return jsonify({"success": True, "enabled": enabled})
+
+
+@app.route("/api/telegram-config")
+def api_get_telegram_config():
+    """Токен повертається лише замаскованим (щоб не показувати secret
+    у відкритому вигляді в мережі/консолі браузера), крапка входу для
+    перевірки, чи він взагалі заданий."""
+    token, chat_ids, enabled = telegram_notify.get_telegram_config()
+    masked_token = ""
+    if token:
+        masked_token = f"{token[:6]}...{token[-4:]}" if len(token) > 10 else "***"
+    return jsonify({
+        "token_set": bool(token),
+        "token_masked": masked_token,
+        "chat_ids": chat_ids,
+        "enabled": enabled,
+    })
+
+
+@app.route("/api/telegram-config", methods=["POST"])
+def api_set_telegram_config():
+    payload = request.get_json(silent=True) or {}
+    token = payload.get("token")
+    chat_ids_raw = payload.get("chat_ids")
+    enabled = payload.get("enabled")
+
+    chat_ids = None
+    if chat_ids_raw is not None:
+        if isinstance(chat_ids_raw, str):
+            chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
+        elif isinstance(chat_ids_raw, list):
+            chat_ids = chat_ids_raw
+
+    telegram_notify.set_telegram_config(
+        token=token if token else None,
+        chat_ids=chat_ids,
+        enabled=enabled if enabled is not None else None,
+    )
+    db.insert_event("telegram_config_updated", "Налаштування Telegram-сповіщень оновлено", success=True)
+    return jsonify({"success": True})
+
+
+@app.route("/api/telegram-test", methods=["POST"])
+def api_telegram_test():
+    ok, msg = telegram_notify.test_connection()
+    if ok:
+        send_ok, send_msg = telegram_notify.send_message(
+            "✅ Тестове повідомлення від Starlink Monitor. Сповіщення налаштовано правильно."
+        )
+        return jsonify({"success": ok and send_ok, "message": f"{msg}; {send_msg}"})
+    return jsonify({"success": False, "message": msg})
 
 
 def main():
