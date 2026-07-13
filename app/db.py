@@ -294,11 +294,6 @@ def prune_old(days: int = None):
         conn.execute("DELETE FROM system_metrics WHERE ts < ?", (cutoff,))
 
 
-def clear_events():
-    with get_conn() as conn:
-        conn.execute("DELETE FROM events")
-
-
 def uptime_stats_24h():
     """Частка часу online за останні 24 години (для дашборду)."""
     cutoff = time.time() - 86400

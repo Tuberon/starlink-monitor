@@ -37,12 +37,6 @@ def api_events():
     return jsonify(db.get_recent_events(limit))
 
 
-@app.route("/api/events", methods=["DELETE"])
-def api_clear_events():
-    db.clear_events()
-    return jsonify({"success": True})
-
-
 @app.route("/api/system-status")
 def api_system_status():
     latest = db.get_latest_system_metric()

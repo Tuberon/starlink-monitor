@@ -364,7 +364,10 @@ function renderRouterAlerts(latest) {
     .join('');
 }
 
+let eventsClearedLocally = false;
+
 async function refreshEvents() {
+  if (eventsClearedLocally) return;
   try {
     const res = await fetch('/api/events?limit=30');
     const events = await res.json();
@@ -404,19 +407,9 @@ async function handleReboot() {
   }
 }
 
-async function handleClearEvents() {
-  const btn = el('clearEventsBtn');
-  if (!confirm('Очистити весь журнал подій? Цю дію не можна скасувати.')) return;
-
-  btn.disabled = true;
-  try {
-    await fetch('/api/events', { method: 'DELETE' });
-    refreshEvents();
-  } catch (e) {
-    console.error('clear events failed', e);
-  } finally {
-    btn.disabled = false;
-  }
+function handleClearEvents() {
+  eventsClearedLocally = true;
+  el('eventLog').innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Журнал очищено на екрані</span></div>';
 }
 
 async function handleCheckUpdates() {
