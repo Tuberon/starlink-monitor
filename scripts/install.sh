@@ -130,5 +130,9 @@ echo "    (сервіс starlink-grpc-fetch.service вже запущений у
 echo "    Перевірити прогрес:"
 echo "      journalctl -u starlink-grpc-fetch.service -f"
 echo ""
-echo " 3. Дашборд: http://<ip-пристрою>:8080"
+PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -z "$PI_IP" ]]; then
+  PI_IP="<ip-пристрою>"
+fi
+echo " 3. Дашборд: http://$PI_IP:8080"
 echo "======================================================================"
