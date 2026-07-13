@@ -84,9 +84,13 @@ fi
 
 echo "==> Синхронізую файли проєкту в $PROJECT_DIR (лише змінені відносно попередньої інсталяції)"
 mkdir -p "$PROJECT_DIR"
+RSYNC_EXCLUDES=(--exclude 'venv' --exclude '.git')
+if [[ "$MODE" == "update" && -f "$PROJECT_DIR/app/signature_phrases.txt" ]]; then
+  RSYNC_EXCLUDES+=(--exclude 'app/signature_phrases.txt')
+fi
 # -c: порівняння за контрольною сумою (не лише за розміром/часом), --itemize-changes
 # показує, які файли реально змінились - корисно бачити, що саме оновилось.
-RSYNC_OUT="$(rsync -ac --itemize-changes --exclude 'venv' --exclude '.git' "$SRC_DIR/" "$PROJECT_DIR/")"
+RSYNC_OUT="$(rsync -ac --itemize-changes "${RSYNC_EXCLUDES[@]}" "$SRC_DIR/" "$PROJECT_DIR/")"
 echo "$RSYNC_OUT"
 CHANGED_FILES="$(echo "$RSYNC_OUT" | grep -c '^[<>ch]' || true)"
 chown -R "$RUN_USER:$RUN_USER" "$PROJECT_DIR"
