@@ -138,46 +138,40 @@ starlink-monitor/
 ├── systemd/
 │   ├── starlink-monitor.service       # фоновий watchdog + збір метрик
 │   ├── starlink-webui.service         # веб-інтерфейс
-│   ├── starlink-grpc-fetch.service    # одноразово тягне starlink_grpc.py
-│   │                                   # при старті, з очікуванням WiFi
-│   ├── starlink-monitor-watch.path    # (опційно) стежить за архівом
-│   └── starlink-monitor-watch.service # (опційно) запускає install.sh
+│   └── starlink-grpc-fetch.service    # одноразово тягне starlink_grpc.py
+│                                        # при старті, з очікуванням WiFi
 ├── scripts/
 │   ├── install.sh              # встановлення на чистий Pi АБО оновлення
 │   │                            # вже встановленої версії (детектується
 │   │                            # автоматично за наявністю /opt/starlink-monitor)
-│   ├── fetch_starlink_grpc.sh  # (пере)завантажити starlink_grpc.py вручну
-│   ├── setup-watch.sh          # (опційно) одноразово вмикає автовстановлення
-│   │                            # при зміні starlink-monitor.tar.gz
-│   └── watch-and-install.sh    # викликається watcher-сервісом автоматично
+│   ├── update.sh                # ручне оновлення: розпаковує новий
+│   │                            # архів і запускає install.sh
+│   └── fetch_starlink_grpc.sh  # (пере)завантажити starlink_grpc.py вручну
 └── requirements.txt
 ```
 
-## Автоматичне встановлення при оновленні архіву
+## Ручне оновлення проєкту
 
-За бажанням можна налаштувати так, щоб `install.sh` запускався сам,
-щойно `starlink-monitor.tar.gz` у домашньому каталозі зміниться
-(напр. після `scp`/`rsync` нового архіву з іншого пристрою) — без
-ручного `tar -xzf` і `sudo bash install.sh` щоразу.
+Щоб оновити вже встановлений проєкт до нової версії:
+1. Покладіть новий `starlink-monitor.tar.gz` у домашній каталог
+   користувача на Pi (напр. через `scp`).
+2. Виконайте:
+   ```bash
+   sudo bash scripts/update.sh
+   ```
 
-Увімкнути один раз (після звичайного `install.sh`):
+Скрипт сам розпаковує архів у тимчасовий каталог і запускає `install.sh`
+з нього — саме встановлення (файли, залежності, systemd) відбувається так
+само, як і при звичайному `sudo bash scripts/install.sh`.
+
+Перевірка за SHA-256 архіву запобігає повторному встановленню того самого
+вмісту — повторний запуск `update.sh` на незмінений архів безпечний і
+нічого не робить. Якщо встановлення завершується помилкою — стан не
+зберігається, і наступний запуск спробує ще раз.
+
+Якщо архів лежить не в домашньому каталозі — вкажіть шлях аргументом:
 ```bash
-sudo bash scripts/setup-watch.sh
-```
-За замовчуванням стежить за `~/starlink-monitor.tar.gz` того ж
-користувача, від імені якого викликано `sudo`. Інший шлях можна
-вказати аргументом: `sudo bash scripts/setup-watch.sh /шлях/до/архіву.tar.gz`.
-
-Механізм: systemd path-юніт (`starlink-monitor-watch.path`) реагує на
-зміну файлу миттєво (не polling), розпаковує архів у тимчасовий
-каталог і запускає `install.sh` з нього. Перевірка за SHA-256 архіву
-запобігає повторному запуску install.sh на той самий вміст. Якщо
-встановлення завершується помилкою — стан не зберігається, і
-наступна зміна файлу (або ручний запуск) спробує ще раз.
-
-```bash
-systemctl status starlink-monitor-watch.path      # чи стежить зараз
-journalctl -u starlink-monitor-watch.service -f    # лог останньої спроби
+sudo bash scripts/update.sh /шлях/до/starlink-monitor.tar.gz
 ```
 
 ## Встановлення та оновлення
@@ -221,7 +215,7 @@ sudo bash scripts/install.sh
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
-| `STARLINK_MIN_REBOOT_INTERVAL` | `1800` | мін. інтервал між авто-ребутами dish, сек |
+| `STARLINK_MIN_REBOOT_INTERVAL` | `900` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 

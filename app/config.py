@@ -21,7 +21,7 @@ POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
 # Скільки послідовних невдалих опитувань (dish не відповідає) перш ніж ребутити
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 6*10s = 60s недоступності
 # Мінімальний інтервал між авто-ребутами dish (захист від reboot-loop)
-MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "1800"))  # 30 хв
+MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "900"))  # 15 хв
 # Поріг фракції обструкції, вище якого просто попереджаємо (не ребутимо — це фізична перешкода)
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))
 

@@ -19,7 +19,7 @@ StandardError=journal
 
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/starlink-monitor
+ReadWritePaths=/var/lib/starlink-monitor /opt/starlink-monitor/app/signature_phrases.txt
 ProtectHome=true
 
 [Install]
