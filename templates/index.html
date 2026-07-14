@@ -477,6 +477,26 @@
 
   <div class="panel">
     <div class="panel-head">
+      <h2>VPN (ZeroTier)</h2>
+      <span class="sub">віддалений доступ до Pi</span>
+    </div>
+    <div class="controls">
+      <span class="badge" id="zerotierStatusBadge">—</span>
+      <span class="hint" id="zerotierAddressHint"></span>
+    </div>
+    <div class="tg-form">
+      <label class="tg-label" for="zerotierNetworkIdInput">ZeroTier Network ID</label>
+      <input class="tg-input" type="text" id="zerotierNetworkIdInput" placeholder="напр. 8056c2e21c000001">
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="zerotierJoinBtn">🔗 Приєднатись</button>
+      <button class="check-btn" id="zerotierLeaveBtn">✂ Від'єднатись</button>
+      <span class="hint" id="zerotierHint">Network ID створюється на my.zerotier.com; після приєднання підтвердіть пристрій там же.</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
       <h2>Журнал подій</h2>
       <button class="clear-btn" id="clearEventsBtn" title="Очистити журнал подій">Очистити</button>
     </div>

@@ -174,6 +174,7 @@ class Watchdog:
 
         known_ids.append(status.dish_id)
         db.set_setting("known_dish_ids", json.dumps(known_ids, ensure_ascii=False))
+        db.insert_event("dish_connected", f"Підключено Starlink Mini, ID: {status.dish_id}", success=True)
         self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
 
     def poll_system_metrics(self):

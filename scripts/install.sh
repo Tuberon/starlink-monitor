@@ -78,6 +78,16 @@ if [[ "$MODE" == "install" ]]; then
   else
     echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
   fi
+
+  echo "==> Перевіряю наявність ZeroTier"
+  if ! command -v zerotier-cli >/dev/null 2>&1; then
+    echo "==> ZeroTier не знайдено, встановлюю через офіційний install-скрипт"
+    curl -fsSL https://install.zerotier.com | bash || \
+      echo "!! Не вдалося встановити ZeroTier автоматично. Встановіть вручну: https://www.zerotier.com/download/"
+  else
+    echo "==> ZeroTier вже встановлено ($(command -v zerotier-cli))"
+  fi
+  systemctl enable --now zerotier-one 2>/dev/null || true
 else
   echo "==> Режим оновлення — пропускаю перевірку/оновлення системних пакетів"
 fi
@@ -127,12 +137,17 @@ fi
 
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
-# необхідні для рестарту сервісів і reboot dish.
+# необхідні для рестарту сервісів, reboot dish і керування ZeroTier VPN.
 # Це навмисно вузько — НЕ blanket "ALL=(ALL) NOPASSWD: ALL".
+# zerotier-cli без обмеження на аргументи (join приймає динамічний network
+# ID, який неможливо перерахувати наперед) - сама утиліта не дає доступу
+# поза власним функціоналом ZeroTier.
+ZEROTIER_CLI_PATH="$(command -v zerotier-cli || echo /usr/sbin/zerotier-cli)"
 cat > /etc/sudoers.d/starlink-monitor <<EOF
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-monitor.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-webui.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl reboot
+$RUN_USER ALL=(root) NOPASSWD: $ZEROTIER_CLI_PATH
 EOF
 chmod 0440 /etc/sudoers.d/starlink-monitor
 visudo -c -f /etc/sudoers.d/starlink-monitor
