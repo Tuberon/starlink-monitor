@@ -2,10 +2,14 @@
 # Завантажує starlink_grpc.py з upstream community-репозиторію
 # sparky8512/starlink-grpc-tools (https://github.com/sparky8512/starlink-grpc-tools).
 #
-# ПРИМІТКА: окрема генерація protobuf/grpc python-модулів через grpc_tools.protoc
-# більше НЕ потрібна — get_status() використовує вбудований механізм reflection
-# бібліотеки starlink_grpc, а reboot_dish() викликає grpcurl напряму як subprocess.
-# Досить лише файлу starlink_grpc.py.
+# ПРИМІТКА: поточна версія starlink_grpc.py (гілка main) сама імпортує
+# на верхньому рівні пакет yagrc (gRPC reflection client) - без нього
+# отримуєте "ModuleNotFoundError: No module named 'yagrc'" при спробі
+# import starlink_grpc. Пакет yagrc встановлюється через requirements.txt
+# (install.sh), окремої генерації protobuf-модулів через grpc_tools.protoc
+# не потрібно - yagrc сам створює потрібні класи на льоту через reflection
+# API dish. reboot_dish() у нашому клієнті все одно викликає grpcurl
+# напряму як subprocess, не залежить від starlink_grpc.
 #
 # Можна запускати вручну, або автоматично через systemd-сервіс
 # starlink-grpc-fetch.service (чекає на WiFi-з'єднання зі Starlink Mini

@@ -43,7 +43,7 @@ def get_status() -> dict:
 
     network_id = get_network_id()
     try:
-        info = subprocess.run([cli, "info"], capture_output=True, text=True, timeout=REQUEST_TIMEOUT)
+        info = subprocess.run(["sudo", cli, "info"], capture_output=True, text=True, timeout=REQUEST_TIMEOUT)
         if info.returncode != 0:
             return {"installed": True, "running": False, "joined": False,
                     "address": "", "network_id": network_id, "assigned_ips": [],
@@ -56,7 +56,7 @@ def get_status() -> dict:
         assigned_ips = []
         if network_id:
             listnw = subprocess.run(
-                [cli, "listnetworks"], capture_output=True, text=True, timeout=REQUEST_TIMEOUT
+                ["sudo", cli, "listnetworks"], capture_output=True, text=True, timeout=REQUEST_TIMEOUT
             )
             for line in listnw.stdout.splitlines():
                 if network_id in line:
