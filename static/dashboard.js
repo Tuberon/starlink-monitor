@@ -579,100 +579,12 @@ async function handleTelegramTest() {
   }
 }
 
-async function refreshZerotierStatus() {
-  try {
-    const res = await fetch('/api/zerotier-status');
-    const data = await res.json();
-    const badge = el('zerotierStatusBadge');
-    const addressHint = el('zerotierAddressHint');
-
-    badge.classList.remove('state-idle', 'state-reboot');
-    if (!data.installed) {
-      badge.textContent = 'не встановлено';
-      badge.classList.add('state-reboot');
-      addressHint.textContent = '';
-    } else if (data.joined) {
-      badge.textContent = 'приєднано';
-      badge.classList.add('state-idle');
-      const ips = (data.assigned_ips || []).join(', ');
-      addressHint.textContent = data.address
-        ? `Device ID: ${data.address}${ips ? '  ·  IP: ' + ips : ''}`
-        : '';
-    } else {
-      badge.textContent = data.running ? 'не приєднано' : 'не запущено';
-      badge.classList.add('state-reboot');
-      addressHint.textContent = data.address ? `Device ID: ${data.address}` : (data.error || '');
-    }
-
-    if (data.network_id && !el('zerotierNetworkIdInput').value) {
-      el('zerotierNetworkIdInput').value = data.network_id;
-    }
-  } catch (e) {
-    console.error('zerotier status refresh failed', e);
-  }
-}
-
-async function handleZerotierJoin() {
-  const btn = el('zerotierJoinBtn');
-  const hint = el('zerotierHint');
-  const networkId = el('zerotierNetworkIdInput').value.trim();
-
-  if (!networkId) {
-    hint.textContent = 'Вкажіть Network ID';
-    return;
-  }
-
-  btn.disabled = true;
-  hint.textContent = 'Приєднуюсь до мережі...';
-  try {
-    const res = await fetch('/api/zerotier-join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ network_id: networkId }),
-    });
-    const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Успішно' : 'Помилка');
-    refreshZerotierStatus();
-    refreshEvents();
-  } catch (e) {
-    hint.textContent = 'Помилка мережі при приєднанні';
-    console.error('zerotier join failed', e);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function handleZerotierLeave() {
-  const btn = el('zerotierLeaveBtn');
-  const hint = el('zerotierHint');
-  if (!confirm("Від'єднатись від поточної ZeroTier мережі?")) return;
-
-  btn.disabled = true;
-  hint.textContent = "Від'єднуюсь...";
-  try {
-    const res = await fetch('/api/zerotier-leave', { method: 'POST' });
-    const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Успішно' : 'Помилка');
-    if (data.success) {
-      el('zerotierNetworkIdInput').value = '';
-    }
-    refreshZerotierStatus();
-    refreshEvents();
-  } catch (e) {
-    hint.textContent = "Помилка мережі при від'єднанні";
-    console.error('zerotier leave failed', e);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 function tick() {
   refreshStatus();
   refreshHistory();
   refreshSystemStatus();
   refreshRouterStatus();
   refreshEvents();
-  refreshZerotierStatus();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -684,8 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
   el('telegramEnabledToggle').addEventListener('change', handleTelegramToggle);
   el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
   el('telegramTestBtn').addEventListener('click', handleTelegramTest);
-  el('zerotierJoinBtn').addEventListener('click', handleZerotierJoin);
-  el('zerotierLeaveBtn').addEventListener('click', handleZerotierLeave);
   loadConfigFlags();
   loadTelegramConfig();
   tick();

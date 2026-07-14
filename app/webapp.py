@@ -3,7 +3,7 @@ import logging
 
 from flask import Flask, jsonify, render_template, request
 
-from app import config, db, telegram_notify, zerotier
+from app import config, db, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -179,27 +179,6 @@ def api_telegram_test():
         )
         return jsonify({"success": ok and send_ok, "message": f"{msg}; {send_msg}"})
     return jsonify({"success": False, "message": msg})
-
-
-@app.route("/api/zerotier-status")
-def api_zerotier_status():
-    return jsonify(zerotier.get_status())
-
-
-@app.route("/api/zerotier-join", methods=["POST"])
-def api_zerotier_join():
-    payload = request.get_json(silent=True) or {}
-    network_id = str(payload.get("network_id", "")).strip()
-    ok, msg = zerotier.join_network(network_id)
-    db.insert_event("zerotier_join", f"Приєднання до ZeroTier мережі {network_id}: {msg}", success=ok)
-    return jsonify({"success": ok, "message": msg})
-
-
-@app.route("/api/zerotier-leave", methods=["POST"])
-def api_zerotier_leave():
-    ok, msg = zerotier.leave_network()
-    db.insert_event("zerotier_leave", f"Від'єднання від ZeroTier: {msg}", success=ok)
-    return jsonify({"success": ok, "message": msg})
 
 
 def main():

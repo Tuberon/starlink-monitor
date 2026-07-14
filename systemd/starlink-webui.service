@@ -17,9 +17,7 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# NoNewPrivileges НЕ встановлюємо: сервіс викликає sudo для керованих
-# NOPASSWD-команд (systemctl restart/reboot, zerotier-cli) - див.
-# /etc/sudoers.d/starlink-monitor, який і є основним бар'єром безпеки тут.
+NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/starlink-monitor
 ProtectHome=true
