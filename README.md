@@ -136,16 +136,48 @@ starlink-monitor/
 ├── static/
 │   └── dashboard.js
 ├── systemd/
-│   ├── starlink-monitor.service      # фоновий watchdog + збір метрик
-│   ├── starlink-webui.service        # веб-інтерфейс
-│   └── starlink-grpc-fetch.service   # одноразово тягне starlink_grpc.py
-│                                      # при старті, з очікуванням WiFi
+│   ├── starlink-monitor.service       # фоновий watchdog + збір метрик
+│   ├── starlink-webui.service         # веб-інтерфейс
+│   ├── starlink-grpc-fetch.service    # одноразово тягне starlink_grpc.py
+│   │                                   # при старті, з очікуванням WiFi
+│   ├── starlink-monitor-watch.path    # (опційно) стежить за архівом
+│   └── starlink-monitor-watch.service # (опційно) запускає install.sh
 ├── scripts/
 │   ├── install.sh              # встановлення на чистий Pi АБО оновлення
 │   │                            # вже встановленої версії (детектується
 │   │                            # автоматично за наявністю /opt/starlink-monitor)
-│   └── fetch_starlink_grpc.sh  # (пере)завантажити starlink_grpc.py вручну
+│   ├── fetch_starlink_grpc.sh  # (пере)завантажити starlink_grpc.py вручну
+│   ├── setup-watch.sh          # (опційно) одноразово вмикає автовстановлення
+│   │                            # при зміні starlink-monitor.tar.gz
+│   └── watch-and-install.sh    # викликається watcher-сервісом автоматично
 └── requirements.txt
+```
+
+## Автоматичне встановлення при оновленні архіву
+
+За бажанням можна налаштувати так, щоб `install.sh` запускався сам,
+щойно `starlink-monitor.tar.gz` у домашньому каталозі зміниться
+(напр. після `scp`/`rsync` нового архіву з іншого пристрою) — без
+ручного `tar -xzf` і `sudo bash install.sh` щоразу.
+
+Увімкнути один раз (після звичайного `install.sh`):
+```bash
+sudo bash scripts/setup-watch.sh
+```
+За замовчуванням стежить за `~/starlink-monitor.tar.gz` того ж
+користувача, від імені якого викликано `sudo`. Інший шлях можна
+вказати аргументом: `sudo bash scripts/setup-watch.sh /шлях/до/архіву.tar.gz`.
+
+Механізм: systemd path-юніт (`starlink-monitor-watch.path`) реагує на
+зміну файлу миттєво (не polling), розпаковує архів у тимчасовий
+каталог і запускає `install.sh` з нього. Перевірка за SHA-256 архіву
+запобігає повторному запуску install.sh на той самий вміст. Якщо
+встановлення завершується помилкою — стан не зберігається, і
+наступна зміна файлу (або ручний запуск) спробує ще раз.
+
+```bash
+systemctl status starlink-monitor-watch.path      # чи стежить зараз
+journalctl -u starlink-monitor-watch.service -f    # лог останньої спроби
 ```
 
 ## Встановлення та оновлення

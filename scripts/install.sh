@@ -237,4 +237,11 @@ if [[ -z "$PI_IP" ]]; then
   PI_IP="<ip-пристрою>"
 fi
 echo " 3. Дашборд: http://$PI_IP:8080"
+echo ""
+if [[ ! -f /etc/systemd/system/starlink-monitor-watch.path ]]; then
+  echo " Порада: щоб наступні оновлення встановлювались автоматично при"
+  echo " заміні архіву starlink-monitor.tar.gz, один раз виконайте:"
+  echo "      sudo bash scripts/setup-watch.sh"
+  echo ""
+fi
 echo "======================================================================"
