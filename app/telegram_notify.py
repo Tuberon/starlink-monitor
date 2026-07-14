@@ -41,6 +41,34 @@ def _random_signature_phrase() -> str:
         return ""
 
 
+def get_signature_phrases_text() -> str:
+    """Повертає сирий вміст signature_phrases.txt для редагування у
+    веб-інтерфейсі (одна фраза на рядок, як у файлі)."""
+    try:
+        with open(SIGNATURE_PHRASES_PATH, encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        logger.warning("Не вдалося прочитати signature_phrases.txt: %s", e)
+        return ""
+
+
+def set_signature_phrases_text(text: str) -> tuple[bool, str]:
+    """Записує вміст signature_phrases.txt з веб-інтерфейсу. Порожні рядки
+    прибираються, дублікати не перевіряються (можна повторювати фрази).
+    Порожній результат (жодної непорожньої фрази) відхиляється - інакше
+    send_message лишиться зовсім без фраз."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False, "Потрібна хоча б одна непорожня фраза"
+    try:
+        with open(SIGNATURE_PHRASES_PATH, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return True, f"Збережено {len(lines)} фраз(и)"
+    except OSError as e:
+        logger.warning("Не вдалося записати signature_phrases.txt: %s", e)
+        return False, str(e)
+
+
 def get_telegram_config():
     """Повертає (token, chat_id, enabled) з БД. chat_id може містити
     кілька id через кому (сповіщення кільком отримувачам)."""

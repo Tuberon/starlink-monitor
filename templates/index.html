@@ -299,6 +299,10 @@
   }
   .tg-input:focus{border-color: var(--signal);}
   .tg-input::placeholder{color: var(--text-low);}
+  textarea.tg-input{
+    resize:vertical; min-height:100px; line-height:1.5;
+    font-family:var(--font-mono);
+  }
 
   button.clear-btn{
     font-family:var(--font-mono);
@@ -469,6 +473,14 @@
       <button class="check-btn" id="telegramSaveBtn">💾 Зберегти</button>
       <button class="check-btn" id="telegramTestBtn">✉ Надіслати тестове</button>
       <span class="hint" id="telegramHint">Bot token отримайте в @BotFather, chat_id — у @userinfobot</span>
+    </div>
+    <div class="tg-form">
+      <label class="tg-label" for="signaturePhrasesInput">Фрази підпису (одна на рядок, додається в кінець кожного повідомлення)</label>
+      <textarea class="tg-input" id="signaturePhrasesInput" rows="5" placeholder="Одна фраза на рядок"></textarea>
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="signaturePhrasesSaveBtn">💾 Зберегти фрази</button>
+      <span class="hint" id="signaturePhrasesHint"></span>
     </div>
     <div class="hint" style="margin-top:10px;">
       Команди в чаті з ботом: <b>/status</b> — стан оновлень, <b>/reboot</b> — перезавантажити Starlink Mini (з підтвердженням), <b>/help</b> — довідка.

@@ -181,6 +181,20 @@ def api_telegram_test():
     return jsonify({"success": False, "message": msg})
 
 
+@app.route("/api/signature-phrases")
+def api_get_signature_phrases():
+    return jsonify({"text": telegram_notify.get_signature_phrases_text()})
+
+
+@app.route("/api/signature-phrases", methods=["POST"])
+def api_set_signature_phrases():
+    payload = request.get_json(silent=True) or {}
+    text = payload.get("text", "")
+    ok, msg = telegram_notify.set_signature_phrases_text(text)
+    db.insert_event("signature_phrases_updated", f"Фрази підпису оновлено: {msg}", success=ok)
+    return jsonify({"success": ok, "message": msg})
+
+
 def main():
     db.init_db()
     app.run(host=config.WEBUI_HOST, port=config.WEBUI_PORT)

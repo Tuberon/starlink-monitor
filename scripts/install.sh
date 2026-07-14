@@ -25,6 +25,45 @@ else
   echo "==> Існуючої інсталяції не знайдено — повне встановлення"
 fi
 
+# Суттєва зміна = у новому requirements.txt з'явився пакет, якого не було
+# в попередній інсталяції (порівняння за НАЗВОЮ пакета, без версії - зміна
+# версії існуючого пакета не вважається суттєвою і не вимагає перевстановлення).
+# Новий пакет типово вимагає додаткового системного ПЗ (build-залежності,
+# системні бібліотеки тощо), тому в такому випадку безпечніше повністю
+# видалити попередню інсталяцію і пройти install-потік з нуля.
+MAJOR_CHANGE=0
+if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
+  NEW_PKGS="$(grep -oE '^[A-Za-z0-9_.-]+' "$SRC_DIR/requirements.txt" | tr 'A-Z' 'a-z' | sort -u)"
+  OLD_PKGS="$(grep -oE '^[A-Za-z0-9_.-]+' "$PROJECT_DIR/requirements.txt" | tr 'A-Z' 'a-z' | sort -u)"
+  ADDED_PKGS="$(comm -13 <(echo "$OLD_PKGS") <(echo "$NEW_PKGS"))"
+  if [[ -n "$ADDED_PKGS" ]]; then
+    MAJOR_CHANGE=1
+    echo "==> Суттєва зміна: нові пакети в requirements.txt:"
+    echo "$ADDED_PKGS" | sed 's/^/     - /'
+  fi
+fi
+
+if [[ "$MAJOR_CHANGE" -eq 1 ]]; then
+  echo "==> Видаляю попередню інсталяцію перед повним перевстановленням"
+  systemctl stop starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service 2>/dev/null || true
+  systemctl disable starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service 2>/dev/null || true
+  rm -f /etc/systemd/system/starlink-monitor.service \
+        /etc/systemd/system/starlink-webui.service \
+        /etc/systemd/system/starlink-grpc-fetch.service
+  systemctl daemon-reload
+  rm -f /etc/sudoers.d/starlink-monitor
+  # signature_phrases.txt (можливо відредагований користувачем) зберігаємо
+  # окремо і повертаємо назад після перевстановлення файлів проєкту.
+  SAVED_PHRASES=""
+  if [[ -f "$PROJECT_DIR/app/signature_phrases.txt" ]]; then
+    SAVED_PHRASES="$(mktemp)"
+    cp "$PROJECT_DIR/app/signature_phrases.txt" "$SAVED_PHRASES"
+  fi
+  rm -rf "$PROJECT_DIR"
+  MODE="install"
+  echo "==> Попередню інсталяцію видалено — продовжую як повне встановлення"
+fi
+
 REQ_CHANGED=1
 if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
   if diff -q "$SRC_DIR/requirements.txt" "$PROJECT_DIR/requirements.txt" >/dev/null 2>&1; then
@@ -94,6 +133,13 @@ RSYNC_OUT="$(rsync -ac --itemize-changes "${RSYNC_EXCLUDES[@]}" "$SRC_DIR/" "$PR
 echo "$RSYNC_OUT"
 CHANGED_FILES="$(echo "$RSYNC_OUT" | grep -c '^[<>ch]' || true)"
 chown -R "$RUN_USER:$RUN_USER" "$PROJECT_DIR"
+
+if [[ -n "${SAVED_PHRASES:-}" && -f "$SAVED_PHRASES" ]]; then
+  cp "$SAVED_PHRASES" "$PROJECT_DIR/app/signature_phrases.txt"
+  chown "$RUN_USER:$RUN_USER" "$PROJECT_DIR/app/signature_phrases.txt"
+  rm -f "$SAVED_PHRASES"
+  echo "==> Відновлено попередній signature_phrases.txt після перевстановлення"
+fi
 
 if [[ "$MODE" == "update" && "$CHANGED_FILES" -eq 0 ]]; then
   echo "==> Змінених файлів не виявлено, файлова частина без змін"

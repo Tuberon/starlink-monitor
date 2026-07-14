@@ -579,6 +579,43 @@ async function handleTelegramTest() {
   }
 }
 
+async function loadSignaturePhrases() {
+  try {
+    const res = await fetch('/api/signature-phrases');
+    const data = await res.json();
+    el('signaturePhrasesInput').value = data.text || '';
+  } catch (e) {
+    console.error('signature phrases load failed', e);
+  }
+}
+
+async function handleSignaturePhrasesSave() {
+  const btn = el('signaturePhrasesSaveBtn');
+  const hint = el('signaturePhrasesHint');
+  const text = el('signaturePhrasesInput').value;
+
+  btn.disabled = true;
+  hint.textContent = 'Зберігаю...';
+  try {
+    const res = await fetch('/api/signature-phrases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    hint.textContent = data.message || (data.success ? 'Збережено' : 'Помилка');
+    if (data.success) {
+      loadSignaturePhrases();
+    }
+    refreshEvents();
+  } catch (e) {
+    hint.textContent = 'Помилка мережі при збереженні';
+    console.error('signature phrases save failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function tick() {
   refreshStatus();
   refreshHistory();
@@ -596,8 +633,10 @@ document.addEventListener('DOMContentLoaded', () => {
   el('telegramEnabledToggle').addEventListener('change', handleTelegramToggle);
   el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
   el('telegramTestBtn').addEventListener('click', handleTelegramTest);
+  el('signaturePhrasesSaveBtn').addEventListener('click', handleSignaturePhrasesSave);
   loadConfigFlags();
   loadTelegramConfig();
+  loadSignaturePhrases();
   tick();
   setInterval(tick, REFRESH_MS);
 });
