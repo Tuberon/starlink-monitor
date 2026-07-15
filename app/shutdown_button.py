@@ -1,0 +1,126 @@
+"""
+Фізична кнопка виключення Raspberry Pi через GPIO.
+
+Кнопка підключається між обраним GPIO-піном (BCM-нумерація) і GND,
+з внутрішнім pull-up (пін "висить" у HIGH, натискання замикає на GND
+і дає LOW). При утриманні кнопки довше SHUTDOWN_BUTTON_HOLD_SEC секунд
+поспіль - виконує коректне виключення (systemctl poweroff), з
+попереднім записом події в журнал і Telegram-сповіщенням.
+
+Працює як окремий процес (systemd-сервіс starlink-shutdown-button.service),
+запускається лише якщо SHUTDOWN_BUTTON_GPIO_PIN > 0 в конфігурації -
+інакше сервіс завершується одразу, нічого не роблячи (не критична
+помилка, якщо кнопка фізично не підключена).
+
+Використовує gpiod (сучасний character-device GPIO API, стандарт для
+Raspberry Pi OS Bookworm/Trixie) замість застарілого RPi.GPIO.
+"""
+import logging
+import subprocess
+import time
+
+from app import config, db, telegram_notify
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("shutdown_button")
+
+POLL_INTERVAL_SEC = 0.1  # як часто перевіряти стан піна під час очікування
+GPIO_CHIP = "/dev/gpiochip0"
+
+
+def _find_gpio_chip():
+    """На різних версіях Raspberry Pi OS/ядра основний GPIO-чіп може
+    бути gpiochip0 або інший номер (напр. після додавання HAT-плат,
+    які теж реєструють свої chip'и). Перебираємо перші кілька."""
+    import os
+    for i in range(6):
+        path = f"/dev/gpiochip{i}"
+        if os.path.exists(path):
+            return path
+    return GPIO_CHIP
+
+
+def watch_button():
+    pin = config.SHUTDOWN_BUTTON_GPIO_PIN
+    if not pin or pin <= 0:
+        logger.info("SHUTDOWN_BUTTON_GPIO_PIN не налаштовано (0) - кнопка вимкнена, завершення")
+        return
+
+    try:
+        import gpiod
+    except ImportError:
+        logger.error("Бібліотека gpiod не встановлена - кнопка виключення не працюватиме")
+        return
+
+    chip_path = _find_gpio_chip()
+    logger.info("Слухаю кнопку виключення на GPIO%d (%s), утримання %.1fс", pin, chip_path, config.SHUTDOWN_BUTTON_HOLD_SEC)
+
+    try:
+        chip = gpiod.Chip(chip_path)
+        line = chip.get_line(pin)
+        line.request(consumer="starlink-shutdown-button", type=gpiod.LINE_REQ_DIR_IN,
+                     flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
+    except Exception as e:
+        logger.error("Не вдалося ініціалізувати GPIO%d: %s", pin, e)
+        return
+
+    pressed_since = None
+    triggered = False
+
+    try:
+        while True:
+            try:
+                value = line.get_value()
+            except Exception as e:
+                logger.warning("Помилка читання GPIO%d: %s", pin, e)
+                time.sleep(1)
+                continue
+
+            is_pressed = (value == 0)  # pull-up: натиснуто = LOW
+
+            if is_pressed:
+                if pressed_since is None:
+                    pressed_since = time.time()
+                elif not triggered and (time.time() - pressed_since) >= config.SHUTDOWN_BUTTON_HOLD_SEC:
+                    triggered = True
+                    _trigger_shutdown(pin)
+            else:
+                pressed_since = None
+                triggered = False
+
+            time.sleep(POLL_INTERVAL_SEC)
+    finally:
+        try:
+            line.release()
+        except Exception:
+            pass
+
+
+def _trigger_shutdown(pin: int):
+    logger.warning("Кнопка виключення утримана %.1fс на GPIO%d - виконую poweroff", config.SHUTDOWN_BUTTON_HOLD_SEC, pin)
+    try:
+        db.init_db()
+        db.insert_event("pi_shutdown", f"Виключення через фізичну кнопку (GPIO{pin})", success=True)
+    except Exception as e:
+        logger.warning("Не вдалося записати подію в БД: %s", e)
+
+    try:
+        telegram_notify.send_message(f"⏻ Raspberry Pi вимикається через фізичну кнопку (GPIO{pin})")
+    except Exception as e:
+        logger.warning("Не вдалося надіслати Telegram-сповіщення: %s", e)
+
+    try:
+        subprocess.run(["sudo", "systemctl", "poweroff"], timeout=10)
+    except Exception as e:
+        logger.error("Не вдалося виконати poweroff: %s", e)
+
+
+def main():
+    watch_button()
+
+
+if __name__ == "__main__":
+    main()

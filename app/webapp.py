@@ -1,6 +1,7 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, історія, журнал подій, ручний reboot."""
 import logging
 import subprocess
+import time
 
 from flask import Flask, jsonify, render_template, request
 
@@ -197,6 +198,62 @@ def api_set_signature_phrases():
     ok, msg = telegram_notify.set_signature_phrases_text(text)
     db.insert_event("signature_phrases_updated", f"Фрази підпису оновлено: {msg}", success=ok)
     return jsonify({"success": ok, "message": msg})
+
+
+BACKUP_FORMAT_VERSION = 1
+
+
+@app.route("/api/settings-backup")
+def api_settings_backup():
+    """Повертає всі налаштування (Telegram config, фрази підпису,
+    auto-reboot) одним JSON-файлом для завантаження. Bot token
+    включається у відкритому вигляді - файл backup потрібно берегти
+    як secret (не публікувати, не комітити в git)."""
+    token, chat_ids, enabled = telegram_notify.get_telegram_config()
+    backup = {
+        "format_version": BACKUP_FORMAT_VERSION,
+        "created_at": time.time(),
+        "telegram_bot_token": token,
+        "telegram_chat_ids": chat_ids,
+        "telegram_enabled": enabled,
+        "auto_reboot_enabled": db.get_auto_reboot_enabled(),
+        "signature_phrases": telegram_notify.get_signature_phrases_text(),
+    }
+    return jsonify(backup)
+
+
+@app.route("/api/settings-restore", methods=["POST"])
+def api_settings_restore():
+    """Відновлює налаштування з JSON, отриманого через /api/settings-backup.
+    Приймає лише відомі поля - невідомі/сторонні ключі ігноруються."""
+    payload = request.get_json(silent=True) or {}
+    if "format_version" not in payload:
+        return jsonify({"success": False, "message": "Некоректний формат файлу backup"})
+
+    restored = []
+    try:
+        if "telegram_bot_token" in payload or "telegram_chat_ids" in payload or "telegram_enabled" in payload:
+            telegram_notify.set_telegram_config(
+                token=payload.get("telegram_bot_token"),
+                chat_ids=payload.get("telegram_chat_ids"),
+                enabled=payload.get("telegram_enabled"),
+            )
+            restored.append("telegram config")
+
+        if "auto_reboot_enabled" in payload:
+            db.set_auto_reboot_enabled(bool(payload["auto_reboot_enabled"]))
+            restored.append("auto-reboot")
+
+        if "signature_phrases" in payload:
+            ok, msg = telegram_notify.set_signature_phrases_text(payload["signature_phrases"])
+            if ok:
+                restored.append("фрази підпису")
+
+        db.insert_event("settings_restored", f"Відновлено з backup: {', '.join(restored) or 'нічого'}", success=True)
+        return jsonify({"success": True, "message": f"Відновлено: {', '.join(restored) or 'нічого'}"})
+    except Exception as e:
+        db.insert_event("settings_restored", f"Помилка відновлення backup: {e}", success=False)
+        return jsonify({"success": False, "message": str(e)})
 
 
 def _run_system_command(cmd: list) -> tuple:

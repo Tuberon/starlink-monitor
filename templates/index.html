@@ -211,6 +211,27 @@
   .log-row.fail .kind{color:var(--crit);}
   .log-row.ok .kind{color:var(--signal);}
 
+  /* ---- clients table ---- */
+  .clients-table{font-family:var(--font-mono); font-size:0.78rem;}
+  .clients-row{
+    display:grid; grid-template-columns: 1.6fr 1fr 0.9fr 0.8fr 0.9fr;
+    gap:12px; padding:9px 0; border-bottom:1px solid var(--sky-800);
+    color:var(--text-mid); align-items:center;
+  }
+  .clients-row:last-child{border-bottom:none;}
+  .clients-row.clients-header{
+    color:var(--text-low); text-transform:uppercase; font-size:0.66rem;
+    letter-spacing:0.04em; border-bottom:1px solid var(--line);
+  }
+  .clients-row .client-name{color:var(--text-hi);}
+  .clients-signal.good{color:var(--signal);}
+  .clients-signal.weak{color:var(--warn);}
+  .clients-signal.bad{color:var(--crit);}
+  @media (max-width:700px){
+    .clients-row{grid-template-columns: 1.4fr 1fr 0.8fr; font-size:0.7rem;}
+    .clients-row span:nth-child(4), .clients-row span:nth-child(5){display:none;}
+  }
+
   /* ---- controls ---- */
   .controls{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
   button.reboot-btn{
@@ -404,6 +425,23 @@
 
   <div class="panel">
     <div class="panel-head">
+      <h2>Клієнти WiFi</h2>
+      <span class="sub" id="routerClientsCount">—</span>
+    </div>
+    <div class="clients-table" id="routerClientsTable">
+      <div class="clients-row clients-header">
+        <span>Пристрій</span>
+        <span>IP</span>
+        <span>Діапазон</span>
+        <span>Сигнал</span>
+        <span>У мережі</span>
+      </div>
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
       <h2>Керування</h2>
     </div>
     <div class="controls">
@@ -495,6 +533,12 @@
     <div class="controls" style="margin-top:12px;">
       <button class="check-btn" id="signaturePhrasesSaveBtn">💾 Зберегти фрази</button>
       <span class="hint" id="signaturePhrasesHint"></span>
+    </div>
+    <div class="controls" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
+      <button class="check-btn" id="settingsBackupBtn">⬇ Завантажити backup</button>
+      <button class="check-btn" id="settingsRestoreBtn">⬆ Відновити з backup</button>
+      <input type="file" id="settingsRestoreFile" accept="application/json" style="display:none;">
+      <span class="hint" id="settingsBackupHint">Bot token, chat_id, фрази підпису й перемикач auto-reboot одним файлом</span>
     </div>
     <div class="hint" style="margin-top:10px;">
       Команди в чаті з ботом: <b>/status</b> — стан оновлень, <b>/reboot</b> — перезавантажити Starlink Mini (з підтвердженням), <b>/help</b> — довідка.

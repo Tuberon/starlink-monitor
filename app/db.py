@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS events (
     ts REAL NOT NULL,
     kind TEXT NOT NULL,       -- 'dish_reboot', 'watchdog_trigger', 'update_state_change', ...
     message TEXT,
-    success INTEGER
+    success INTEGER,
+    count INTEGER NOT NULL DEFAULT 1,
+    last_ts REAL
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 
@@ -67,7 +69,8 @@ CREATE TABLE IF NOT EXISTS router_status (
     update_state TEXT,
     update_progress_pct REAL,
     update_install_pending INTEGER,
-    active_alerts TEXT
+    active_alerts TEXT,
+    clients TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -112,6 +115,11 @@ def init_db():
             "update_progress_pct": "REAL",
             "update_install_pending": "INTEGER",
             "active_alerts": "TEXT",
+            "clients": "TEXT",
+        })
+        _migrate_table_columns(conn, "events", {
+            "count": "INTEGER NOT NULL DEFAULT 1",
+            "last_ts": "REAL",
         })
 
 
@@ -160,11 +168,25 @@ def insert_metric(status_dict: dict):
 
 
 def insert_event(kind: str, message: str, success: bool = True):
+    """Записує подію в журнал. Якщо остання подія має той самий
+    kind і message (типово - серія однакових попереджень підряд),
+    замість нового рядка інкрементує count і оновлює last_ts/ts
+    існуючого запису - журнал не засмічується повторами."""
+    now = time.time()
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO events (ts, kind, message, success) VALUES (?,?,?,?)",
-            (time.time(), kind, message, int(success)),
-        )
+        last = conn.execute(
+            "SELECT id, kind, message FROM events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if last is not None and last["kind"] == kind and last["message"] == message:
+            conn.execute(
+                "UPDATE events SET ts = ?, last_ts = ?, count = count + 1, success = ? WHERE id = ?",
+                (now, now, int(success), last["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO events (ts, kind, message, success, count) VALUES (?,?,?,?,1)",
+                (now, kind, message, int(success)),
+            )
 
 
 def insert_system_metric(m: dict):
@@ -196,8 +218,8 @@ def set_router_status(r: dict):
         conn.execute(
             """INSERT INTO router_status
                (id, ts, online, software_version, hardware_version, bootcount, error,
-                update_state, update_progress_pct, update_install_pending, active_alerts)
-               VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                update_state, update_progress_pct, update_install_pending, active_alerts, clients)
+               VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                  ts=excluded.ts, online=excluded.online,
                  software_version=excluded.software_version,
@@ -206,7 +228,8 @@ def set_router_status(r: dict):
                  update_state=excluded.update_state,
                  update_progress_pct=excluded.update_progress_pct,
                  update_install_pending=excluded.update_install_pending,
-                 active_alerts=excluded.active_alerts""",
+                 active_alerts=excluded.active_alerts,
+                 clients=excluded.clients""",
             (
                 r["timestamp"],
                 int(r["online"]),
@@ -218,6 +241,7 @@ def set_router_status(r: dict):
                 r.get("update_progress_pct", 0),
                 int(r.get("update_install_pending", False)),
                 r.get("active_alerts", "[]"),
+                r.get("clients", "[]"),
             ),
         )
 
@@ -236,6 +260,15 @@ def get_router_status():
                 d["active_alerts"] = []
         else:
             d["active_alerts"] = []
+
+        raw_clients = d.get("clients")
+        if raw_clients:
+            try:
+                d["clients"] = json.loads(raw_clients)
+            except (TypeError, json.JSONDecodeError):
+                d["clients"] = []
+        else:
+            d["clients"] = []
         return d
 
 

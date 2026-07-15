@@ -313,11 +313,13 @@ async function refreshRouterStatus() {
       el2.textContent = 'ще не опитано';
       el('routerUpdateStateBadge').textContent = '—';
       el('routerAlertsBody').innerHTML = '<span class="alerts-none">ще не опитано</span>';
+      renderRouterClients(null);
       return;
     }
     if (!latest.online) {
       el2.textContent = `недоступний (${latest.error || 'немає відповіді'})`;
       el('routerUpdateStateBadge').textContent = '—';
+      renderRouterClients(latest.clients);
       return;
     }
     const sw = latest.software_version || '—';
@@ -326,8 +328,51 @@ async function refreshRouterStatus() {
 
     renderRouterUpdateStatus(latest);
     renderRouterAlerts(latest);
+    renderRouterClients(latest.clients);
   } catch (e) {
     console.error('router status refresh failed', e);
+  }
+}
+
+function fmtDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '—';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}г ${m}хв`;
+  return `${m}хв`;
+}
+
+function signalClass(dbm) {
+  if (dbm === null || dbm === undefined) return '';
+  if (dbm >= -60) return 'good';
+  if (dbm >= -75) return 'weak';
+  return 'bad';
+}
+
+function renderRouterClients(clients) {
+  const table = el('routerClientsTable');
+  const countEl = el('routerClientsCount');
+  const rows = (clients || []).map(c => `
+    <div class="clients-row">
+      <span class="client-name">${c.name || c.mac || '—'}</span>
+      <span>${c.ip || '—'}</span>
+      <span>${(c.iface || '').replace('WIFI_', '').replace('GHZ', ' ГГц') || '—'}</span>
+      <span class="clients-signal ${signalClass(c.signal)}">${c.signal != null ? c.signal + ' дБм' : '—'}</span>
+      <span>${fmtDuration(c.connected_s)}</span>
+    </div>
+  `).join('');
+
+  const header = '<div class="clients-row clients-header"><span>Пристрій</span><span>IP</span><span>Діапазон</span><span>Сигнал</span><span>У мережі</span></div>';
+
+  if (!clients) {
+    countEl.textContent = '—';
+    table.innerHTML = header + '<div class="clients-row"><span>ще не опитано</span></div>';
+  } else if (clients.length === 0) {
+    countEl.textContent = '0 підключено';
+    table.innerHTML = header + '<div class="clients-row"><span>немає підключених клієнтів</span></div>';
+  } else {
+    countEl.textContent = `${clients.length} підключено`;
+    table.innerHTML = header + rows;
   }
 }
 
@@ -380,7 +425,7 @@ async function refreshEvents() {
     log.innerHTML = events.map(ev => `
       <div class="log-row ${ev.success ? 'ok' : 'fail'}">
         <span class="time">${fmtTime(ev.ts)}</span>
-        <span class="kind">${ev.kind.replace(/_/g, ' ')}</span>
+        <span class="kind">${ev.kind.replace(/_/g, ' ')}${ev.count > 1 ? ` ×${ev.count}` : ''}</span>
         <span>${ev.message || ''}</span>
       </div>
     `).join('');
@@ -656,6 +701,66 @@ async function handleSignaturePhrasesSave() {
   }
 }
 
+async function handleSettingsBackup() {
+  const hint = el('settingsBackupHint');
+  try {
+    const res = await fetch('/api/settings-backup');
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    a.href = url;
+    a.download = `starlink-monitor-settings-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    hint.textContent = 'Backup завантажено';
+  } catch (e) {
+    hint.textContent = 'Помилка завантаження backup';
+    console.error('settings backup failed', e);
+  }
+}
+
+function handleSettingsRestoreClick() {
+  el('settingsRestoreFile').click();
+}
+
+async function handleSettingsRestoreFile(e) {
+  const hint = el('settingsBackupHint');
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, фрази підпису й перемикач auto-reboot будуть перезаписані.')) {
+    e.target.value = '';
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    const res = await fetch('/api/settings-restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    hint.textContent = data.message || (data.success ? 'Відновлено' : 'Помилка');
+    if (data.success) {
+      loadConfigFlags();
+      loadTelegramConfig();
+      loadSignaturePhrases();
+    }
+    refreshEvents();
+  } catch (err) {
+    hint.textContent = 'Некоректний файл backup';
+    console.error('settings restore failed', err);
+  } finally {
+    e.target.value = '';
+  }
+}
+
 function tick() {
   refreshStatus();
   refreshHistory();
@@ -676,6 +781,9 @@ document.addEventListener('DOMContentLoaded', () => {
   el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
   el('telegramTestBtn').addEventListener('click', handleTelegramTest);
   el('signaturePhrasesSaveBtn').addEventListener('click', handleSignaturePhrasesSave);
+  el('settingsBackupBtn').addEventListener('click', handleSettingsBackup);
+  el('settingsRestoreBtn').addEventListener('click', handleSettingsRestoreClick);
+  el('settingsRestoreFile').addEventListener('change', handleSettingsRestoreFile);
   loadConfigFlags();
   loadTelegramConfig();
   loadSignaturePhrases();

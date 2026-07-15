@@ -229,10 +229,13 @@ class RouterInfo:
     # Попередження роутера (активні WifiAlerts-прапорці)
     active_alerts: List[str] = field(default_factory=list)
     update_install_pending: bool = False
+    # Список клієнтів, під'єднаних до WiFi роутера (WifiClient[])
+    clients: List[dict] = field(default_factory=list)
 
     def to_dict(self):
         d = asdict(self)
         d["active_alerts"] = json.dumps(d["active_alerts"], ensure_ascii=False)
+        d["clients"] = json.dumps(d["clients"], ensure_ascii=False)
         return d
 
 
@@ -404,6 +407,21 @@ class StarlinkClient:
                         active_alerts.append(name)
                 update_install_pending = bool(alerts_obj.get("installPending", False))
 
+            # Клієнти, під'єднані до WiFi роутера (WifiClient[]) - беремо
+            # лише поля, потрібні для відображення, ігноруючи детальну
+            # телеметрію (fqcodelInfo, rxStats/txStats тощо)
+            clients = []
+            for c in wifi_status.get("clients", []) or []:
+                clients.append({
+                    "name": str(c.get("name", "") or c.get("macAddress", "невідомо")),
+                    "mac": str(c.get("macAddress", "")),
+                    "ip": str(c.get("ipAddress", "")),
+                    "iface": str(c.get("iface", "")),
+                    "signal": c.get("signalStrength"),
+                    "role": str(c.get("role", "")),
+                    "connected_s": c.get("associatedTimeS"),
+                })
+
             return RouterInfo(
                 timestamp=time.time(),
                 online=True,
@@ -414,6 +432,7 @@ class StarlinkClient:
                 update_progress_pct=update_progress_pct,
                 active_alerts=active_alerts,
                 update_install_pending=update_install_pending,
+                clients=clients,
             )
         except subprocess.TimeoutExpired:
             return RouterInfo(timestamp=time.time(), online=False, error="timeout")
