@@ -76,7 +76,7 @@ if [[ "$MODE" == "install" ]]; then
   apt-get update
   apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip git curl \
-    network-manager
+    network-manager python3-libgpiod gpiod
 
   echo "==> Перевіряю наявність grpcurl"
   if ! command -v grpcurl >/dev/null 2>&1; then
@@ -117,6 +117,9 @@ if [[ "$MODE" == "install" ]]; then
   else
     echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
   fi
+
+  echo "==> Додаю $RUN_USER до групи gpio (доступ до /dev/gpiochip* для кнопки виключення)"
+  usermod -aG gpio "$RUN_USER" 2>/dev/null || echo "!! Група gpio відсутня в системі - пропускаю (кнопка виключення не працюватиме без неї)"
 else
   echo "==> Режим оновлення — пропускаю перевірку/оновлення системних пакетів"
 fi
@@ -147,7 +150,10 @@ fi
 
 echo "==> Створюю/оновлюю Python venv та залежності"
 if [[ ! -d "$PROJECT_DIR/venv" ]]; then
-  sudo -u "$RUN_USER" python3 -m venv "$PROJECT_DIR/venv"
+  # --system-site-packages: дозволяє venv бачити системний python3-libgpiod
+  # (кнопка виключення) - libgpiod не завжди чисто ставиться через pip,
+  # системний пакет через apt надійніший на Raspberry Pi OS.
+  sudo -u "$RUN_USER" python3 -m venv --system-site-packages "$PROJECT_DIR/venv"
   sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
   sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
 elif [[ "$REQ_CHANGED" -eq 1 ]]; then
@@ -173,19 +179,20 @@ fi
 
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
-# необхідні для рестарту сервісів і reboot dish.
+# необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi.
 # Це навмисно вузько — НЕ blanket "ALL=(ALL) NOPASSWD: ALL".
 cat > /etc/sudoers.d/starlink-monitor <<EOF
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-monitor.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-webui.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl reboot
+$RUN_USER ALL=(root) NOPASSWD: /bin/systemctl poweroff
 EOF
 chmod 0440 /etc/sudoers.d/starlink-monitor
 visudo -c -f /etc/sudoers.d/starlink-monitor
 
 echo "==> Встановлюю/оновлюю systemd unit-файли (підстановка користувача $RUN_USER)"
 UNITS_UPDATED=0
-for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service; do
+for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service starlink-shutdown-button.service; do
   NEW_UNIT="$(sed "s/__RUN_USER__/$RUN_USER/g" "$PROJECT_DIR/systemd/$svc")"
   DEST="/etc/systemd/system/$svc"
   if [[ ! -f "$DEST" ]] || ! diff -q <(echo "$NEW_UNIT") "$DEST" >/dev/null 2>&1; then
@@ -200,6 +207,7 @@ fi
 
 systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
+systemctl enable --now starlink-shutdown-button.service
 systemctl enable starlink-grpc-fetch.service
 
 if [[ "$MODE" == "update" ]]; then
@@ -207,6 +215,7 @@ if [[ "$MODE" == "update" ]]; then
     echo "==> Виявлено зміни — перезапускаю сервіси"
     systemctl restart starlink-monitor.service
     systemctl restart starlink-webui.service
+    systemctl restart starlink-shutdown-button.service
   else
     echo "==> Змін не виявлено — сервіси не перезапускаю"
   fi

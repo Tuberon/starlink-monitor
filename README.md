@@ -40,6 +40,42 @@
     вже відомої тарілки не повторюється, а підключення будь-якої іншої
     (нової) тарілки завжди дає нове сповіщення — незалежно від того,
     скільки різних тарілок уже підключалось раніше.
+11. Дозволяє вручну перезавантажити або вимкнути сам Raspberry Pi
+    прямо з веб-інтерфейсу (панель "Керування Raspberry Pi", під
+    статистикою використання ресурсів) — з підтвердженням перед
+    виконанням, дії логуються в журнал і Telegram.
+12. Підтримує фізичну кнопку виключення Pi через GPIO (окремий
+    systemd-сервіс, вимкнено за замовчуванням — див. секцію нижче).
+
+## Фізична кнопка виключення (GPIO)
+
+Дозволяє коректно вимкнути Pi апаратною кнопкою, без веб-інтерфейсу
+чи SSH — корисно, якщо пристрій встановлено без монітора/мережі під
+рукою.
+
+**Підключення**: кнопка (нормально розімкнута) між обраним GPIO-піном
+(нумерація BCM) і GND. Внутрішній pull-up налаштовується самим
+сервісом — зовнішній резистор не потрібен.
+
+**Активація**: за замовчуванням вимкнено (`STARLINK_SHUTDOWN_BUTTON_PIN=0`).
+Щоб увімкнути, додай у `/etc/starlink-monitor/env`:
+```
+STARLINK_SHUTDOWN_BUTTON_PIN=17
+STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
+```
+(приклад для GPIO17 — фізичний пін 11 на 40-пінному роз'ємі; будь-який
+вільний GPIO-пін підійде), потім:
+```bash
+sudo systemctl restart starlink-shutdown-button.service
+```
+
+**Поведінка**: утримання кнопки довше `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC`
+секунд поспіль (за замовчуванням 3с — захист від випадкового дотику)
+ініціює `systemctl poweroff`, з попереднім записом події в журнал і
+Telegram-сповіщенням. Короткий дотик ігнорується.
+
+Поточний стан кнопки (увімкнена/пін/час утримання) видно в панелі
+"Керування Raspberry Pi" на дашборді.
 
 ## Telegram-сповіщення та команди
 
@@ -129,17 +165,20 @@ starlink-monitor/
 │   ├── telegram_bot.py        # вхідні команди Telegram (/status, /reboot)
 │   ├── signature_phrases.txt  # фрази, що додаються в кінець Telegram-повідомлень
 │   ├── webapp.py              # Flask веб-інтерфейс + REST API
+│   ├── shutdown_button.py     # фізична кнопка виключення через GPIO
 │   ├── config.py              # конфігурація (пороги, інтервали)
 │   └── vendor/                # сюди завантажується starlink_grpc.py
 ├── templates/
 │   └── index.html             # дашборд
 ├── static/
-│   └── dashboard.js
+│   ├── dashboard.js
+│   └── logo.png                # логотип у шапці дашборду
 ├── systemd/
-│   ├── starlink-monitor.service       # фоновий watchdog + збір метрик
-│   ├── starlink-webui.service         # веб-інтерфейс
-│   └── starlink-grpc-fetch.service    # одноразово тягне starlink_grpc.py
-│                                        # при старті, з очікуванням WiFi
+│   ├── starlink-monitor.service         # фоновий watchdog + збір метрик
+│   ├── starlink-webui.service           # веб-інтерфейс
+│   ├── starlink-shutdown-button.service # фізична кнопка виключення (GPIO)
+│   └── starlink-grpc-fetch.service      # одноразово тягне starlink_grpc.py
+│                                          # при старті, з очікуванням WiFi
 ├── scripts/
 │   ├── install.sh              # встановлення на чистий Pi АБО оновлення
 │   │                            # вже встановленої версії (детектується
@@ -218,6 +257,8 @@ sudo bash scripts/install.sh
 | `STARLINK_MIN_REBOOT_INTERVAL` | `900` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
+| `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
+| `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
 
 Після зміни файлу — перезапустити сервіси:
 ```bash

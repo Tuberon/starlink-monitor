@@ -1,9 +1,0 @@
-[Unit]
-Description=Стежить за зміною starlink-monitor.tar.gz і запускає автоустановку
-
-[Path]
-PathModified=__ARCHIVE_PATH__
-Unit=starlink-monitor-watch.service
-
-[Install]
-WantedBy=multi-user.target

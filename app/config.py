@@ -41,6 +41,16 @@ HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
 WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")
 WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 
+# --- Фізична кнопка виключення (GPIO) ---
+# Номер піна за схемою BCM (не фізичний номер контакту). За замовчуванням
+# вимкнено (0/порожньо) - вмикається лише якщо кнопка реально підключена.
+# Кнопка має бути підключена між цим піном і GND, з підтягуванням до
+# VCC на самому Pi через внутрішній pull-up (налаштовується скриптом).
+SHUTDOWN_BUTTON_GPIO_PIN = int(os.environ.get("STARLINK_SHUTDOWN_BUTTON_PIN", "0"))
+# Скільки секунд утримувати кнопку, перш ніж почнеться виключення
+# (захист від випадкового короткого дотику)
+SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "3"))
+
 # Локальне перевизначення (не в git), напр. /etc/starlink-monitor/config.local.py
 _local_cfg = "/etc/starlink-monitor/config.local.py"
 if os.path.exists(_local_cfg):

@@ -73,6 +73,7 @@
   .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--text-low);}
   .status-pill.online .dot{background: var(--signal); box-shadow:0 0 8px var(--signal);}
   .status-pill.offline .dot{background: var(--crit); box-shadow:0 0 8px var(--crit);}
+  .header-logo{height:44px; width:auto;}
 
   /* ---- metric grid ---- */
   .grid{
@@ -342,6 +343,7 @@
         <p>Starlink Mini · Автономний монітор</p>
       </div>
     </div>
+    <img src="/static/logo.png" alt="logo" class="header-logo">
     <div class="status-pill" id="statusPill">
       <span class="dot"></span>
       <span id="statusText">З'єднання...</span>
@@ -448,6 +450,18 @@
     <div class="metric"><div class="label">CPU</div><div class="value" id="sCpu">—<span class="unit">%</span></div></div>
     <div class="metric"><div class="label">Пам'ять</div><div class="value" id="sMem">—<span class="unit">%</span></div></div>
     <div class="metric"><div class="label">Диск</div><div class="value" id="sDisk">—<span class="unit">%</span></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Керування Raspberry Pi</h2>
+      <span class="sub" id="shutdownButtonStatus"></span>
+    </div>
+    <div class="controls">
+      <button class="reboot-btn" id="piRebootBtn">⟲ Перезавантажити Pi</button>
+      <button class="reboot-btn" id="piShutdownBtn">⏻ Вимкнути Pi</button>
+      <span class="hint" id="piControlHint">Обидві дії розривають з'єднання з дашбордом</span>
+    </div>
   </div>
 
   <div class="panel">

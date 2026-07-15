@@ -408,6 +408,39 @@ async function handleReboot() {
   }
 }
 
+async function handlePiReboot() {
+  const btn = el('piRebootBtn');
+  const hint = el('piControlHint');
+  if (!confirm("Перезавантажити Raspberry Pi зараз? Дашборд стане недоступний на 1-2 хвилини.")) return;
+
+  btn.disabled = true;
+  hint.textContent = 'Надсилаю команду перезавантаження...';
+  try {
+    const res = await fetch('/api/system-reboot', { method: 'POST' });
+    const data = await res.json();
+    hint.textContent = data.success ? 'Pi перезавантажується...' : `Помилка: ${data.message}`;
+  } catch (e) {
+    hint.textContent = 'Команду надіслано (з\'єднання розірвано)';
+  }
+}
+
+async function handlePiShutdown() {
+  const btn = el('piShutdownBtn');
+  const hint = el('piControlHint');
+  if (!confirm("Вимкнути Raspberry Pi зараз? Для повторного увімкнення знадобиться фізичний доступ до пристрою (від'єднати й підключити живлення).")) return;
+  if (!confirm("Підтвердіть ще раз: дашборд стане повністю недоступний до ручного увімкнення Pi.")) return;
+
+  btn.disabled = true;
+  hint.textContent = 'Надсилаю команду вимкнення...';
+  try {
+    const res = await fetch('/api/system-shutdown', { method: 'POST' });
+    const data = await res.json();
+    hint.textContent = data.success ? 'Pi вимикається...' : `Помилка: ${data.message}`;
+  } catch (e) {
+    hint.textContent = 'Команду надіслано (з\'єднання розірвано)';
+  }
+}
+
 function handleClearEvents() {
   eventsClearedLocally = true;
   el('eventLog').innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Журнал очищено на екрані</span></div>';
@@ -445,6 +478,13 @@ async function loadConfigFlags() {
     const res = await fetch('/api/config');
     const cfg = await res.json();
     updateAutoRebootUI(cfg.auto_reboot_on_update_ready);
+
+    const btnStatus = el('shutdownButtonStatus');
+    if (cfg.shutdown_button_enabled) {
+      btnStatus.textContent = `фізична кнопка: GPIO${cfg.shutdown_button_pin}, утримання ${cfg.shutdown_button_hold_sec}с`;
+    } else {
+      btnStatus.textContent = 'фізична кнопка вимкнення не налаштована';
+    }
   } catch (e) {
     console.error('config load failed', e);
   }
@@ -627,6 +667,8 @@ function tick() {
 document.addEventListener('DOMContentLoaded', () => {
   initCharts();
   el('rebootBtn').addEventListener('click', handleReboot);
+  el('piRebootBtn').addEventListener('click', handlePiReboot);
+  el('piShutdownBtn').addEventListener('click', handlePiShutdown);
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   el('checkUpdatesBtn').addEventListener('click', handleCheckUpdates);
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);

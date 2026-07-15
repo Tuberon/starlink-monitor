@@ -1,5 +1,6 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, історія, журнал подій, ручний reboot."""
 import logging
+import subprocess
 
 from flask import Flask, jsonify, render_template, request
 
@@ -111,6 +112,9 @@ def api_config():
         "max_consecutive_failures": config.MAX_CONSECUTIVE_FAILURES,
         "min_reboot_interval_sec": config.MIN_REBOOT_INTERVAL_SEC,
         "auto_reboot_on_update_ready": db.get_auto_reboot_enabled(),
+        "shutdown_button_enabled": config.SHUTDOWN_BUTTON_GPIO_PIN > 0,
+        "shutdown_button_pin": config.SHUTDOWN_BUTTON_GPIO_PIN,
+        "shutdown_button_hold_sec": config.SHUTDOWN_BUTTON_HOLD_SEC,
     })
 
 
@@ -192,6 +196,41 @@ def api_set_signature_phrases():
     text = payload.get("text", "")
     ok, msg = telegram_notify.set_signature_phrases_text(text)
     db.insert_event("signature_phrases_updated", f"Фрази підпису оновлено: {msg}", success=ok)
+    return jsonify({"success": ok, "message": msg})
+
+
+def _run_system_command(cmd: list) -> tuple:
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "unknown error").strip()
+            return False, err[:500]
+        return True, "виконано"
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+    except Exception as e:
+        return False, str(e)
+
+
+@app.route("/api/system-reboot", methods=["POST"])
+def api_system_reboot():
+    ok, msg = _run_system_command(["sudo", "systemctl", "reboot"])
+    db.insert_event("pi_reboot", f"Ручне перезавантаження Raspberry Pi через веб-інтерфейс: {msg}", success=ok)
+    if ok:
+        telegram_notify.send_message("🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс")
+    else:
+        telegram_notify.send_message(f"❌ Не вдалося перезавантажити Raspberry Pi: {msg}")
+    return jsonify({"success": ok, "message": msg})
+
+
+@app.route("/api/system-shutdown", methods=["POST"])
+def api_system_shutdown():
+    ok, msg = _run_system_command(["sudo", "systemctl", "poweroff"])
+    db.insert_event("pi_shutdown", f"Ручне виключення Raspberry Pi через веб-інтерфейс: {msg}", success=ok)
+    if ok:
+        telegram_notify.send_message("⏻ Raspberry Pi вимикається вручну через веб-інтерфейс")
+    else:
+        telegram_notify.send_message(f"❌ Не вдалося вимкнути Raspberry Pi: {msg}")
     return jsonify({"success": ok, "message": msg})
 
 
