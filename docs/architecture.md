@@ -69,6 +69,8 @@ router — різні enum з різними назвами станів).
 
 ## База даних (SQLite, /var/lib/starlink-monitor/history.db)
 
+WAL journal_mode — паралельне читання (webui) і запис (monitor) без блокувань.
+
 - `metrics` — історія опитувань dish (throughput, latency, dish_id, update_state, ...)
 - `events` — журнал подій (reboot, зміни стану, попередження, підключення
   нової тарілки). Повтори того самого `kind`+`message` підряд стискаються
@@ -105,6 +107,11 @@ enabled, auto_reboot_enabled, вміст signature_phrases.txt) —
   `SHUTDOWN_BUTTON_HOLD_SEC` (типово 3с) → `sudo systemctl poweroff`
 - venv створюється з `--system-site-packages`, щоб бачити системний
   `python3-libgpiod` (pip-версія gpiod не завжди чисто збирається
-  без системних заголовків `libgpiod-dev`)
+  без системних заголовків `libgpiod-dev`). Побічний ефект: `pip
+  install` під час встановлення може вивести попередження про
+  конфлікт залежностей сторонніх системних пакетів (напр.
+  `types-flask-migrate` вимагає `Flask-SQLAlchemy`) — це не
+  стосується коду проєкту (`Flask-SQLAlchemy`/`Flask-Migrate` ніде
+  не імпортуються), встановлення завершується успішно
+  (`Successfully installed ...`), попередження безпечно ігнорувати
 - Статус (увімкнено/пін/час утримання) віддається через `/api/config`
-  і відображається на дашборді в панелі "Керування Raspberry Pi"

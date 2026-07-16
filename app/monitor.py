@@ -55,6 +55,10 @@ class Watchdog:
         self.prev_alerts = None
         self.prev_router_update_state = None
         self.prev_router_alerts = None
+        # Останній відомий dish_id - потрібен, щоб прив'язати опитування
+        # роутера (окремий цикл, без власного dish_id у RouterInfo) до
+        # того самого фізичного Mini в таблиці known_devices.
+        self.last_known_dish_id = None
 
     def _notify(self, text: str):
         """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток
@@ -76,6 +80,9 @@ class Watchdog:
                 self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
             self.consecutive_failures = 0
             self._notify_first_dish_connection(status)
+            if status.dish_id:
+                self.last_known_dish_id = status.dish_id
+            db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
@@ -194,6 +201,8 @@ class Watchdog:
             if not info.online:
                 logger.debug("Роутер недоступний: %s", info.error)
                 return
+            if self.last_known_dish_id:
+                db.upsert_known_device_router(self.last_known_dish_id, info.hardware_version, info.software_version)
             self._log_router_update_state_change(info)
             self._log_router_alerts_change(info)
             self._maybe_reboot_for_router_update(info)

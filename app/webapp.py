@@ -12,6 +12,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webapp")
 
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
+# Кешування статики (dashboard.js, logo.png) на стороні браузера - зменшує
+# кількість запитів при кожному відкритті/перезавантаженні дашборду,
+# помітно на слабкому WiFi-каналі Pi Zero 2 W. API-ендпоінти (динамічні
+# дані) цього не стосуються - кешується лише /static/*.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 client = StarlinkClient()
 
 

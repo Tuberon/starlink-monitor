@@ -77,6 +77,18 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS known_devices (
+    dish_id TEXT PRIMARY KEY,
+    first_seen_ts REAL NOT NULL,
+    last_seen_ts REAL NOT NULL,
+    dish_hardware_version TEXT,
+    dish_software_version TEXT,
+    dish_software_updated_ts REAL,
+    router_hardware_version TEXT,
+    router_software_version TEXT,
+    router_software_updated_ts REAL
+);
 """
 
 
@@ -91,6 +103,11 @@ def get_conn():
     _ensure_dir()
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    # WAL: monitor.service (пише кожні ~10с) і webui.service (читає щосекунди)
+    # - окремі процеси, що звертаються до одного файлу одночасно. У режимі
+    # за замовчуванням (rollback journal) запис блокує читання на час
+    # транзакції; WAL дозволяє паралельне читання під час запису.
+    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
         conn.commit()
@@ -333,6 +350,80 @@ def uptime_stats_24h():
         if not row or not row["total"]:
             return None
         return round(100.0 * (row["up"] or 0) / row["total"], 2)
+
+
+def upsert_known_device_dish(dish_id: str, hardware_version: str, software_version: str):
+    """Записує/оновлює відому інформацію про dish для конкретного dish_id.
+    dish_software_updated_ts оновлюється лише коли software_version реально
+    змінилась відносно попереднього запису (не при кожному опитуванні) -
+    так /id у Telegram-боті може показати, коли саме відбулось останнє
+    встановлене оновлення, а не час останнього опитування."""
+    if not dish_id:
+        return
+    now = time.time()
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT dish_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
+        ).fetchone()
+        version_changed = existing is None or existing["dish_software_version"] != software_version
+
+        conn.execute(
+            """INSERT INTO known_devices
+               (dish_id, first_seen_ts, last_seen_ts, dish_hardware_version,
+                dish_software_version, dish_software_updated_ts)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(dish_id) DO UPDATE SET
+                 last_seen_ts = excluded.last_seen_ts,
+                 dish_hardware_version = excluded.dish_hardware_version,
+                 dish_software_version = excluded.dish_software_version,
+                 dish_software_updated_ts = CASE WHEN ? THEN excluded.dish_software_updated_ts
+                                                  ELSE known_devices.dish_software_updated_ts END""",
+            (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
+             int(version_changed)),
+        )
+
+
+def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str):
+    """Аналогічно до upsert_known_device_dish, але для роутерної частини
+    того самого фізичного Mini. Прив'язується до того ж dish_id - dish і
+    router опитуються в різних циклах, тому оновлюються окремо; якщо
+    запису для dish_id ще немає (router опитався раніше за dish), рядок
+    створюється з порожніми dish-полями."""
+    if not dish_id:
+        return
+    now = time.time()
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT router_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
+        ).fetchone()
+        version_changed = existing is None or existing["router_software_version"] != software_version
+
+        conn.execute(
+            """INSERT INTO known_devices
+               (dish_id, first_seen_ts, last_seen_ts, router_hardware_version,
+                router_software_version, router_software_updated_ts)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(dish_id) DO UPDATE SET
+                 last_seen_ts = excluded.last_seen_ts,
+                 router_hardware_version = excluded.router_hardware_version,
+                 router_software_version = excluded.router_software_version,
+                 router_software_updated_ts = CASE WHEN ? THEN excluded.router_software_updated_ts
+                                                    ELSE known_devices.router_software_updated_ts END""",
+            (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
+             int(version_changed)),
+        )
+
+
+def get_known_device(dish_id: str):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM known_devices WHERE dish_id = ?", (dish_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_all_known_devices():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM known_devices ORDER BY last_seen_ts DESC").fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_setting(key: str, default=None):

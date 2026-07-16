@@ -523,13 +523,6 @@ async function loadConfigFlags() {
     const res = await fetch('/api/config');
     const cfg = await res.json();
     updateAutoRebootUI(cfg.auto_reboot_on_update_ready);
-
-    const btnStatus = el('shutdownButtonStatus');
-    if (cfg.shutdown_button_enabled) {
-      btnStatus.textContent = `фізична кнопка: GPIO${cfg.shutdown_button_pin}, утримання ${cfg.shutdown_button_hold_sec}с`;
-    } else {
-      btnStatus.textContent = 'фізична кнопка вимкнення не налаштована';
-    }
   } catch (e) {
     console.error('config load failed', e);
   }
@@ -761,9 +754,17 @@ async function handleSettingsRestoreFile(e) {
   }
 }
 
+let historyTickCounter = 0;
+const HISTORY_REFRESH_EVERY_N_TICKS = 5; // з REFRESH_MS=1000 це кожні ~5с -
+// достатньо часто для плавних графіків, але без зайвих запитів тих самих
+// 120 рядків між реальними новими опитуваннями dish (POLL_INTERVAL_SEC=10с)
+
 function tick() {
   refreshStatus();
-  refreshHistory();
+  historyTickCounter++;
+  if (historyTickCounter % HISTORY_REFRESH_EVERY_N_TICKS === 0) {
+    refreshHistory();
+  }
   refreshSystemStatus();
   refreshRouterStatus();
   refreshEvents();
