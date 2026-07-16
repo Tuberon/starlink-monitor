@@ -1,80 +1,14 @@
 """
-Клієнт для локального gRPC API Starlink dish та роутера Starlink Mini.
+gRPC-клієнт для Starlink dish (192.168.100.1:9200) та router
+(192.168.1.1:9000) - два окремі логічні пристрої в одному корпусі
+Mini, кожен зі своєю прошивкою.
 
-Starlink Mini складається з ДВОХ логічних пристроїв в одному корпусі
-(підтверджено офіційним застосунком Starlink Live та живими викликами):
-  - dish (тарілка): 192.168.100.1:9200, id "ut...", hw "mini1_panda_prod2"
-  - router (роутер): 192.168.1.1:9000, id "Router-...", hw "v4"
-Кожен має ВЛАСНУ версію прошивки, яка оновлюється незалежно.
-
-get_status(): використовує starlink_grpc.get_status() з проєкту
-starlink-grpc-tools (https://github.com/sparky8512/starlink-grpc-tools).
-Ця функція повертає СИРИЙ protobuf-об'єкт DishGetStatusResponse
-(не dict, не namedtuple) — поля читаються напряму через атрибути,
-структура підтверджена реальним дампом з живого dish, а поля оновлення
-та попереджень - через grpcurl describe напряму на dish користувача:
-
-  device_info { hardware_version, software_version, ... }
-  device_state { uptime_s }
-  obstruction_stats { fraction_obstructed, ... }
-  downlink_throughput_bps, uplink_throughput_bps, pop_ping_latency_ms
-  software_update_stats {
-    software_update_state: enum SOFTWARE_UPDATE_STATE_UNKNOWN|IDLE|FETCHING|
-      PRE_CHECK|WRITING|POST_CHECK|REBOOT_REQUIRED|DISABLED|FAULTED
-    software_update_progress: float 0.0-1.0
-    update_requires_reboot: bool
-    reboot_scheduled_utc_time: int64
-  }
-  alerts { motors_stuck, thermal_shutdown, thermal_throttle,
-    unexpected_location, mast_not_near_vertical, slow_ethernet_speeds,
-    roaming, install_pending, is_heating, power_supply_thermal_throttle,
-    is_power_save_idle, dbf_telem_stale, low_motor_current,
-    lower_signal_than_predicted, slow_ethernet_speeds_100,
-    obstruction_map_reset, dish_water_detected, router_water_detected,
-    upsu_router_port_slow, no_ethernet_link - усі bool }
-
-get_router_info(): звертається на ОКРЕМУ адресу роутера (192.168.1.1:9000,
-не 192.168.100.1:9200 — dish на цю адресу не відповідає своїми даними,
-target_id в запиті на адресу dish ігнорується) з payload
-{"get_status":{}} (не {"get_device_info":{}} — той дає лише статичну
-DeviceInfo без стану оновлення/попереджень):
-  grpcurl -plaintext -d '{"get_status":{}}' 192.168.1.1:9000 \
-    SpaceX.API.Device.Device/Handle
-Повертає WifiGetStatusResponse зі СВОЄЮ окремою схемою, відмінною від
-dish (підтверджено grpcurl describe на живому роутері):
-  device_info { hardware_version, software_version, ... }
-  software_update_stats: WifiSoftwareUpdateStats {
-    state: enum WifiSoftwareUpdateState NOT_RUN|GETTING_TARGET_VERSION|
-      DOWNLOADING_UPDATE_IMAGE|FLASHING|NO_UPDATE_REQUIRED|REBOOT_PENDING|
-      GETTING_TARGET_VERSION_FAILED|GETTING_TARGET_VERSION_EXHAUSTED|
-      NO_VALID_ARTIFACT|ILLEGAL_ARTIFACT|DOWNLOADING_UPDATE_IMAGE_FAILED|
-      DOWNLOADING_UPDATE_IMAGE_EXHAUSTED|FLASHING_FAILED
-    software_download_progress: float
-    running_version, version_in_progress: string
-  }
-  alerts: WifiAlerts { thermal_throttle, install_pending, freshly_fused,
-    lan_eth_slow_link_10/100, wan_eth_poor_connection,
-    mesh_topology_changing_often, mesh_unreliable_backhaul,
-    radius_missing_process, eth_switch_error, poe_on_dish_unreachable,
-    poe_fuse_blown, poe_router_overcurrent, poe_off_current_nominal,
-    poe_vin_overvoltage, poe_vin_undervoltage, high_cable_ping_drop_rate,
-    sandbox_disabled, only_overflight_blocked, offline_networks_disabled,
-    wired_mesh_not_using_wan_iface - усі bool }
-Використовує grpcurl subprocess + JSON-парсинг (не starlink_grpc, яка
-заточена під схему DishGetStatusResponse dish, а не WifiGetStatusResponse
-роутера).
-
-reboot_dish(): викликає grpcurl як subprocess замість використання
-внутрішніх protobuf-класів starlink_grpc, оскільки:
-  1. Формат виклику задокументований і стабільний:
-     grpcurl -plaintext -d '{"reboot":{}}' <addr> SpaceX.API.Device.Device/Handle
-     (https://github.com/sparky8512/starlink-grpc-tools/wiki/Useful-grpcurl-commands)
-  2. Не залежить від генерації protobuf-модулів через fetch_starlink_grpc.sh,
-     яка може не спрацювати (grpcurl уже встановлюється в install.sh і потрібен
-     для генерації модулів так чи інакше).
-Reboot виконується ЛИШЕ через dish_addr (192.168.100.1:9200) - dish і
-router фізично один пристрій ("cohoused"), тож reboot dish перезавантажує
-обидва логічні компоненти одночасно. Окремого reboot_router() немає.
+get_status(): starlink_grpc.get_status() (starlink-grpc-tools),
+повертає сирий protobuf DishGetStatusResponse.
+get_router_info(): grpcurl subprocess, payload {"get_status":{}} на
+адресу router (не dish - інша схема, WifiGetStatusResponse).
+reboot_dish(): grpcurl subprocess на dish_addr - dish і router фізично
+один пристрій, reboot dish перезавантажує обидва.
 """
 import json
 import logging

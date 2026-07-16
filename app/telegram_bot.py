@@ -1,26 +1,9 @@
 """
-Вхідні команди Telegram-бота для Starlink Monitor: перевірка стану
-оновлень і ручний reboot Starlink Mini прямо з чату.
+Вхідні команди Telegram-бота: long polling (без webhook), працює в
+потоці starlink-monitor.service. Авторизація за chat_id зі списку
+отримувачів сповіщень (app/telegram_notify).
 
-Працює через long polling (getUpdates), без webhook - Pi зазвичай не
-має публічної адреси/сертифіката, тож long polling простіший і
-надійніший варіант. Запускається окремим потоком з поточного процесу
-starlink-monitor.service (не окремим сервісом), щоб не плодити ще один
-systemd-юніт лише заради опитування Telegram API раз на кілька секунд.
-
-Авторизація: команди виконує лише той chat_id, що вже доданий у
-налаштування сповіщень (app/telegram_notify.get_telegram_config) -
-той самий список отримувачів, яким бот і так надсилає сповіщення.
-Захищає /reboot від виконання випадковим користувачем, який просто
-написав боту.
-
-Команди:
-  /status  - поточний стан оновлення ПЗ dish і router + активні
-             попередження (той самий формат, що API /api/status,
-             /api/router-status)
-  /reboot  - запит підтвердження (inline-кнопки Так/Ні), і лише після
-             підтвердження - виконує reboot_dish()
-  /help    - список команд
+Команди: /status, /reboot (з підтвердженням), /id [dish_id], /help.
 """
 import logging
 import threading

@@ -1,19 +1,8 @@
 """
-Фізична кнопка виключення Raspberry Pi через GPIO.
-
-Кнопка підключається між обраним GPIO-піном (BCM-нумерація) і GND,
-з внутрішнім pull-up (пін "висить" у HIGH, натискання замикає на GND
-і дає LOW). При утриманні кнопки довше SHUTDOWN_BUTTON_HOLD_SEC секунд
-поспіль - виконує коректне виключення (systemctl poweroff), з
-попереднім записом події в журнал і Telegram-сповіщенням.
-
-Працює як окремий процес (systemd-сервіс starlink-shutdown-button.service),
-запускається лише якщо SHUTDOWN_BUTTON_GPIO_PIN > 0 в конфігурації -
-інакше сервіс завершується одразу, нічого не роблячи (не критична
-помилка, якщо кнопка фізично не підключена).
-
-Використовує gpiod (сучасний character-device GPIO API, стандарт для
-Raspberry Pi OS Bookworm/Trixie) замість застарілого RPi.GPIO.
+GPIO-кнопка виключення Pi (pull-up, LOW = натиснуто). Утримання довше
+SHUTDOWN_BUTTON_HOLD_SEC -> systemctl poweroff + подія + Telegram.
+Окремий сервіс, виходить одразу якщо SHUTDOWN_BUTTON_GPIO_PIN=0.
+Використовує gpiod (character-device API, не застарілий RPi.GPIO).
 """
 import logging
 import subprocess

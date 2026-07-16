@@ -1,29 +1,9 @@
 """
-Фоновий процес: опитує dish кожні POLL_INTERVAL_SEC секунд і роутерний
-компонент Starlink Mini раз на ~60с, пише в БД, і виконує автоматичний
-reboot ВСЬОГО Mini (через reboot_dish() на адресу dish - dish і router
-фізично один пристрій, тож reboot dish перезавантажує обидва) у ТРЬОХ
-випадках (з єдиним захистом від reboot-loop через MIN_REBOOT_INTERVAL_SEC):
-
-1. Watchdog: dish не відповідає MAX_CONSECUTIVE_FAILURES разів поспіль.
-2. Update-ready (dish): dish повідомляє, що оновлення ПЗ вже завантажене
-   й готове до встановлення (software_update_state == REBOOT_REQUIRED,
-   або alerts.install_pending) - просто чекає на reboot.
-3. Update-ready (router): роутерний компонент повідомляє те саме своєю
-   окремою схемою (WifiSoftwareUpdateState == REBOOT_PENDING, або
-   WifiAlerts.install_pending) - у роутера окремий цикл оновлення від dish.
-
-Також відстежує зміни стану оновлення ПЗ (dish і router окремо) та
-активних попереджень і пише кожну зміну окремою подією в журнал (events) -
-щоб у веб-інтерфейсі було видно повну історію проходження оновлення
-та появу/зникнення попереджень, а не лише момент, коли watchdog
-ініціює reboot.
-
-Ключові події (reboot, готовність оновлення, нові попередження,
-відновлення зв'язку) додатково дублюються в Telegram, якщо сповіщення
-налаштовані й увімкнені через веб-інтерфейс (app/telegram_notify.py).
-Відправка ніколи не блокує основний цикл - помилки Telegram лише
-логуються, не переривають моніторинг.
+Фоновий watchdog: опитує dish (POLL_INTERVAL_SEC) і router (~60с),
+пише в БД, авто-reboot Mini при 3 умовах (watchdog failures,
+update-ready dish, update-ready router) - див. docs/architecture.md.
+Логує зміни стану/попереджень в events, дублює ключові події в
+Telegram (не блокує цикл при помилках відправки).
 """
 import json
 import logging
