@@ -20,18 +20,11 @@ systemd-юніт лише заради опитування Telegram API раз 
              /api/router-status)
   /reboot  - запит підтвердження (inline-кнопки Так/Ні), і лише після
              підтвердження - виконує reboot_dish()
-  /id      - без аргументу: список усіх Starlink Mini, які колись
-             бачив цей Pi (dish_id + коли востаннє був онлайн).
-             /id <dish_id>: версії ПЗ dish і router саме для цього
-             dish_id та час останнього зафіксованого встановленого
-             оновлення кожного з них (з таблиці db.known_devices,
-             яку наповнює monitor.py при кожному опитуванні).
   /help    - список команд
 """
 import logging
 import threading
 import time
-from datetime import datetime
 
 import requests
 
@@ -49,12 +42,6 @@ REQUEST_TIMEOUT_POLL = POLL_TIMEOUT_SEC + 5  # трохи більше за time
 # Скільки секунд діє запит підтвердження /reboot, перш ніж вважати його
 # застарілим (захист від випадкового підтвердження старого запиту)
 CONFIRM_TTL_SEC = 120
-
-
-def _fmt_ts(ts) -> str:
-    if not ts:
-        return "н/д"
-    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
 
 
 def _api_call(method: str, token: str, http_timeout: float, **params):
@@ -238,64 +225,80 @@ class TelegramBot:
             },
         )
 
-    def _cmd_id(self, token: str, chat_id: str, arg: str):
-        if not arg:
-            devices = db.get_all_known_devices()
-            if not devices:
-                self._send(token, chat_id, "Ще немає жодного зафіксованого Starlink Mini.")
-                return
-            lines = ["<b>Відомі Starlink Mini</b>", ""]
-            for d in devices:
-                seen = _fmt_ts(d["last_seen_ts"])
-                lines.append(f"<code>{d['dish_id']}</code>")
-                lines.append(f"   останній онлайн: {seen}")
-            lines.append("")
-            lines.append("Деталі: /id <dish_id> (можна скопіювати ID вище, повний або частину)")
-            self._send(token, chat_id, "\n".join(lines))
-            return
-
-        device = db.get_known_device(arg)
-        if device is None:
-            # частковий збіг (кінець ID зручніше вводити вручну в Telegram)
-            matches = [d for d in db.get_all_known_devices() if arg in d["dish_id"]]
-            if len(matches) == 1:
-                device = matches[0]
-            elif len(matches) > 1:
-                ids = "\n".join(f"<code>{m['dish_id']}</code>" for m in matches)
-                self._send(token, chat_id, f"Знайдено кілька збігів, уточніть ID:\n\n{ids}")
-                return
-
-        if device is None:
-            self._send(token, chat_id, f"Starlink Mini з ID, що містить «{arg}», не знайдено. /id — повний список.")
-            return
-
-        lines = [f"<b>Starlink Mini</b>", f"<code>{device['dish_id']}</code>", ""]
-        lines.append(f"Перший раз побачений: {_fmt_ts(device['first_seen_ts'])}")
-        lines.append(f"Востаннє онлайн: {_fmt_ts(device['last_seen_ts'])}")
-        lines.append("")
-        lines.append(
-            f"\U0001f4e1 <b>Тарілка</b>: ПЗ {device['dish_software_version'] or 'н/д'}"
-            f" (апаратна версія: {device['dish_hardware_version'] or 'н/д'})"
-        )
-        lines.append(f"   Останнє встановлене оновлення: {_fmt_ts(device['dish_software_updated_ts'])}")
-        lines.append("")
-        lines.append(
-            f"\U0001f4f6 <b>Роутер</b>: ПЗ {device['router_software_version'] or 'н/д'}"
-            f" (апаратна версія: {device['router_hardware_version'] or 'н/д'})"
-        )
-        lines.append(f"   Останнє встановлене оновлення: {_fmt_ts(device['router_software_updated_ts'])}")
-        self._send(token, chat_id, "\n".join(lines))
-
     def _cmd_help(self, token: str, chat_id: str):
         text = (
             "<b>Starlink Monitor — команди</b>\n\n"
             "/status — поточний стан оновлення ПЗ тарілки й роутера, активні попередження\n"
             "/reboot — перезавантажити Starlink Mini (з підтвердженням)\n"
-            "/id — список усіх Starlink Mini, які бачив цей Pi\n"
-            "/id <dish_id> — версії ПЗ і час останнього оновлення тарілки й роутера для цього ID\n"
+            "/id — список усіх колись підключених тарілок (ID, версії ПЗ)\n"
+            "/id &lt;ID або частина ID&gt; — деталі конкретної тарілки: версії ПЗ dish/router "
+            "і коли востаннє встановлювались оновлення\n"
             "/help — цей список"
         )
         self._send(token, chat_id, text)
+
+    def _cmd_id(self, token: str, chat_id: str, arg: str):
+        if not arg:
+            devices = db.get_all_known_devices()
+            if not devices:
+                self._send(token, chat_id, "Ще жодної тарілки не підключено.")
+                return
+            lines = [f"<b>Відомі тарілки ({len(devices)})</b>", ""]
+            for d in devices:
+                last_seen = self._fmt_ago(d["last_seen_ts"])
+                lines.append(f"<code>{d['dish_id']}</code> — востаннє в мережі {last_seen}")
+            lines.append("")
+            lines.append("Деталі: /id &lt;ID або частина ID&gt;")
+            self._send(token, chat_id, "\n".join(lines))
+            return
+
+        device = db.get_known_device(arg)
+        if device is None:
+            # Пошук за частковим збігом - зручно, щоб не вводити довгий ID повністю
+            matches = [d for d in db.get_all_known_devices() if arg.lower() in d["dish_id"].lower()]
+            if len(matches) == 1:
+                device = matches[0]
+            elif len(matches) > 1:
+                ids = "\n".join(f"<code>{d['dish_id']}</code>" for d in matches)
+                self._send(token, chat_id, f"Знайдено кілька збігів, уточніть ID:\n\n{ids}")
+                return
+
+        if device is None:
+            self._send(token, chat_id, f"Тарілку з ID «{arg}» не знайдено серед відомих.")
+            return
+
+        lines = [f"<b>Тарілка</b> <code>{device['dish_id']}</code>", ""]
+
+        lines.append(f"\U0001f4e1 <b>Dish</b>: {device['dish_hardware_version'] or 'н/д'}")
+        lines.append(f"   ПЗ: {device['dish_software_version'] or 'н/д'}")
+        if device["dish_software_updated_ts"]:
+            lines.append(f"   Останнє оновлення ПЗ: {self._fmt_ago(device['dish_software_updated_ts'])}")
+
+        lines.append("")
+        lines.append(f"\U0001f4f6 <b>Router</b>: {device['router_hardware_version'] or 'н/д'}")
+        lines.append(f"   ПЗ: {device['router_software_version'] or 'н/д'}")
+        if device["router_software_updated_ts"]:
+            lines.append(f"   Останнє оновлення ПЗ: {self._fmt_ago(device['router_software_updated_ts'])}")
+
+        lines.append("")
+        lines.append(f"Вперше підключено: {self._fmt_ago(device['first_seen_ts'])}")
+        lines.append(f"Востаннє в мережі: {self._fmt_ago(device['last_seen_ts'])}")
+
+        self._send(token, chat_id, "\n".join(lines))
+
+    @staticmethod
+    def _fmt_ago(ts: float) -> str:
+        if not ts:
+            return "невідомо"
+        delta = time.time() - ts
+        if delta < 60:
+            return "щойно"
+        if delta < 3600:
+            return f"{int(delta // 60)} хв тому"
+        if delta < 86400:
+            return f"{int(delta // 3600)} год тому"
+        days = int(delta // 86400)
+        return f"{days} дн тому"
 
     def _send(self, token: str, chat_id: str, text: str):
         phrase = telegram_notify._random_signature_phrase()
