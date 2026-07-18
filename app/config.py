@@ -14,6 +14,12 @@ MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 
 MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "120"))  # захист від reboot-loop
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))
 
+# Якщо dish недоступний (WiFi Starlink відсутня) довше цього часу -
+# Telegram-сповіщення про спроби auto-reboot тимчасово припиняються
+# (подія й далі пишеться в журнал дашборду). Відновлення зв'язку
+# завжди повідомляється, незалежно від тривалості мовчання.
+NOTIFICATIONS_MUTE_AFTER_SEC = int(os.environ.get("STARLINK_NOTIFICATIONS_MUTE_AFTER", "900"))
+
 # reboot при software_update_state==REBOOT_REQUIRED або alerts.install_pending
 AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
 

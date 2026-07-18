@@ -72,6 +72,13 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
 `/settings` або вручну у файлі. Додавання фраз можна вимкнути
 перемикачем "Додавати фразу підпису" там же.
 
+**Тиша при тривалій недоступності**: якщо dish (WiFi Starlink) не
+відповідає безперервно довше `STARLINK_NOTIFICATIONS_MUTE_AFTER`
+(за замовчуванням 15 хв), Telegram-звіти про спроби auto-reboot
+тимчасово припиняються — події й далі пишуться в журнал дашборду.
+Відновлення зв'язку завжди повідомляється, з позначкою тривалості
+простою, якщо вона перевищувала поріг.
+
 ## Backup/restore налаштувань
 
 На сторінці `/settings`:
@@ -210,6 +217,7 @@ sudo bash scripts/uninstall.sh
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `120` | мін. інтервал між авто-ребутами dish, сек |
+| `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |

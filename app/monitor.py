@@ -28,6 +28,12 @@ class Watchdog:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
         self.last_reboot_ts = 0.0
+        # Час першої невдалої спроби в поточному безперервному ланцюжку
+        # відмов - None, поки dish online. Використовується, щоб приглушити
+        # Telegram-сповіщення про auto-reboot при тривалій (>15 хв, за
+        # замовчуванням) відсутності WiFi Starlink - події й далі пишуться
+        # в журнал дашборду, лише Telegram-звіти призупиняються.
+        self.first_failure_ts = None
         # Попередні значення для детекції змін стану оновлення/попереджень.
         # None означає "ще не бачили жодного online-статусу" - перший
         # реальний статус теж логуємо, якщо він не порожній/не IDLE-без-алертів.
@@ -50,15 +56,29 @@ class Watchdog:
         except Exception as e:
             logger.warning("Помилка відправки Telegram-сповіщення: %s", e)
 
+    def _notifications_muted(self) -> bool:
+        """True, якщо dish недоступний безперервно довше
+        config.NOTIFICATIONS_MUTE_AFTER_SEC - Telegram-сповіщення про
+        auto-reboot тимчасово призупиняються (журнал подій не зачіпається)."""
+        if self.first_failure_ts is None:
+            return False
+        return (time.time() - self.first_failure_ts) >= config.NOTIFICATIONS_MUTE_AFTER_SEC
+
     def poll_once(self):
         status = self.client.get_status()
         db.insert_metric(status.to_dict())
 
         if status.online:
             if self.consecutive_failures > 0:
+                downtime_sec = time.time() - self.first_failure_ts if self.first_failure_ts else 0
                 logger.info("Dish знову online після %d невдалих спроб", self.consecutive_failures)
-                self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
+                if downtime_sec >= config.NOTIFICATIONS_MUTE_AFTER_SEC:
+                    downtime_min = round(downtime_sec / 60)
+                    self._notify(f"✅ Dish знову online (WiFi Starlink була відсутня ~{downtime_min} хв, сповіщення відновлено)")
+                else:
+                    self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
             self.consecutive_failures = 0
+            self.first_failure_ts = None
             self._notify_first_dish_connection(status)
             if status.dish_id:
                 self.last_known_dish_id = status.dish_id
@@ -67,6 +87,8 @@ class Watchdog:
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
         else:
+            if self.first_failure_ts is None:
+                self.first_failure_ts = time.time()
             self.consecutive_failures += 1
             logger.warning(
                 "Dish недоступний (%d/%d): %s",
@@ -129,7 +151,8 @@ class Watchdog:
                     f"Нове попередження dish: {label}",
                     success=False,
                 )
-                self._notify(f"⚠️ Нове попередження dish: {label}")
+                if alert not in self.MUTED_DISH_ALERTS:
+                    self._notify(f"⚠️ Нове попередження dish: {label}")
             for alert in sorted(resolved):
                 label = ALERT_LABELS.get(alert, alert)
                 db.insert_event(
@@ -176,6 +199,13 @@ class Watchdog:
     # практичної цінності.
     IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
 
+    # Попередження/стани, які й далі пишуться в журнал подій (для
+    # дашборду), але НЕ надсилаються в Telegram - шумні конкретно для
+    # цього звіту, без потреби негайного сповіщення.
+    MUTED_DISH_ALERTS = {"roaming"}
+    MUTED_ROUTER_ALERTS = {"install_pending"}
+    MUTED_ROUTER_UPDATE_STATES = {"GETTING_TARGET_VERSION_FAILED"}
+
     def poll_router(self):
         """Опитує окремий роутерний компонент Starlink Mini (інша адреса,
         ніж dish). Версія прошивки роутера змінюється рідко, тому зберігаємо
@@ -215,7 +245,7 @@ class Watchdog:
             )
             if state == "REBOOT_PENDING":
                 self._notify(f"🔄 Оновлення ПЗ роутера готове — очікує перезавантаження{detail}")
-            elif is_failure:
+            elif is_failure and state not in self.MUTED_ROUTER_UPDATE_STATES:
                 self._notify(f"⚠️ Помилка оновлення ПЗ роутера: {label}")
         self.prev_router_update_state = state
 
@@ -235,7 +265,8 @@ class Watchdog:
                     f"Нове попередження роутера: {label}",
                     success=False,
                 )
-                self._notify(f"⚠️ Нове попередження роутера: {label}")
+                if alert not in self.MUTED_ROUTER_ALERTS:
+                    self._notify(f"⚠️ Нове попередження роутера: {label}")
             for alert in sorted(resolved):
                 label = ROUTER_ALERT_LABELS.get(alert, alert)
                 db.insert_event(
@@ -346,7 +377,8 @@ class Watchdog:
         self.last_reboot_ts = now
         if ok:
             self.consecutive_failures = 0
-            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
+            if not self._notifications_muted():
+                self._notify(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
 
     def run_forever(self):
         db.init_db()

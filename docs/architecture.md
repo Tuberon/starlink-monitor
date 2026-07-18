@@ -42,7 +42,13 @@ router — різні enum з різними назвами станів).
 
 Усі три через `db.get_auto_reboot_enabled()` (runtime, перемикається
 з веб-інтерфейсу без перезапуску сервісу) і захищені
-`MIN_REBOOT_INTERVAL_SEC` (30с) від reboot-loop.
+`MIN_REBOOT_INTERVAL_SEC` (120с) від reboot-loop.
+
+`Watchdog.first_failure_ts` відслідковує тривалість безперервної
+недоступності dish. Якщо вона перевищує `NOTIFICATIONS_MUTE_AFTER_SEC`
+(900с) — Telegram-сповіщення про watchdog auto-reboot придушуються
+(`db.insert_event` не зачіпається, лише `_notify`); відновлення
+зв'язку завжди повідомляється.
 
 ## systemd-сервіси
 
