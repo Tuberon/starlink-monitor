@@ -176,6 +176,10 @@ if [[ ! -f /etc/starlink-monitor/env ]]; then
 # STARLINK_WEBUI_PORT=8080
 EOF
 fi
+# webui.service редагує цей файл через сторінку /settings - потрібен
+# запис для RUN_USER, під яким сервіс і працює.
+chown -R "$RUN_USER:$RUN_USER" /etc/starlink-monitor
+chmod 600 /etc/starlink-monitor/env
 
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,

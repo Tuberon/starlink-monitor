@@ -77,3 +77,13 @@ gpiod з компіляцією C-розширення) менш надійна 
 **Третя зміна NoNewPrivileges**: аналогічно до `starlink-webui.service`
 (див. розділ вище), `starlink-shutdown-button.service` теж без
 `NoNewPrivileges` — потребує sudo для `poweroff`.
+
+## Баг: reboot-loop при невдалій auto-reboot команді
+
+`last_reboot_ts` оновлювався лише при `reboot_dish() == True`. Якщо
+dish ще перезавантажується з попередньої спроби (`connection
+refused`), команда reboot теж провалюється — `MIN_REBOOT_INTERVAL_SEC`
+ніколи не спрацьовував, watchdog повторював спробу reboot щоцикл
+опитування (кожні ~10с) замість одного разу на 15 хв. Виправлено:
+`last_reboot_ts` оновлюється при кожній *спробі*, незалежно від
+результату.

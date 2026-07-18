@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Налаштування — Dish Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <a href="/" class="settings-link" title="Назад до дашборду">←</a>
+      <div>
+        <h1>Налаштування</h1>
+        <p>Dish Watch · Telegram, backup</p>
+      </div>
+    </div>
+    <img src="/static/logo.png" alt="logo" class="header-logo">
+  </header>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Telegram-сповіщення</h2>
+      <span class="sub">reboot, оновлення, попередження</span>
+    </div>
+    <div class="controls">
+      <label class="toggle-switch">
+        <input type="checkbox" id="telegramEnabledToggle">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+      <span class="toggle-label">Увімкнути сповіщення</span>
+      <span class="badge" id="telegramStatusBadge">—</span>
+    </div>
+    <div class="tg-form">
+      <label class="tg-label" for="telegramTokenInput">Bot token</label>
+      <input class="tg-input" type="password" id="telegramTokenInput" placeholder="напр. 123456789:ABCdef...">
+      <label class="tg-label" for="telegramChatIdsInput">Chat ID (через кому, якщо кілька)</label>
+      <input class="tg-input" type="text" id="telegramChatIdsInput" placeholder="напр. 123456789, 987654321">
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="telegramSaveBtn">💾 Зберегти</button>
+      <button class="check-btn" id="telegramTestBtn">✉ Надіслати тестове</button>
+      <span class="hint" id="telegramHint">Bot token отримайте в @BotFather, chat_id — у @userinfobot</span>
+    </div>
+    <div class="hint" style="margin-top:10px;">
+      Команди в чаті з ботом: <b>/status</b> — стан оновлень, <b>/reboot</b> — перезавантажити Starlink Mini (з підтвердженням), <b>/id</b> — відомі тарілки, <b>/help</b> — довідка.
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Фрази підпису</h2>
+      <span class="sub">додаються в кінець кожного Telegram-повідомлення</span>
+    </div>
+    <div class="tg-form">
+      <label class="tg-label" for="signaturePhrasesInput">Одна фраза на рядок</label>
+      <textarea class="tg-input" id="signaturePhrasesInput" rows="6" placeholder="Одна фраза на рядок"></textarea>
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="signaturePhrasesSaveBtn">💾 Зберегти фрази</button>
+      <span class="hint" id="signaturePhrasesHint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Backup/restore налаштувань</h2>
+      <span class="sub">Telegram config, фрази, auto-reboot</span>
+    </div>
+    <div class="controls">
+      <button class="check-btn" id="settingsBackupBtn">⬇ Завантажити backup</button>
+      <button class="check-btn" id="settingsRestoreBtn">⬆ Відновити з backup</button>
+      <input type="file" id="settingsRestoreFile" accept="application/json" style="display:none;">
+      <span class="hint" id="settingsBackupHint">Bot token, chat_id, фрази підпису й перемикач auto-reboot одним файлом</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Параметри моніторингу</h2>
+      <span class="sub">app/config.py — застосовуються після перезапуску сервісів</span>
+    </div>
+    <div class="tg-form" id="envParamsForm">
+      <span class="hint">Завантаження...</span>
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="envConfigSaveBtn">💾 Зберегти параметри</button>
+      <button class="check-btn" id="envConfigRestartBtn">🔁 Зберегти й перезапустити сервіси</button>
+      <span class="hint" id="envConfigHint">Порожнє поле = значення за замовчуванням</span>
+    </div>
+  </div>
+
+  <footer>
+    © 2026 JunioR · Starlink Mini Monitor · Ліцензія MIT
+  </footer>
+</div>
+
+<script src="/static/settings.js"></script>
+</body>
+</html>

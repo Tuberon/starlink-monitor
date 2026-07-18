@@ -24,7 +24,7 @@ router — різні enum з різними назвами станів).
 |---|---|
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, reboot_dish() |
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
-| `webapp.py` | Flask, усі REST endpoints, роздача dashboard, reboot/shutdown Pi |
+| `webapp.py` | Flask, REST API, роздає `/` (дашборд) і `/settings` (Telegram/backup/env-параметри) |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
 | `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` |
@@ -32,6 +32,7 @@ router — різні enum з різними назвами станів).
 | `system_metrics.py` | Метрики самого Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `config.py` | Конфігурація, env-змінні |
+| `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 
 ## Автоматичний reboot dish/router — умови спрацювання
 

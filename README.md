@@ -47,7 +47,8 @@ Telegram. Короткий дотик ігнорується.
 
 ## Telegram-сповіщення та команди
 
-Налаштовуються в панелі "Telegram-сповіщення" на дашборді:
+Налаштовуються на сторінці `/settings` (перехід за іконкою ⚙ на
+дашборді):
 1. Створіть бота через [@BotFather](https://t.me/BotFather), отримайте bot token.
 2. Дізнайтесь свій chat_id через [@userinfobot](https://t.me/userinfobot).
 3. Вставте token і chat_id (через кому — кілька отримувачів), "Зберегти",
@@ -67,12 +68,12 @@ Bot token зберігається в локальній SQLite (таблиця 
 Long polling (без webhook) у потоці `starlink-monitor.service`.
 
 Кожне повідомлення завершується випадковою фразою з
-`app/signature_phrases.txt` (одна на рядок) — редагується в панелі
-"Telegram-сповіщення" або вручну у файлі.
+`app/signature_phrases.txt` (одна на рядок) — редагується на сторінці
+`/settings` або вручну у файлі.
 
 ## Backup/restore налаштувань
 
-У панелі "Telegram-сповіщення":
+На сторінці `/settings`:
 - **"Завантажити backup"** — JSON з bot token, chat_id, auto-reboot,
   фразами підпису
 - **"Відновити з backup"** — застосовує раніше збережений файл
@@ -126,9 +127,10 @@ starlink-monitor/
 │   ├── webapp.py              # Flask + REST API
 │   ├── shutdown_button.py     # фізична кнопка виключення (GPIO)
 │   ├── config.py              # конфігурація
+│   ├── config_editor.py       # редагування env-параметрів через /settings
 │   └── vendor/                # сюди завантажується starlink_grpc.py
-├── templates/index.html       # дашборд
-├── static/dashboard.js, logo.png
+├── templates/index.html, settings.html
+├── static/dashboard.js, settings.js, style.css, logo.png
 ├── systemd/
 │   ├── starlink-monitor.service          # watchdog + метрики
 │   ├── starlink-webui.service            # веб-інтерфейс
@@ -172,9 +174,9 @@ sudo bash scripts/update.sh
 
 ## Конфігурація
 
-Усі налаштування — змінні середовища в `/etc/starlink-monitor/env`
-(створюється при встановленні). Повний список — у `app/config.py`.
-Найважливіші:
+Редагується на сторінці `/settings` (панель "Параметри моніторингу")
+або вручну в `/etc/starlink-monitor/env`. Повний список — у
+`app/config.py`. Найважливіші:
 
 | Змінна | За замовчуванням | Опис |
 |---|---|---|
@@ -188,7 +190,9 @@ sudo bash scripts/update.sh
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
 
-Після зміни файлу — перезапустити сервіси:
+Параметри читаються один раз при старті процесів — після збереження
+на `/settings` натисни "Зберегти й перезапустити сервіси" (кнопка
+поруч), або вручну:
 ```bash
 sudo systemctl restart starlink-monitor.service starlink-webui.service
 ```

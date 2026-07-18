@@ -331,12 +331,15 @@ class Watchdog:
         )
         ok, msg = self.client.reboot_dish()
         db.insert_event("dish_reboot", msg, success=ok)
+        # last_reboot_ts оновлюється завжди, навіть при невдачі: якщо dish
+        # ще перезавантажується з попередньої спроби, команда reboot теж
+        # провалиться (grpcurl: connection refused) - без цього watchdog
+        # намагався б "перезавантажити" вже перезавантажуваний dish щоцикл,
+        # ігноруючи MIN_REBOOT_INTERVAL_SEC (справжній reboot-loop).
+        self.last_reboot_ts = now
         if ok:
-            self.last_reboot_ts = now
             self.consecutive_failures = 0
             self._notify(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
-        else:
-            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (watchdog, {failures} невдалих спроб): {msg}")
 
     def run_forever(self):
         db.init_db()

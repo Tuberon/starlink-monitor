@@ -21,7 +21,7 @@ StandardError=journal
 # NOPASSWD-команд (systemctl reboot/poweroff) - див.
 # /etc/sudoers.d/starlink-monitor, який і є основним бар'єром безпеки тут.
 ProtectSystem=strict
-ReadWritePaths=/var/lib/starlink-monitor /opt/starlink-monitor/app/signature_phrases.txt
+ReadWritePaths=/var/lib/starlink-monitor /opt/starlink-monitor/app/signature_phrases.txt /etc/starlink-monitor
 ProtectHome=true
 
 [Install]

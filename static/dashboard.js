@@ -105,7 +105,7 @@ const ROUTER_ALERT_LABELS = {
   'wired_mesh_not_using_wan_iface': 'дротовий mesh не використовує WAN',
 };
 
-let throughputChart, latencyChart;
+let throughputChart;
 
 function initCharts() {
   const commonOpts = {
@@ -141,29 +141,6 @@ function initCharts() {
       ],
     },
     options: commonOpts,
-  });
-
-  latencyChart = new Chart(el('latencyChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        { label: 'Затримка мс', data: [], borderColor: '#ffb454', backgroundColor: 'rgba(255,180,84,0.06)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
-        { label: 'Втрати %', data: [], borderColor: '#ff6b6b', backgroundColor: 'transparent', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y1' },
-      ],
-    },
-    options: {
-      ...commonOpts,
-      scales: {
-        ...commonOpts.scales,
-        y1: {
-          position: 'right',
-          ticks: { color: '#5b6b8c', font: { family: 'JetBrains Mono', size: 10 } },
-          grid: { display: false },
-          beginAtZero: true,
-        },
-      },
-    },
   });
 }
 
@@ -264,11 +241,6 @@ async function refreshHistory() {
     throughputChart.data.datasets[0].data = rows.map(r => r.downlink_mbps);
     throughputChart.data.datasets[1].data = rows.map(r => r.uplink_mbps);
     throughputChart.update('none');
-
-    latencyChart.data.labels = labels;
-    latencyChart.data.datasets[0].data = rows.map(r => r.ping_latency_ms);
-    latencyChart.data.datasets[1].data = rows.map(r => (r.ping_drop_ratio || 0) * 100);
-    latencyChart.update('none');
   } catch (e) {
     console.error('history refresh failed', e);
   }
@@ -558,202 +530,6 @@ async function handleAutoRebootToggle(e) {
   }
 }
 
-async function loadTelegramConfig() {
-  try {
-    const res = await fetch('/api/telegram-config');
-    const cfg = await res.json();
-    updateTelegramUI(cfg.enabled);
-    el('telegramChatIdsInput').value = (cfg.chat_ids || []).join(', ');
-    if (cfg.token_set) {
-      el('telegramTokenInput').placeholder = cfg.token_masked;
-    }
-  } catch (e) {
-    console.error('telegram config load failed', e);
-  }
-}
-
-function updateTelegramUI(enabled) {
-  const toggle = el('telegramEnabledToggle');
-  const badge = el('telegramStatusBadge');
-  toggle.checked = enabled;
-  badge.textContent = enabled ? 'увімкнено' : 'вимкнено';
-  badge.classList.remove('state-idle', 'state-reboot');
-  badge.classList.add(enabled ? 'state-idle' : 'state-reboot');
-}
-
-async function handleTelegramToggle(e) {
-  const toggle = e.target;
-  const enabled = toggle.checked;
-  toggle.disabled = true;
-  try {
-    const res = await fetch('/api/telegram-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      updateTelegramUI(enabled);
-    } else {
-      toggle.checked = !enabled;
-    }
-  } catch (e) {
-    console.error('telegram toggle failed', e);
-    toggle.checked = !enabled;
-  } finally {
-    toggle.disabled = false;
-  }
-}
-
-async function handleTelegramSave() {
-  const btn = el('telegramSaveBtn');
-  const hint = el('telegramHint');
-  const tokenInput = el('telegramTokenInput');
-  const chatIdsInput = el('telegramChatIdsInput');
-
-  const payload = { chat_ids: chatIdsInput.value };
-  if (tokenInput.value.trim()) {
-    payload.token = tokenInput.value.trim();
-  }
-
-  btn.disabled = true;
-  hint.textContent = 'Зберігаю...';
-  try {
-    const res = await fetch('/api/telegram-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    hint.textContent = data.success ? 'Збережено' : 'Помилка збереження';
-    if (data.success && tokenInput.value.trim()) {
-      tokenInput.value = '';
-      loadTelegramConfig();
-    }
-    refreshEvents();
-  } catch (e) {
-    hint.textContent = 'Помилка мережі при збереженні';
-    console.error('telegram save failed', e);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function handleTelegramTest() {
-  const btn = el('telegramTestBtn');
-  const hint = el('telegramHint');
-
-  btn.disabled = true;
-  hint.textContent = 'Надсилаю тестове повідомлення...';
-  try {
-    const res = await fetch('/api/telegram-test', { method: 'POST' });
-    const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Успішно' : 'Помилка');
-  } catch (e) {
-    hint.textContent = 'Помилка мережі при тестуванні';
-    console.error('telegram test failed', e);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function loadSignaturePhrases() {
-  try {
-    const res = await fetch('/api/signature-phrases');
-    const data = await res.json();
-    el('signaturePhrasesInput').value = data.text || '';
-  } catch (e) {
-    console.error('signature phrases load failed', e);
-  }
-}
-
-async function handleSignaturePhrasesSave() {
-  const btn = el('signaturePhrasesSaveBtn');
-  const hint = el('signaturePhrasesHint');
-  const text = el('signaturePhrasesInput').value;
-
-  btn.disabled = true;
-  hint.textContent = 'Зберігаю...';
-  try {
-    const res = await fetch('/api/signature-phrases', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Збережено' : 'Помилка');
-    if (data.success) {
-      loadSignaturePhrases();
-    }
-    refreshEvents();
-  } catch (e) {
-    hint.textContent = 'Помилка мережі при збереженні';
-    console.error('signature phrases save failed', e);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function handleSettingsBackup() {
-  const hint = el('settingsBackupHint');
-  try {
-    const res = await fetch('/api/settings-backup');
-    const data = await res.json();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    a.href = url;
-    a.download = `starlink-monitor-settings-${ts}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    hint.textContent = 'Backup завантажено';
-  } catch (e) {
-    hint.textContent = 'Помилка завантаження backup';
-    console.error('settings backup failed', e);
-  }
-}
-
-function handleSettingsRestoreClick() {
-  el('settingsRestoreFile').click();
-}
-
-async function handleSettingsRestoreFile(e) {
-  const hint = el('settingsBackupHint');
-  const file = e.target.files[0];
-  if (!file) return;
-
-  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, фрази підпису й перемикач auto-reboot будуть перезаписані.')) {
-    e.target.value = '';
-    return;
-  }
-
-  try {
-    const text = await file.text();
-    const payload = JSON.parse(text);
-    const res = await fetch('/api/settings-restore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Відновлено' : 'Помилка');
-    if (data.success) {
-      loadConfigFlags();
-      loadTelegramConfig();
-      loadSignaturePhrases();
-    }
-    refreshEvents();
-  } catch (err) {
-    hint.textContent = 'Некоректний файл backup';
-    console.error('settings restore failed', err);
-  } finally {
-    e.target.value = '';
-  }
-}
-
 let historyTickCounter = 0;
 const HISTORY_REFRESH_EVERY_N_TICKS = 5; // з REFRESH_MS=1000 це кожні ~5с -
 // достатньо часто для плавних графіків, але без зайвих запитів тих самих
@@ -778,16 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   el('checkUpdatesBtn').addEventListener('click', handleCheckUpdates);
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);
-  el('telegramEnabledToggle').addEventListener('change', handleTelegramToggle);
-  el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
-  el('telegramTestBtn').addEventListener('click', handleTelegramTest);
-  el('signaturePhrasesSaveBtn').addEventListener('click', handleSignaturePhrasesSave);
-  el('settingsBackupBtn').addEventListener('click', handleSettingsBackup);
-  el('settingsRestoreBtn').addEventListener('click', handleSettingsRestoreClick);
-  el('settingsRestoreFile').addEventListener('change', handleSettingsRestoreFile);
   loadConfigFlags();
-  loadTelegramConfig();
-  loadSignaturePhrases();
   tick();
   setInterval(tick, REFRESH_MS);
 });

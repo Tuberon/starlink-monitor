@@ -5,7 +5,7 @@ import time
 
 from flask import Flask, jsonify, render_template, request
 
-from app import config, db, telegram_notify
+from app import config, config_editor, db, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +23,11 @@ client = StarlinkClient()
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/settings")
+def settings_page():
+    return render_template("settings.html")
 
 
 @app.route("/api/status")
@@ -259,6 +264,32 @@ def api_settings_restore():
     except Exception as e:
         db.insert_event("settings_restored", f"Помилка відновлення backup: {e}", success=False)
         return jsonify({"success": False, "message": str(e)})
+
+
+@app.route("/api/env-config")
+def api_get_env_config():
+    return jsonify({"params": config_editor.read_current_values()})
+
+
+@app.route("/api/env-config", methods=["POST"])
+def api_set_env_config():
+    payload = request.get_json(silent=True) or {}
+    values = payload.get("values", {})
+    ok, msg = config_editor.save_values(values)
+    db.insert_event("env_config_updated", f"Параметри config.py оновлено: {msg}", success=ok)
+    return jsonify({"success": ok, "message": msg})
+
+
+@app.route("/api/env-config-restart", methods=["POST"])
+def api_restart_after_env_change():
+    """Перезапускає starlink-monitor.service і starlink-webui.service, щоб
+    застосувати щойно змінені env-параметри (читаються один раз при старті).
+    webui.service перезапускає й самого себе - відповідь клієнту може не
+    дійти, це очікувано."""
+    ok1, msg1 = _run_system_command(["sudo", "systemctl", "restart", "starlink-monitor.service"])
+    db.insert_event("service_restart", f"starlink-monitor.service: {msg1}", success=ok1)
+    ok2, msg2 = _run_system_command(["sudo", "systemctl", "restart", "starlink-webui.service"])
+    return jsonify({"success": ok1 and ok2, "message": f"monitor: {msg1}; webui: {msg2}"})
 
 
 def _run_system_command(cmd: list) -> tuple:
