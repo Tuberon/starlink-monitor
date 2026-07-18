@@ -229,6 +229,84 @@ fi
 
 echo ""
 echo "======================================================================"
+echo " Налаштування мережі (опційно)"
+echo "======================================================================"
+echo ""
+echo " Типова топологія: USB-Ethernet — доступ у домашню мережу/інтернет,"
+echo " WiFi (wlan0) — підключення до Starlink Mini (моніторинг + reboot dish)."
+echo " За замовчуванням обидва інтерфейси отримують адресу по DHCP, що може"
+echo " спричиняти конфлікти маршрутів (dish/router стають недоступні, якщо"
+echo " домашня мережа отримує вищий пріоритет за замовчуванням)."
+echo ""
+read -r -p " Налаштувати статичні IP для USB-Ethernet і WiFi зараз? [т/N]: " SETUP_NET
+if [[ "$SETUP_NET" =~ ^[TtYyТт] ]]; then
+  ETH_IFACE="eth0"
+  WLAN_IFACE="wlan0"
+  ETH_CONN="$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v d="$ETH_IFACE" '$2==d{print $1; exit}')"
+  WLAN_CONN="$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v d="$WLAN_IFACE" '$2==d{print $1; exit}')"
+
+  if [[ -z "$ETH_CONN" || -z "$WLAN_CONN" ]]; then
+    echo " !! Не вдалося знайти профілі NetworkManager для $ETH_IFACE і/або $WLAN_IFACE."
+    echo "    Перевірте підключення обох інтерфейсів (nmcli connection show) і повторіть пізніше:"
+    echo "      sudo bash scripts/install.sh"
+  else
+    echo " Знайдено з'єднання: eth0=\"$ETH_CONN\", wlan0=\"$WLAN_CONN\""
+    echo ""
+    echo " Значення за замовчуванням (Enter, щоб прийняти):"
+
+    read -r -p "   IP для $ETH_IFACE [192.168.0.95/24]: " ETH_IP
+    ETH_IP="${ETH_IP:-192.168.0.95/24}"
+    read -r -p "   Gateway для $ETH_IFACE [192.168.0.1]: " ETH_GW
+    ETH_GW="${ETH_GW:-192.168.0.1}"
+
+    read -r -p "   IP для $WLAN_IFACE (Starlink WiFi) [192.168.1.95/24]: " WLAN_IP
+    WLAN_IP="${WLAN_IP:-192.168.1.95/24}"
+    read -r -p "   Gateway для $WLAN_IFACE (Starlink router) [192.168.1.1]: " WLAN_GW
+    WLAN_GW="${WLAN_GW:-192.168.1.1}"
+
+    # wlan0 з нижчим metric (вищий пріоритет) - трафік до dish/router
+    # Starlink (окрема підмережа 192.168.100.0/24, недосяжна інакше, ніж
+    # через дефолтний маршрут) завжди повинен йти через WiFi, не через
+    # домашню мережу.
+    nmcli connection modify "$ETH_CONN" \
+      ipv4.method manual ipv4.addresses "$ETH_IP" ipv4.gateway "$ETH_GW" \
+      ipv4.dns "$ETH_GW,8.8.8.8" ipv4.route-metric 1002
+    nmcli connection modify "$WLAN_CONN" \
+      ipv4.method manual ipv4.addresses "$WLAN_IP" ipv4.gateway "$WLAN_GW" \
+      ipv4.dns "1.1.1.1,8.8.8.8" ipv4.route-metric 50
+
+    # dhcpcd конфліктує з NetworkManager (перевидає власні DHCP-лізинги й
+    # маршрути незалежно від профілів nmcli, ігноруючи ipv4.method=manual).
+    if systemctl list-unit-files dhcpcd.service >/dev/null 2>&1; then
+      echo " ==> Вимикаю dhcpcd (конфліктує з NetworkManager)"
+      systemctl disable --now dhcpcd 2>/dev/null || true
+      systemctl mask dhcpcd 2>/dev/null || true
+    fi
+
+    echo " ==> Перезапускаю з'єднання..."
+    nmcli connection down "$ETH_CONN" 2>/dev/null || true
+    nmcli connection down "$WLAN_CONN" 2>/dev/null || true
+    ip addr flush dev "$ETH_IFACE" 2>/dev/null || true
+    ip addr flush dev "$WLAN_IFACE" 2>/dev/null || true
+    nmcli connection up "$ETH_CONN" || echo " !! Не вдалося підняти $ETH_CONN"
+    nmcli connection up "$WLAN_CONN" || echo " !! Не вдалося підняти $WLAN_CONN"
+
+    echo ""
+    echo " ==> Готово. Перевірка:"
+    ip -4 addr show "$ETH_IFACE" | grep inet || true
+    ip -4 addr show "$WLAN_IFACE" | grep inet || true
+    echo ""
+    echo " Якщо працюєте віддалено по SSH через $ETH_IFACE — з'єднання могло"
+    echo " щойно розірватись через зміну IP. Перепідключіться на нову адресу:"
+    echo "   ssh ${RUN_USER}@${ETH_IP%%/*}"
+  fi
+else
+  echo " Пропущено. Налаштувати мережу пізніше вручну можна через nmcli"
+  echo " (див. секцію \"Важливо розуміти про мережу\" в README.md)."
+fi
+
+echo ""
+echo "======================================================================"
 if [[ "$MODE" == "update" ]]; then
   echo " Оновлення завершено."
 else

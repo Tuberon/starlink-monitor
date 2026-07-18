@@ -32,6 +32,44 @@ def _find_gpio_chip():
     return GPIO_CHIP
 
 
+def _init_line_v2(gpiod, chip_path, pin):
+    """gpiod >= 2.0: gpiod.request_lines() з LineSettings, значення
+    читається через request.get_value(pin) (повертає Value.ACTIVE/INACTIVE,
+    не 0/1 як у v1)."""
+    from gpiod.line import Direction, Bias
+
+    request = gpiod.request_lines(
+        chip_path,
+        consumer="starlink-shutdown-button",
+        config={pin: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP)},
+    )
+
+    def get_value():
+        from gpiod.line import Value
+        return 0 if request.get_value(pin) == Value.INACTIVE else 1
+
+    def release():
+        request.release()
+
+    return get_value, release
+
+
+def _init_line_v1(gpiod, chip_path, pin):
+    """gpiod < 2.0 (застарілий API): chip.get_line() + line.request()."""
+    chip = gpiod.Chip(chip_path)
+    line = chip.get_line(pin)
+    line.request(consumer="starlink-shutdown-button", type=gpiod.LINE_REQ_DIR_IN,
+                 flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
+
+    def get_value():
+        return line.get_value()
+
+    def release():
+        line.release()
+
+    return get_value, release
+
+
 def watch_button():
     pin = config.SHUTDOWN_BUTTON_GPIO_PIN
     if not pin or pin <= 0:
@@ -47,13 +85,19 @@ def watch_button():
     chip_path = _find_gpio_chip()
     logger.info("Слухаю кнопку виключення на GPIO%d (%s), утримання %.1fс", pin, chip_path, config.SHUTDOWN_BUTTON_HOLD_SEC)
 
+    # gpiod v2.x видалив Chip.get_line() (звідси hasattr-перевірка) на
+    # користь request_lines() - API повністю несумісний зі старим v1.x.
+    # Raspberry Pi OS Bookworm+ ставить v2 через apt python3-libgpiod.
+    is_v2 = not hasattr(gpiod.Chip, "get_line")
+
     try:
-        chip = gpiod.Chip(chip_path)
-        line = chip.get_line(pin)
-        line.request(consumer="starlink-shutdown-button", type=gpiod.LINE_REQ_DIR_IN,
-                     flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
+        if is_v2:
+            get_value, release = _init_line_v2(gpiod, chip_path, pin)
+        else:
+            get_value, release = _init_line_v1(gpiod, chip_path, pin)
     except Exception as e:
-        logger.error("Не вдалося ініціалізувати GPIO%d: %s", pin, e)
+        logger.error("Не вдалося ініціалізувати GPIO%d (gpiod %s API): %s",
+                     pin, "v2" if is_v2 else "v1", e)
         return
 
     pressed_since = None
@@ -62,7 +106,7 @@ def watch_button():
     try:
         while True:
             try:
-                value = line.get_value()
+                value = get_value()
             except Exception as e:
                 logger.warning("Помилка читання GPIO%d: %s", pin, e)
                 time.sleep(1)
@@ -83,7 +127,7 @@ def watch_button():
             time.sleep(POLL_INTERVAL_SEC)
     finally:
         try:
-            line.release()
+            release()
         except Exception:
             pass
 
