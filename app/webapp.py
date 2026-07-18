@@ -198,7 +198,10 @@ def api_telegram_test():
 
 @app.route("/api/signature-phrases")
 def api_get_signature_phrases():
-    return jsonify({"text": telegram_notify.get_signature_phrases_text()})
+    return jsonify({
+        "text": telegram_notify.get_signature_phrases_text(),
+        "enabled": telegram_notify.get_signature_phrases_enabled(),
+    })
 
 
 @app.route("/api/signature-phrases", methods=["POST"])
@@ -208,6 +211,19 @@ def api_set_signature_phrases():
     ok, msg = telegram_notify.set_signature_phrases_text(text)
     db.insert_event("signature_phrases_updated", f"Фрази підпису оновлено: {msg}", success=ok)
     return jsonify({"success": ok, "message": msg})
+
+
+@app.route("/api/signature-phrases-enabled", methods=["POST"])
+def api_set_signature_phrases_enabled():
+    payload = request.get_json(silent=True) or {}
+    enabled = bool(payload.get("enabled"))
+    telegram_notify.set_signature_phrases_enabled(enabled)
+    db.insert_event(
+        "signature_phrases_toggled",
+        f"Додавання фраз підпису: {'увімкнено' if enabled else 'вимкнено'}",
+        success=True,
+    )
+    return jsonify({"success": True, "enabled": enabled})
 
 
 BACKUP_FORMAT_VERSION = 1
@@ -228,6 +244,7 @@ def api_settings_backup():
         "telegram_enabled": enabled,
         "auto_reboot_enabled": db.get_auto_reboot_enabled(),
         "signature_phrases": telegram_notify.get_signature_phrases_text(),
+        "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
     }
     return jsonify(backup)
 
@@ -258,6 +275,10 @@ def api_settings_restore():
             ok, msg = telegram_notify.set_signature_phrases_text(payload["signature_phrases"])
             if ok:
                 restored.append("фрази підпису")
+
+        if "signature_phrases_enabled" in payload:
+            telegram_notify.set_signature_phrases_enabled(bool(payload["signature_phrases_enabled"]))
+            restored.append("перемикач фраз")
 
         db.insert_event("settings_restored", f"Відновлено з backup: {', '.join(restored) or 'нічого'}", success=True)
         return jsonify({"success": True, "message": f"Відновлено: {', '.join(restored) or 'нічого'}"})

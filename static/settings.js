@@ -98,13 +98,47 @@ async function handleTelegramTest() {
   }
 }
 
+function updateSignaturePhrasesUI(enabled) {
+  const toggle = el('signaturePhrasesEnabledToggle');
+  const badge = el('signaturePhrasesEnabledBadge');
+  toggle.checked = enabled;
+  badge.textContent = enabled ? 'увімкнено' : 'вимкнено';
+  badge.classList.remove('state-idle', 'state-reboot');
+  badge.classList.add(enabled ? 'state-idle' : 'state-reboot');
+}
+
 async function loadSignaturePhrases() {
   try {
     const res = await fetch('/api/signature-phrases');
     const data = await res.json();
     el('signaturePhrasesInput').value = data.text || '';
+    updateSignaturePhrasesUI(data.enabled);
   } catch (e) {
     console.error('signature phrases load failed', e);
+  }
+}
+
+async function handleSignaturePhrasesEnabledToggle(e) {
+  const toggle = e.target;
+  const enabled = toggle.checked;
+  toggle.disabled = true;
+  try {
+    const res = await fetch('/api/signature-phrases-enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      updateSignaturePhrasesUI(enabled);
+    } else {
+      toggle.checked = !enabled;
+    }
+  } catch (e) {
+    console.error('signature phrases toggle failed', e);
+    toggle.checked = !enabled;
+  } finally {
+    toggle.disabled = false;
   }
 }
 
@@ -279,6 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('telegramEnabledToggle').addEventListener('change', handleTelegramToggle);
   el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
   el('telegramTestBtn').addEventListener('click', handleTelegramTest);
+  el('signaturePhrasesEnabledToggle').addEventListener('change', handleSignaturePhrasesEnabledToggle);
   el('signaturePhrasesSaveBtn').addEventListener('click', handleSignaturePhrasesSave);
   el('settingsBackupBtn').addEventListener('click', handleSettingsBackup);
   el('settingsRestoreBtn').addEventListener('click', handleSettingsRestoreClick);

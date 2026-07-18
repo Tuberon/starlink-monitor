@@ -59,6 +59,17 @@ def set_signature_phrases_text(text: str) -> tuple[bool, str]:
         return False, str(e)
 
 
+def get_signature_phrases_enabled() -> bool:
+    """Runtime-перемикач: чи додавати випадкову фразу підпису в кінець
+    Telegram-повідомлень. За замовчуванням увімкнено (збігається з
+    попередньою поведінкою до появи цього перемикача)."""
+    return db.get_setting("signature_phrases_enabled", "1") == "1"
+
+
+def set_signature_phrases_enabled(enabled: bool):
+    db.set_setting("signature_phrases_enabled", "1" if enabled else "0")
+
+
 def get_telegram_config():
     """Повертає (token, chat_id, enabled) з БД. chat_id може містити
     кілька id через кому (сповіщення кільком отримувачам)."""
@@ -92,7 +103,7 @@ def send_message(text: str) -> tuple[bool, str]:
     if not chat_ids:
         return False, "Не вказано жодного chat_id"
 
-    phrase = _random_signature_phrase()
+    phrase = _random_signature_phrase() if get_signature_phrases_enabled() else ""
     full_text = f"{text}\n\n{phrase}" if phrase else text
 
     url = API_BASE.format(token=token, method="sendMessage")

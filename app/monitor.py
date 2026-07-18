@@ -171,12 +171,18 @@ class Watchdog:
         except Exception as e:
             logger.warning("Не вдалося зібрати системні метрики: %s", e)
 
+    # Попередження, які навмисно ігноруються (не пишуться в БД, журнал,
+    # Telegram) - шумні для конкретної конфігурації мережі, без
+    # практичної цінності.
+    IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
+
     def poll_router(self):
         """Опитує окремий роутерний компонент Starlink Mini (інша адреса,
         ніж dish). Версія прошивки роутера змінюється рідко, тому зберігаємо
         лише останній відомий стан (без історії/графіків)."""
         try:
             info = self.client.get_router_info()
+            info.active_alerts = [a for a in info.active_alerts if a not in self.IGNORED_ROUTER_ALERTS]
             db.set_router_status(info.to_dict())
             if not info.online:
                 logger.debug("Роутер недоступний: %s", info.error)
@@ -214,7 +220,8 @@ class Watchdog:
         self.prev_router_update_state = state
 
     def _log_router_alerts_change(self, info):
-        """Пише окрему подію для кожного попередження роутера, яке з'явилось або зникло."""
+        """Пише окрему подію для кожного попередження роутера, яке з'явилось або зникло.
+        info.active_alerts тут уже профільтровано від IGNORED_ROUTER_ALERTS (poll_router)."""
         current = set(info.active_alerts or [])
         previous = self.prev_router_alerts
 

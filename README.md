@@ -69,7 +69,8 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
 
 Кожне повідомлення завершується випадковою фразою з
 `app/signature_phrases.txt` (одна на рядок) — редагується на сторінці
-`/settings` або вручну у файлі.
+`/settings` або вручну у файлі. Додавання фраз можна вимкнути
+перемикачем "Додавати фразу підпису" там же.
 
 ## Backup/restore налаштувань
 
@@ -184,7 +185,7 @@ sudo bash scripts/update.sh
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
-| `STARLINK_MIN_REBOOT_INTERVAL` | `900` | мін. інтервал між авто-ребутами dish, сек |
+| `STARLINK_MIN_REBOOT_INTERVAL` | `120` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |

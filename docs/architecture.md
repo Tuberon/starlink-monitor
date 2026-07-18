@@ -42,7 +42,7 @@ router — різні enum з різними назвами станів).
 
 Усі три через `db.get_auto_reboot_enabled()` (runtime, перемикається
 з веб-інтерфейсу без перезапуску сервісу) і захищені
-`MIN_REBOOT_INTERVAL_SEC` (900с = 15хв) від reboot-loop.
+`MIN_REBOOT_INTERVAL_SEC` (30с) від reboot-loop.
 
 ## systemd-сервіси
 
@@ -90,7 +90,7 @@ WAL journal_mode — паралельне читання (webui) і запис (
 ## Backup/restore налаштувань
 
 `GET /api/settings-backup` віддає JSON (Telegram bot token, chat_ids,
-enabled, auto_reboot_enabled, вміст signature_phrases.txt) —
+enabled, auto_reboot_enabled, вміст і перемикач signature_phrases) —
 завантажується браузером як файл. `POST /api/settings-restore`
 приймає той самий формат і застосовує лише відомі поля. Bot token
 у файлі — у відкритому вигляді, файл backup потрібно берегти як secret.
