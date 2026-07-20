@@ -25,6 +25,7 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_MAX_FAILURES", "type": "int", "default": "6", "label": "Невдалих опитувань перед watchdog-reboot"},
     {"key": "STARLINK_MIN_REBOOT_INTERVAL", "type": "int", "default": "120", "label": "Мін. інтервал між авто-ребутами, сек"},
     {"key": "STARLINK_NOTIFICATIONS_MUTE_AFTER", "type": "int", "default": "900", "label": "Приглушити Telegram після недоступності dish, сек"},
+    {"key": "STARLINK_MAX_LOGGED_FAILURES", "type": "int", "default": "30", "label": "Макс. послідовних невдач у журналі перед припиненням запису"},
     {"key": "STARLINK_OBSTRUCTION_WARN", "type": "float", "default": "0.05", "label": "Поріг попередження про перешкоди (0-1)"},
     {"key": "STARLINK_AUTO_REBOOT_ON_UPDATE", "type": "bool", "default": "1", "label": "Авто-reboot при готовому оновленні"},
     {"key": "STARLINK_HISTORY_DAYS", "type": "int", "default": "30", "label": "Зберігати історію, днів"},

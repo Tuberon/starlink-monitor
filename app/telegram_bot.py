@@ -8,6 +8,7 @@
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -48,6 +49,12 @@ class TelegramBot:
         self._thread = None
         # Очікуючі підтвердження /reboot: chat_id -> час запиту (для TTL)
         self._pending_reboot_confirm = {}
+        # Обробка кожного update (зокрема /status, що робить блокуючі
+        # gRPC-виклики до dish/router з таймаутом до ~15с) виконується
+        # в окремому потоці з цього пулу - інакше повільна/недоступна
+        # мережа Starlink затримує весь polling-цикл getUpdates, і нові
+        # команди чекають, поки не завершиться поточна.
+        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="tg-cmd")
 
     def start(self):
         """Запускає polling у фоновому демон-потоці. Викликається один раз
@@ -60,6 +67,7 @@ class TelegramBot:
 
     def stop(self):
         self._stop_event.set()
+        self._executor.shutdown(wait=False)
 
     def _run_loop(self):
         while not self._stop_event.is_set():
@@ -89,6 +97,32 @@ class TelegramBot:
 
         for update in data.get("result", []):
             self._last_update_id = max(self._last_update_id, update.get("update_id", 0))
+
+        # Групуємо за chat_id: updates того самого чату обробляються
+        # послідовно в одному потоці (гарантує порядок, напр. команда
+        # /reboot і подальший клік підтвердження від того самого
+        # користувача) - без цього ThreadPoolExecutor міг би виконати їх
+        # у довільному порядку завершення, і клік "підтвердити" міг би
+        # обробитись РАНІШЕ за встановлення pending-стану командою /reboot.
+        # Різні чати й далі обробляються паралельно (одна повільна команда
+        # від одного користувача не блокує інших).
+        groups = {}
+        for update in data.get("result", []):
+            chat_id = self._extract_chat_id(update)
+            groups.setdefault(chat_id, []).append(update)
+
+        for chat_id, updates in groups.items():
+            self._executor.submit(self._handle_updates_sequential, token, allowed_chat_ids, updates)
+
+    @staticmethod
+    def _extract_chat_id(update: dict) -> str:
+        if "callback_query" in update:
+            return str(update["callback_query"].get("message", {}).get("chat", {}).get("id", ""))
+        message = update.get("message") or update.get("edited_message") or {}
+        return str(message.get("chat", {}).get("id", ""))
+
+    def _handle_updates_sequential(self, token: str, allowed_chat_ids: set, updates: list):
+        for update in updates:
             try:
                 self._handle_update(token, allowed_chat_ids, update)
             except Exception:

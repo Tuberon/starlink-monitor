@@ -108,6 +108,15 @@ class Watchdog:
 
         return status
 
+    # Стани безпосереднього завантаження/встановлення оновлення (без
+    # REBOOT_REQUIRED - той має власне окреме повідомлення "готове").
+    # Перехід у ці стани з "не активного" (IDLE) - початок оновлення.
+    DOWNLOADING_UPDATE_STATES = {"FETCHING", "PRE_CHECK", "WRITING", "POST_CHECK"}
+    # Той самий набір + REBOOT_REQUIRED - для визначення "був у процесі
+    # оновлення", коли перевіряємо повернення в IDLE (кінець циклу
+    # після успішного перезавантаження з новою версією).
+    ACTIVE_UPDATE_STATES = DOWNLOADING_UPDATE_STATES | {"REBOOT_REQUIRED"}
+
     def _log_update_state_change(self, status):
         """Пише подію в журнал кожного разу, коли змінюється стан оновлення ПЗ dish."""
         state = status.update_state or "SOFTWARE_UPDATE_STATE_UNKNOWN"
@@ -116,7 +125,7 @@ class Watchdog:
 
         label = UPDATE_STATE_LABELS.get(state, state)
         detail = ""
-        if state in ("FETCHING", "PRE_CHECK", "WRITING", "POST_CHECK") and status.update_progress_pct:
+        if state in self.DOWNLOADING_UPDATE_STATES and status.update_progress_pct:
             detail = f" ({status.update_progress_pct:.0f}%)"
 
         # Перший запис після старту сервісу (prev_update_state is None) логуємо
@@ -128,10 +137,16 @@ class Watchdog:
                 f"Стан оновлення ПЗ: {label}{detail}",
                 success=(state not in ("FAULTED",)),
             )
+            was_active = self.prev_update_state in self.ACTIVE_UPDATE_STATES
+
             if state == "REBOOT_REQUIRED":
                 self._notify(f"🔄 Оновлення ПЗ dish готове — очікує перезавантаження{detail}")
             elif state == "FAULTED":
                 self._notify(f"⚠️ Помилка оновлення ПЗ dish: {label}")
+            elif self.prev_update_state is not None and not was_active and state in self.DOWNLOADING_UPDATE_STATES:
+                self._notify(f"🔽 Розпочато оновлення ПЗ dish: {label}{detail}")
+            elif was_active and state == "IDLE":
+                self._notify("✅ Оновлення ПЗ dish завершено (нова версія встановлена)")
         self.prev_update_state = state
 
     def _log_alerts_change(self, status):
@@ -277,6 +292,41 @@ class Watchdog:
 
         self.prev_router_alerts = current
 
+    def _reboot_for_update_ready(self, component_label: str, reason: str):
+        """Спільна логіка для _maybe_reboot_for_update/_maybe_reboot_for_router_update:
+        обидва мають ідентичну послідовність дій (лише текст сповіщень
+        відрізняється), винесено сюди, щоб не дублювати - зокрема захист
+        MIN_REBOOT_INTERVAL_SEC/last_reboot_ts, який критично мати
+        однаковим в обох місцях (див. reboot-loop баг у _maybe_reboot)."""
+        now = time.time()
+        if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
+            logger.info(
+                "Оновлення ПЗ %s готове до встановлення, але пропускаю авто-reboot: "
+                "останній reboot був %.0f с тому (мін. інтервал %d с)",
+                component_label,
+                now - self.last_reboot_ts,
+                config.MIN_REBOOT_INTERVAL_SEC,
+            )
+            return
+
+        logger.warning("Оновлення ПЗ %s готове до встановлення (%s) — ініціюю reboot Starlink Mini", component_label, reason)
+        db.insert_event(
+            "watchdog_trigger",
+            f"Оновлення ПЗ {component_label} готове до встановлення ({reason}) — ініціюю reboot",
+            success=True,
+        )
+        ok, msg = self.client.reboot_dish()
+        db.insert_event("dish_reboot", msg, success=ok)
+        # last_reboot_ts оновлюється завжди, навіть при невдачі - той самий
+        # захист від reboot-loop, що й у _maybe_reboot() (якщо dish саме в
+        # цю мить недоступний, наступний цикл не повинен повторювати
+        # спробу негайно, а почекати MIN_REBOOT_INTERVAL_SEC).
+        self.last_reboot_ts = now
+        if ok:
+            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ {component_label} готове: {reason})")
+        else:
+            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ {component_label} готове): {msg}")
+
     def _maybe_reboot_for_router_update(self, info):
         """Автоматичний reboot усього Starlink Mini, коли роутерний компонент
         повідомляє про готове до встановлення оновлення (REBOOT_PENDING або
@@ -284,68 +334,20 @@ class Watchdog:
         фізично один пристрій, тож це перезавантажує обидва компоненти."""
         if not db.get_auto_reboot_enabled():
             return
-
         update_ready = info.update_state == "REBOOT_PENDING" or info.update_install_pending
         if not update_ready:
             return
-
-        now = time.time()
-        if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
-            logger.info(
-                "Оновлення роутера готове до встановлення, але пропускаю авто-reboot: "
-                "останній reboot був %.0f с тому (мін. інтервал %d с)",
-                now - self.last_reboot_ts,
-                config.MIN_REBOOT_INTERVAL_SEC,
-            )
-            return
-
         reason = info.update_state if info.update_state == "REBOOT_PENDING" else "install_pending"
-        logger.warning("Оновлення ПЗ роутера готове до встановлення (%s) — ініціюю reboot Starlink Mini", reason)
-        db.insert_event(
-            "watchdog_trigger",
-            f"Оновлення ПЗ роутера готове до встановлення ({reason}) — ініціюю reboot",
-            success=True,
-        )
-        ok, msg = self.client.reboot_dish()
-        db.insert_event("dish_reboot", msg, success=ok)
-        if ok:
-            self.last_reboot_ts = now
-            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ роутера готове: {reason})")
-        else:
-            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ роутера готове): {msg}")
+        self._reboot_for_update_ready("роутера", reason)
 
     def _maybe_reboot_for_update(self, status):
         if not db.get_auto_reboot_enabled():
             return
-
         update_ready = status.update_state == "REBOOT_REQUIRED" or status.update_install_pending
         if not update_ready:
             return
-
-        now = time.time()
-        if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
-            logger.info(
-                "Оновлення готове до встановлення, але пропускаю авто-reboot: "
-                "останній reboot був %.0f с тому (мін. інтервал %d с)",
-                now - self.last_reboot_ts,
-                config.MIN_REBOOT_INTERVAL_SEC,
-            )
-            return
-
         reason = status.update_state if status.update_state == "REBOOT_REQUIRED" else "install_pending"
-        logger.warning("Оновлення ПЗ dish готове до встановлення (%s) — ініціюю reboot", reason)
-        db.insert_event(
-            "watchdog_trigger",
-            f"Оновлення ПЗ готове до встановлення ({reason}) — ініціюю reboot",
-            success=True,
-        )
-        ok, msg = self.client.reboot_dish()
-        db.insert_event("dish_reboot", msg, success=ok)
-        if ok:
-            self.last_reboot_ts = now
-            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ dish готове: {reason})")
-        else:
-            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ dish готове): {msg}")
+        self._reboot_for_update_ready("dish", reason)
 
     def _maybe_reboot(self):
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
@@ -361,14 +363,27 @@ class Watchdog:
             return
 
         failures = self.consecutive_failures
+        should_log = failures <= config.MAX_LOGGED_CONSECUTIVE_FAILURES
+        is_final_marker = failures == config.MAX_LOGGED_CONSECUTIVE_FAILURES + 1
+
         logger.warning("Ініціюю автоматичний reboot dish після %d невдалих спроб", failures)
-        db.insert_event(
-            "watchdog_trigger",
-            f"{failures} послідовних невдалих опитувань — ініціюю reboot",
-            success=True,
-        )
+        if should_log:
+            db.insert_event(
+                "watchdog_trigger",
+                f"{failures} послідовних невдалих опитувань — ініціюю reboot",
+                success=True,
+            )
+        elif is_final_marker:
+            db.insert_event(
+                "watchdog_trigger",
+                f"Понад {config.MAX_LOGGED_CONSECUTIVE_FAILURES} послідовних невдалих опитувань — "
+                "подальші спроби reboot не записуються в журнал до відновлення зв'язку",
+                success=False,
+            )
+
         ok, msg = self.client.reboot_dish()
-        db.insert_event("dish_reboot", msg, success=ok)
+        if should_log or is_final_marker:
+            db.insert_event("dish_reboot", msg, success=ok)
         # last_reboot_ts оновлюється завжди, навіть при невдачі: якщо dish
         # ще перезавантажується з попередньої спроби, команда reboot теж
         # провалиться (grpcurl: connection refused) - без цього watchdog

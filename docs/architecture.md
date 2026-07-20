@@ -27,7 +27,7 @@ router — різні enum з різними назвами станів).
 | `webapp.py` | Flask, REST API, роздає `/` (дашборд) і `/settings` (Telegram/backup/env-параметри) |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
 | `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
-| `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` |
+| `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
 | `system_metrics.py` | Метрики самого Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |

@@ -20,6 +20,14 @@ OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0
 # завжди повідомляється, незалежно від тривалості мовчання.
 NOTIFICATIONS_MUTE_AFTER_SEC = int(os.environ.get("STARLINK_NOTIFICATIONS_MUTE_AFTER", "900"))
 
+# При тривалій безперервній недоступності dish кожна watchdog-спроба
+# reboot (кожні MIN_REBOOT_INTERVAL_SEC) і далі пишеться в журнал/БД
+# з дедалі більшим лічильником невдалих опитувань - засмічує журнал
+# без нової корисної інформації. Після цієї кількості послідовних
+# спроб записи в журнал/БД припиняються (сама спроба reboot триває
+# нормально); один фінальний запис позначає момент припинення.
+MAX_LOGGED_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_LOGGED_FAILURES", "30"))
+
 # reboot при software_update_state==REBOOT_REQUIRED або alerts.install_pending
 AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
 

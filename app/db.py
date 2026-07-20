@@ -184,6 +184,19 @@ def insert_metric(status_dict: dict):
         )
 
 
+def _json_field(raw) -> list:
+    """Парсить JSON-серіалізоване поле (active_alerts, clients) назад у
+    список, з безпечним fallback на порожній список при відсутності чи
+    пошкодженні даних. Спільний хелпер для трьох місць, де раніше було
+    дубльовано той самий try/except json.loads блок."""
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+
+
 def insert_event(kind: str, message: str, success: bool = True):
     """Записує подію в журнал. Якщо остання подія має той самий
     kind і message (типово - серія однакових попереджень підряд),
@@ -269,23 +282,8 @@ def get_router_status():
         if not row:
             return None
         d = dict(row)
-        raw = d.get("active_alerts")
-        if raw:
-            try:
-                d["active_alerts"] = json.loads(raw)
-            except (TypeError, json.JSONDecodeError):
-                d["active_alerts"] = []
-        else:
-            d["active_alerts"] = []
-
-        raw_clients = d.get("clients")
-        if raw_clients:
-            try:
-                d["clients"] = json.loads(raw_clients)
-            except (TypeError, json.JSONDecodeError):
-                d["clients"] = []
-        else:
-            d["clients"] = []
+        d["active_alerts"] = _json_field(d.get("active_alerts"))
+        d["clients"] = _json_field(d.get("clients"))
         return d
 
 
@@ -297,14 +295,7 @@ def get_latest_system_metric():
 
 def _parse_metric_row(row: dict) -> dict:
     """Розпарсити JSON-серіалізований active_alerts назад у список для API."""
-    raw = row.get("active_alerts")
-    if raw:
-        try:
-            row["active_alerts"] = json.loads(raw)
-        except (TypeError, json.JSONDecodeError):
-            row["active_alerts"] = []
-    else:
-        row["active_alerts"] = []
+    row["active_alerts"] = _json_field(row.get("active_alerts"))
     return row
 
 
