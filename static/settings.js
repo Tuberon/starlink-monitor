@@ -199,7 +199,7 @@ async function handleSettingsRestoreFile(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, фрази підпису й перемикач auto-reboot будуть перезаписані.')) {
+  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, фрази підпису, перемикач auto-reboot і перевизначені параметри моніторингу будуть перезаписані.')) {
     e.target.value = '';
     return;
   }
@@ -217,6 +217,7 @@ async function handleSettingsRestoreFile(e) {
     if (data.success) {
       loadTelegramConfig();
       loadSignaturePhrases();
+      loadEnvConfig();
     }
   } catch (err) {
     hint.textContent = 'Некоректний файл backup';
@@ -225,6 +226,7 @@ async function handleSettingsRestoreFile(e) {
     e.target.value = '';
   }
 }
+
 
 async function loadEnvConfig() {
   const form = el('envParamsForm');

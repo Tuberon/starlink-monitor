@@ -226,16 +226,24 @@ def api_set_signature_phrases_enabled():
     return jsonify({"success": True, "enabled": enabled})
 
 
-BACKUP_FORMAT_VERSION = 1
+BACKUP_FORMAT_VERSION = 2
 
 
 @app.route("/api/settings-backup")
 def api_settings_backup():
     """Повертає всі налаштування (Telegram config, фрази підпису,
-    auto-reboot) одним JSON-файлом для завантаження. Bot token
-    включається у відкритому вигляді - файл backup потрібно берегти
-    як secret (не публікувати, не комітити в git)."""
+    auto-reboot, перевизначені параметри app/config.py) одним JSON-файлом
+    для завантаження. Bot token включається у відкритому вигляді - файл
+    backup потрібно берегти як secret (не публікувати, не комітити в git).
+    env_params містить лише РЕАЛЬНО перевизначені параметри (overridden),
+    не всі значення за замовчуванням - інакше відновлення на іншому
+    пристрої/версії коду затерло б нові дефолти застарілими значеннями."""
     token, chat_ids, enabled = telegram_notify.get_telegram_config()
+    env_params = {
+        p["key"]: p["current"]
+        for p in config_editor.read_current_values()
+        if p["overridden"]
+    }
     backup = {
         "format_version": BACKUP_FORMAT_VERSION,
         "created_at": time.time(),
@@ -245,6 +253,7 @@ def api_settings_backup():
         "auto_reboot_enabled": db.get_auto_reboot_enabled(),
         "signature_phrases": telegram_notify.get_signature_phrases_text(),
         "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
+        "env_params": env_params,
     }
     return jsonify(backup)
 
@@ -252,7 +261,11 @@ def api_settings_backup():
 @app.route("/api/settings-restore", methods=["POST"])
 def api_settings_restore():
     """Відновлює налаштування з JSON, отриманого через /api/settings-backup.
-    Приймає лише відомі поля - невідомі/сторонні ключі ігноруються."""
+    Приймає лише відомі поля - невідомі/сторонні ключі ігноруються.
+    env_params (параметри app/config.py) записуються в env-файл так само,
+    як через панель "Параметри моніторингу" - застосовуються лише після
+    перезапуску сервісів (окрема кнопка на дашборді, тут не робимо цього
+    автоматично, бо restore може виконуватись без наміру одразу рестартити)."""
     payload = request.get_json(silent=True) or {}
     if "format_version" not in payload:
         return jsonify({"success": False, "message": "Некоректний формат файлу backup"})
@@ -279,6 +292,13 @@ def api_settings_restore():
         if "signature_phrases_enabled" in payload:
             telegram_notify.set_signature_phrases_enabled(bool(payload["signature_phrases_enabled"]))
             restored.append("перемикач фраз")
+
+        if payload.get("env_params"):
+            ok, msg = config_editor.save_values(payload["env_params"])
+            if ok:
+                restored.append("параметри моніторингу (потрібен перезапуск сервісів)")
+            else:
+                restored.append(f"параметри моніторингу - помилка: {msg}")
 
         db.insert_event("settings_restored", f"Відновлено з backup: {', '.join(restored) or 'нічого'}", success=True)
         return jsonify({"success": True, "message": f"Відновлено: {', '.join(restored) or 'нічого'}"})
@@ -326,25 +346,34 @@ def _run_system_command(cmd: list) -> tuple:
         return False, str(e)
 
 
+def _execute_pi_power_action(cmd: list, event_kind: str, event_label: str,
+                              success_text: str, fail_verb: str) -> tuple:
+    """Спільна логіка для system-reboot/system-shutdown: виконати команду,
+    записати подію в журнал, надіслати Telegram-сповіщення про результат."""
+    ok, msg = _run_system_command(cmd)
+    db.insert_event(event_kind, f"Ручне {event_label} Raspberry Pi через веб-інтерфейс: {msg}", success=ok)
+    if ok:
+        telegram_notify.send_message(success_text)
+    else:
+        telegram_notify.send_message(f"❌ Не вдалося {fail_verb} Raspberry Pi: {msg}")
+    return ok, msg
+
+
 @app.route("/api/system-reboot", methods=["POST"])
 def api_system_reboot():
-    ok, msg = _run_system_command(["sudo", "systemctl", "reboot"])
-    db.insert_event("pi_reboot", f"Ручне перезавантаження Raspberry Pi через веб-інтерфейс: {msg}", success=ok)
-    if ok:
-        telegram_notify.send_message("🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс")
-    else:
-        telegram_notify.send_message(f"❌ Не вдалося перезавантажити Raspberry Pi: {msg}")
+    ok, msg = _execute_pi_power_action(
+        ["sudo", "systemctl", "reboot"], "pi_reboot", "перезавантаження",
+        "🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс", "перезавантажити",
+    )
     return jsonify({"success": ok, "message": msg})
 
 
 @app.route("/api/system-shutdown", methods=["POST"])
 def api_system_shutdown():
-    ok, msg = _run_system_command(["sudo", "systemctl", "poweroff"])
-    db.insert_event("pi_shutdown", f"Ручне виключення Raspberry Pi через веб-інтерфейс: {msg}", success=ok)
-    if ok:
-        telegram_notify.send_message("⏻ Raspberry Pi вимикається вручну через веб-інтерфейс")
-    else:
-        telegram_notify.send_message(f"❌ Не вдалося вимкнути Raspberry Pi: {msg}")
+    ok, msg = _execute_pi_power_action(
+        ["sudo", "systemctl", "poweroff"], "pi_shutdown", "виключення",
+        "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "вимкнути",
+    )
     return jsonify({"success": ok, "message": msg})
 
 

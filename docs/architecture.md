@@ -102,10 +102,13 @@ WAL journal_mode — паралельне читання (webui) і запис (
 ## Backup/restore налаштувань
 
 `GET /api/settings-backup` віддає JSON (Telegram bot token, chat_ids,
-enabled, auto_reboot_enabled, вміст і перемикач signature_phrases) —
+enabled, auto_reboot_enabled, вміст і перемикач signature_phrases,
+`env_params` — лише перевизначені параметри app/config.py) —
 завантажується браузером як файл. `POST /api/settings-restore`
-приймає той самий формат і застосовує лише відомі поля. Bot token
-у файлі — у відкритому вигляді, файл backup потрібно берегти як secret.
+приймає той самий формат і застосовує лише відомі поля (env_params
+через `config_editor.save_values()`, застосовується після рестарту
+сервісів). Bot token у файлі — у відкритому вигляді, файл backup
+потрібно берегти як secret.
 
 ## Фізична кнопка виключення (GPIO)
 

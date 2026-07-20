@@ -70,6 +70,16 @@ def set_signature_phrases_enabled(enabled: bool):
     db.set_setting("signature_phrases_enabled", "1" if enabled else "0")
 
 
+def append_signature(text: str) -> str:
+    """Додає випадкову фразу підпису в кінець text, якщо перемикач
+    увімкнений і фрази є. Спільний хелпер - раніше цей самий патерн
+    (get_signature_phrases_enabled() перевірка + _random_signature_phrase()
+    + конкатенація) був продубльований у send_message() тут та у
+    telegram_bot.py (_send, _cmd_reboot_request)."""
+    phrase = _random_signature_phrase() if get_signature_phrases_enabled() else ""
+    return f"{text}\n\n{phrase}" if phrase else text
+
+
 def get_telegram_config():
     """Повертає (token, chat_id, enabled) з БД. chat_id може містити
     кілька id через кому (сповіщення кільком отримувачам)."""
@@ -103,8 +113,7 @@ def send_message(text: str) -> tuple[bool, str]:
     if not chat_ids:
         return False, "Не вказано жодного chat_id"
 
-    phrase = _random_signature_phrase() if get_signature_phrases_enabled() else ""
-    full_text = f"{text}\n\n{phrase}" if phrase else text
+    full_text = append_signature(text)
 
     url = API_BASE.format(token=token, method="sendMessage")
     errors = []
