@@ -7,6 +7,7 @@ Telegram (не блокує цикл при помилках відправки)
 """
 import json
 import logging
+import threading
 import time
 
 import psutil
@@ -402,6 +403,13 @@ class Watchdog:
         from app.telegram_bot import TelegramBot
         telegram_bot = TelegramBot()
         telegram_bot.start()
+
+        from app import speedtest_runner
+        speedtest_stop = threading.Event()
+        speedtest_thread = threading.Thread(
+            target=speedtest_runner.run_forever, args=(speedtest_stop,), daemon=True
+        )
+        speedtest_thread.start()
 
         # "Прогрів" psutil.cpu_percent: перший виклик без базового заміру
         # завжди повертає 0.0, тому робимо його тут і відкидаємо результат.

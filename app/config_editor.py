@@ -32,6 +32,8 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_WEBUI_PORT", "type": "int", "default": "8080", "label": "Порт веб-інтерфейсу"},
     {"key": "STARLINK_SHUTDOWN_BUTTON_PIN", "type": "int", "default": "0", "label": "GPIO-пін кнопки виключення (0=вимк.)"},
     {"key": "STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "type": "float", "default": "3", "label": "Утримання кнопки перед вимкненням, сек"},
+    {"key": "STARLINK_SPEEDTEST_ENABLED", "type": "bool", "default": "0", "label": "Періодичний реальний speedtest (0/1)"},
+    {"key": "STARLINK_SPEEDTEST_INTERVAL", "type": "int", "default": "1800", "label": "Інтервал speedtest, сек"},
 ]
 
 _KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")

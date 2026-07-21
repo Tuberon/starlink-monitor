@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dish Watch — Starlink Monitor</title>
 <link rel="icon" type="image/x-icon" id="favicon" href="/static/favicon.ico">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -130,6 +133,24 @@
     <canvas id="throughputChart"></canvas>
   </div>
 
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Заявлена vs реальна швидкість</h2>
+      <span class="sub" id="speedtestSub">speedtest.net</span>
+    </div>
+    <div class="grid">
+      <div class="metric"><div class="label">Реальна ⬇</div><div class="value" id="stDownload">—<span class="unit">Мбіт/с</span></div></div>
+      <div class="metric"><div class="label">Реальна ⬆</div><div class="value" id="stUpload">—<span class="unit">Мбіт/с</span></div></div>
+      <div class="metric"><div class="label">Ping</div><div class="value" id="stPing">—<span class="unit">мс</span></div></div>
+      <div class="metric"><div class="label">Заявлена dish ⬇</div><div class="value" id="stDishDownload">—<span class="unit">Мбіт/с</span></div></div>
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <button class="check-btn" id="speedtestRunBtn">▶ Запустити зараз</button>
+      <span class="hint" id="speedtestHint"></span>
+    </div>
+    <div class="log" id="speedtestLog" style="margin-top:12px;"></div>
+  </div>
+
   <div class="section-divider">
     <span>Raspberry Pi Zero 2 W</span>
   </div>
@@ -170,5 +191,6 @@
 </div>
 
 <script src="/static/dashboard.js"></script>
+<script src="/static/pwa.js"></script>
 </body>
 </html>

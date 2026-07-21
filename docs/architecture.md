@@ -24,13 +24,14 @@ router — різні enum з різними назвами станів).
 |---|---|
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, reboot_dish() |
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
-| `webapp.py` | Flask, REST API, роздає `/` (дашборд) і `/settings` (Telegram/backup/env-параметри) |
+| `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/healthz` |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
 | `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
 | `system_metrics.py` | Метрики самого Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
+| `speedtest_runner.py` | Періодичний реальний speedtest (потік у monitor.py, вимкнено за замовчуванням) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 
@@ -133,3 +134,32 @@ enabled, auto_reboot_enabled, вміст і перемикач signature_phrases
   не імпортуються), встановлення завершується успішно
   (`Successfully installed ...`), попередження безпечно ігнорувати
 - Статус (увімкнено/пін/час утримання) віддається через `/api/config`
+
+## /healthz та PWA
+
+`GET /healthz` — читає `db.get_latest_metric()["ts"]`, порівнює з
+`config.POLL_INTERVAL_SEC * 3`; `503` якщо watchdog не оновлював
+метрики довше цього порогу (сервіс завис/впав, хоч webui й далі
+відповідає). Не пише подій у журнал — придатний для частого
+зовнішнього опитування.
+
+PWA: `static/manifest.json` + `static/sw.js` (service worker) +
+`static/pwa.js` (реєстрація SW, підключена в обох HTML-шаблонах).
+Іконки `icon-192.png`/`icon-512.png` згенеровані з `logo.png` (вписані
+в квадрат на `--sky-900` фоні). Service worker кешує лише `/static/*`
+(network-first, cache fallback) — жодного кешування API-відповідей,
+щоб офлайн-режим не показував застарілі дані Starlink як актуальні.
+
+## Реальний speedtest (app/speedtest_runner.py)
+
+`run_once()` — один прогін через бібліотеку `speedtest-cli`, ніколи
+не кидає виняток (помилка в полі `error`, `success=False`).
+`run_forever(stop_event)` — цикл з інтервалом `SPEEDTEST_INTERVAL_SEC`,
+перевіряє `stop_event` кожні 5с сну (не чекає повний інтервал при
+зупинці сервісу). Запускається як потік у `Watchdog.run_forever()`
+поруч із Telegram-ботом, лише якщо `SPEEDTEST_ENABLED=1` (за
+замовчуванням вимкнено — реальний трафік + навантаження WiFi-радіо).
+Результати — таблиця `speedtest_results` (SQLite), очищення разом з
+іншими таблицями в `prune_old()`. `POST /api/speedtest-run` виконує
+одноразовий синхронний прогін на вимогу користувача (10-30с, окей
+блокувати — це усвідомлена дія, не фоновий цикл).

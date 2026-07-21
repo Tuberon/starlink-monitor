@@ -30,6 +30,45 @@ def settings_page():
     return render_template("settings.html")
 
 
+@app.route("/healthz")
+def healthz():
+    """Легка перевірка стану для зовнішнього моніторингу (UptimeRobot тощо):
+    (1) БД доступна для читання/запису, (2) watchdog реально опитує dish
+    (останній запис метрики не старіший за 3 цикли опитування - якщо
+    starlink-monitor.service завис чи впав, нові метрики перестають
+    з'являтись, хоча сам webui.service може лишатись живим і відповідати
+    на цей же запит). Не пише нічого в журнал подій - не засмічує його
+    при частому зовнішньому опитуванні (напр. раз на хвилину)."""
+    checks = {}
+    ok = True
+
+    try:
+        with db.get_conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+        checks["db"] = "ok"
+    except Exception as e:
+        checks["db"] = f"error: {e}"
+        ok = False
+
+    try:
+        latest = db.get_latest_metric()
+        if latest is None:
+            checks["watchdog"] = "no data yet"
+        else:
+            age_sec = time.time() - latest["ts"]
+            max_age_sec = config.POLL_INTERVAL_SEC * 3
+            checks["watchdog"] = f"ok ({age_sec:.0f}s since last poll)"
+            if age_sec > max_age_sec:
+                checks["watchdog"] = f"stale ({age_sec:.0f}s since last poll, expected <{max_age_sec}s)"
+                ok = False
+    except Exception as e:
+        checks["watchdog"] = f"error: {e}"
+        ok = False
+
+    status_code = 200 if ok else 503
+    return jsonify({"status": "ok" if ok else "degraded", "checks": checks}), status_code
+
+
 @app.route("/api/status")
 def api_status():
     latest = db.get_latest_metric()
@@ -41,6 +80,28 @@ def api_status():
 def api_history():
     limit = min(int(request.args.get("limit", 500)), 5000)
     return jsonify(db.get_recent_metrics(limit))
+
+
+@app.route("/api/speedtest-history")
+def api_speedtest_history():
+    limit = min(int(request.args.get("limit", 50)), 500)
+    return jsonify({
+        "results": db.get_recent_speedtest_results(limit),
+        "latest": db.get_latest_speedtest_result(),
+        "enabled": config.SPEEDTEST_ENABLED,
+    })
+
+
+@app.route("/api/speedtest-run", methods=["POST"])
+def api_speedtest_run():
+    """Ручний одноразовий speedtest на вимогу користувача - виконується
+    синхронно (10-30с), бо це усвідомлена дія користувача, який готовий
+    почекати на результат, а не фоновий цикл, що не повинен блокувати
+    щось інше."""
+    from app import speedtest_runner
+    result = speedtest_runner.run_once()
+    db.insert_speedtest_result(result)
+    return jsonify(result)
 
 
 @app.route("/api/events")

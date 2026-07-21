@@ -110,6 +110,44 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
 
 Файл містить bot token у відкритому вигляді — зберігай як secret.
 
+## Перевірка стану (healthz)
+
+`GET /healthz` — легка перевірка для зовнішнього моніторингу
+(UptimeRobot, Healthchecks.io тощо): чи доступна БД, і чи watchdog
+реально опитує dish (остання метрика не старіша за 3 цикли
+опитування — якщо `starlink-monitor.service` завис чи впав, нові
+метрики перестають з'являтись, хоча сам дашборд може лишатись
+доступним). Повертає `200` з `{"status":"ok",...}` або `503` з
+`{"status":"degraded",...}`. Не пише нічого в журнал подій — безпечно
+опитувати часто (раз/хвилину).
+
+## Встановлюваний дашборд (PWA)
+
+Дашборд можна "встановити" як застосунок — у Chrome/Edge (десктоп і
+Android): іконка встановлення в адресному рядку або "Додати на
+головний екран" у меню браузера. Працює через `static/manifest.json`
+і мінімальний `static/sw.js` (service worker), який кешує лише
+статичні файли (CSS/JS/іконки) для швидшого повторного відкриття —
+API-дані (статус, історія) завжди запитуються наживо, ніколи не
+кешуються, щоб не показувати застарілі метрики Starlink.
+
+## Реальний speedtest (заявлена vs реальна швидкість)
+
+`downlink_mbps`/`uplink_mbps` з телеметрії dish показують пропускну
+здатність каналу з точки зору самого dish — не завжди збігається з
+реальною користувацькою швидкістю крізь увесь маршрут до інтернету.
+Панель "Заявлена vs реальна швидкість" на дашборді додає незалежний
+вимір через `speedtest-cli` (speedtest.net).
+
+**Вимкнено за замовчуванням** — один прогін споживає реальний трафік
+(десятки-сотні МБ) і на 10-30с навантажує WiFi-радіомодуль, конкуруючи
+за радіо-час з локальним опитуванням dish/router. Увімкни на
+`/settings` (`STARLINK_SPEEDTEST_ENABLED=1`), інтервал за замовчуванням
+1800с (двічі/год, `STARLINK_SPEEDTEST_INTERVAL`). Працює в окремому
+фоновому потоці — не блокує watchdog-опитування dish. Кнопка
+"Запустити зараз" на дашборді — для одноразового ручного тесту
+незалежно від фонового розкладу.
+
 ## Про ручну перевірку оновлень
 
 Кнопка "Перевірити стан оновлень" негайно опитує dish і router,
@@ -168,9 +206,11 @@ starlink-monitor/
 │   ├── shutdown_button.py     # фізична кнопка виключення (GPIO)
 │   ├── config.py              # конфігурація
 │   ├── config_editor.py       # редагування env-параметрів через /settings
+│   ├── speedtest_runner.py    # періодичний реальний speedtest
 │   └── vendor/                # сюди завантажується starlink_grpc.py
 ├── templates/index.html, settings.html
-├── static/dashboard.js, settings.js, style.css, logo.png
+├── static/dashboard.js, settings.js, pwa.js, sw.js, style.css, logo.png,
+│           favicon.ico, manifest.json, icon-192.png, icon-512.png
 ├── systemd/
 │   ├── starlink-monitor.service          # watchdog + метрики
 │   ├── starlink-webui.service            # веб-інтерфейс
@@ -247,6 +287,8 @@ sudo bash scripts/uninstall.sh
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
+| `STARLINK_SPEEDTEST_ENABLED` | `0` | періодичний реальний speedtest (0/1) |
+| `STARLINK_SPEEDTEST_INTERVAL` | `1800` | інтервал між speedtest-прогонами, сек |
 
 Параметри читаються один раз при старті процесів — після збереження
 на `/settings` натисни "Зберегти й перезапустити сервіси" (кнопка

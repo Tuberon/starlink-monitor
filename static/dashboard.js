@@ -171,6 +171,7 @@ async function refreshStatus() {
     el('mDown').innerHTML = `${latest.downlink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
     el('mUp').innerHTML = `${latest.uplink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
     el('mPing').innerHTML = `${latest.ping_latency_ms ?? '—'}<span class="unit">мс</span>`;
+    el('stDishDownload').innerHTML = `${latest.downlink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
 
     const dropPct = latest.ping_drop_ratio != null ? (latest.ping_drop_ratio * 100).toFixed(1) : null;
     el('mDrop').innerHTML = `${dropPct ?? '—'}<span class="unit">%</span>`;
@@ -535,6 +536,68 @@ const HISTORY_REFRESH_EVERY_N_TICKS = 5; // з REFRESH_MS=1000 це кожні ~
 // достатньо часто для плавних графіків, але без зайвих запитів тих самих
 // 120 рядків між реальними новими опитуваннями dish (POLL_INTERVAL_SEC=10с)
 
+async function loadSpeedtestHistory() {
+  try {
+    const res = await fetch('/api/speedtest-history?limit=20');
+    const data = await res.json();
+    renderSpeedtest(data);
+  } catch (e) {
+    console.error('speedtest history load failed', e);
+  }
+}
+
+function renderSpeedtest(data) {
+  const latest = data.latest;
+  el('stDownload').innerHTML = `${latest ? latest.download_mbps : '—'}<span class="unit">Мбіт/с</span>`;
+  el('stUpload').innerHTML = `${latest ? latest.upload_mbps : '—'}<span class="unit">Мбіт/с</span>`;
+  el('stPing').innerHTML = `${latest ? latest.ping_ms : '—'}<span class="unit">мс</span>`;
+
+  const sub = el('speedtestSub');
+  if (!data.enabled) {
+    sub.textContent = 'вимкнено (увімкнути на сторінці Налаштування)';
+  } else if (latest) {
+    sub.textContent = `останній тест: ${fmtTime(latest.ts)}, сервер: ${latest.server_name || '—'}`;
+  } else {
+    sub.textContent = 'ще не запускався';
+  }
+
+  const log = el('speedtestLog');
+  const rows = (data.results || []).slice(0, 10);
+  if (rows.length === 0) {
+    log.innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Ще немає результатів</span></div>';
+    return;
+  }
+  log.innerHTML = rows.map(r => {
+    if (!r.success) {
+      return `<div class="log-row fail"><span class="time">${fmtTime(r.ts)}</span><span class="kind">помилка</span><span>${r.error || 'невідома помилка'}</span></div>`;
+    }
+    return `<div class="log-row ok"><span class="time">${fmtTime(r.ts)}</span><span class="kind">тест</span><span>⬇ ${r.download_mbps} · ⬆ ${r.upload_mbps} Мбіт/с · ping ${r.ping_ms}мс · ${r.server_name || ''}</span></div>`;
+  }).join('');
+}
+
+async function handleSpeedtestRun() {
+  const btn = el('speedtestRunBtn');
+  const hint = el('speedtestHint');
+  btn.disabled = true;
+  hint.textContent = 'Виконую тест (10-30с)...';
+  try {
+    const res = await fetch('/api/speedtest-run', { method: 'POST' });
+    const data = await res.json();
+    hint.textContent = data.success
+      ? `Готово: ⬇ ${data.download_mbps} Мбіт/с, ⬆ ${data.upload_mbps} Мбіт/с`
+      : `Помилка: ${data.error || 'невідома'}`;
+    loadSpeedtestHistory();
+  } catch (e) {
+    hint.textContent = 'Помилка мережі при запуску тесту';
+    console.error('speedtest run failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+let speedtestTickCounter = 0;
+const SPEEDTEST_REFRESH_EVERY_N_TICKS = 60; // раз на ~60с - дані оновлюються рідко (типово раз на 30хв)
+
 function tick() {
   refreshStatus();
   historyTickCounter++;
@@ -544,6 +607,10 @@ function tick() {
   refreshSystemStatus();
   refreshRouterStatus();
   refreshEvents();
+  speedtestTickCounter++;
+  if (speedtestTickCounter % SPEEDTEST_REFRESH_EVERY_N_TICKS === 0) {
+    loadSpeedtestHistory();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -554,7 +621,9 @@ document.addEventListener('DOMContentLoaded', () => {
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   el('checkUpdatesBtn').addEventListener('click', handleCheckUpdates);
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);
+  el('speedtestRunBtn').addEventListener('click', handleSpeedtestRun);
   loadConfigFlags();
+  loadSpeedtestHistory();
   tick();
   setInterval(tick, REFRESH_MS);
 });

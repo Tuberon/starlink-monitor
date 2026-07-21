@@ -89,6 +89,18 @@ CREATE TABLE IF NOT EXISTS known_devices (
     router_software_version TEXT,
     router_software_updated_ts REAL
 );
+
+CREATE TABLE IF NOT EXISTS speedtest_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    download_mbps REAL,
+    upload_mbps REAL,
+    ping_ms REAL,
+    server_name TEXT,
+    success INTEGER NOT NULL,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_speedtest_results_ts ON speedtest_results(ts);
 """
 
 
@@ -328,6 +340,7 @@ def prune_old(days: int = None):
         conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
         conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
         conn.execute("DELETE FROM system_metrics WHERE ts < ?", (cutoff,))
+        conn.execute("DELETE FROM speedtest_results WHERE ts < ?", (cutoff,))
 
 
 def uptime_stats_24h():
@@ -415,6 +428,40 @@ def get_all_known_devices():
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM known_devices ORDER BY last_seen_ts DESC").fetchall()
         return [dict(r) for r in rows]
+
+
+def insert_speedtest_result(data: dict):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO speedtest_results
+               (ts, download_mbps, upload_mbps, ping_ms, server_name, success, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["ts"],
+                data.get("download_mbps"),
+                data.get("upload_mbps"),
+                data.get("ping_ms"),
+                data.get("server_name", ""),
+                int(data.get("success", False)),
+                data.get("error", ""),
+            ),
+        )
+
+
+def get_recent_speedtest_results(limit: int = 50):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM speedtest_results ORDER BY ts DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_latest_speedtest_result():
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM speedtest_results WHERE success = 1 ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def get_setting(key: str, default=None):
