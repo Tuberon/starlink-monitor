@@ -5,15 +5,20 @@
 # автоматично ставав пріоритетним для ВСІЄЇ системи (apt, curl, будь-яка
 # інша програма), коли супутниковий канал Starlink недоступний.
 #
-# На відміну від eth0-fallback у Python-коді проєкту (app/telegram_notify.py -
-# спрацьовує лише для конкретних HTTP-запитів до Telegram API), це -
-# system-wide рівень: коригує саму таблицю маршрутизації ядра, тому working
-# для будь-якої програми в системі, не лише для нашого коду.
+# ВАЖЛИВО: керування через nmcli/NetworkManager, НЕ напряму через
+# `ip route`. wlan0 - NetworkManager-кероване з'єднання з власним
+# persistent-налаштуванням `ipv4.route-metric` (задане в install.sh).
+# Пряма зміна таблиці маршрутів через `ip route add/del` в обхід
+# NetworkManager призводила до постійної "боротьби": NetworkManager
+# перевідновлював свій власний metric=50 (з конфігурації з'єднання)
+# незалежно від наших змін, тому кожен цикл таймера знову "виправляв"
+# те саме - нескінченний цикл. `nmcli connection modify` + `nmcli
+# device reapply` змінює саму persistent-конфігурацію з'єднання, яку
+# NetworkManager і застосовує, без конфлікту.
 #
 # Специфічні маршрути до dish (192.168.100.0/24) і router (192.168.1.0/24)
 # НЕ зачіпаються - це окремі, більш конкретні маршрути, які завжди
 # пріоритетніші за будь-який дефолтний маршрут незалежно від metric.
-# Змінюється лише пріоритет ДЕФОЛТНОГО маршруту (для решти інтернету).
 #
 # Запускається через systemd timer (starlink-wan-failover.timer, кожні ~20с).
 set -euo pipefail
@@ -24,28 +29,15 @@ CHECK_TIMEOUT=3
 NORMAL_WLAN_METRIC=50
 DEMOTED_WLAN_METRIC=9999
 
-# Усі поточні default-маршрути через wlan0 (може бути кілька рядків -
-# ВАЖЛИВО: `ip route replace ... metric X` шукає точний збіг ЗА metric
-# теж, тому якщо раніше такого запису не було - команда ДОДАЄ новий,
-# не замінюючи старий. Це реальний баг попередньої версії скрипта:
-# накопичувались дублікати (metric=50 і metric=9999 одночасно), і
-# ядро завжди обирало НАЙМЕНШИЙ - тобто wlan0 фактично ніколи не
-# демотувався насправді, попри лог про "успіх". Тому тут явно
-# видаляємо ВСІ default-маршрути на wlan0 перед додаванням одного
-# чистого запису - і це ж самозцілює вже накопичені дублікати.
-mapfile -t WLAN_ROUTES < <(ip route show default dev "$WLAN_IFACE" 2>/dev/null || true)
-if [[ "${#WLAN_ROUTES[@]}" -eq 0 ]]; then
-  # wlan0 не має дефолтного маршруту взагалі (не підключений до WiFi
-  # Starlink чи щойно піднімається) - нічого коригувати, вихід.
+CONN_NAME="$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | awk -F: -v d="$WLAN_IFACE" '$2==d{print $1; exit}' || true)"
+if [[ -z "$CONN_NAME" ]]; then
+  # wlan0 не має активного з'єднання NetworkManager (не підключений
+  # до WiFi Starlink чи щойно піднімається) - нічого коригувати.
   exit 0
 fi
 
-WLAN_GATEWAY="$(echo "${WLAN_ROUTES[0]}" | grep -oP 'via \K[0-9.]+' || true)"
-if [[ -z "$WLAN_GATEWAY" ]]; then
-  # Неочікуваний формат рядка маршруту - краще нічого не чіпати, ніж
-  # зламати мережу невірною командою.
-  exit 0
-fi
+CURRENT_METRIC="$(nmcli -t -g ipv4.route-metric connection show "$CONN_NAME" 2>/dev/null || echo "$NORMAL_WLAN_METRIC")"
+[[ -z "$CURRENT_METRIC" || "$CURRENT_METRIC" == "-1" ]] && CURRENT_METRIC="$NORMAL_WLAN_METRIC"
 
 if ping -c 1 -W "$CHECK_TIMEOUT" -I "$WLAN_IFACE" "$CHECK_HOST" >/dev/null 2>&1; then
   TARGET_METRIC="$NORMAL_WLAN_METRIC"
@@ -55,15 +47,14 @@ else
   TARGET_LABEL="wlan0 (Starlink) без інтернету - знижую пріоритет, eth0 стає дефолтним для всієї системи"
 fi
 
-# "Чистий" стан - рівно один default-маршрут на wlan0 із потрібним
-# metric. Якщо це вже так - нічого не робимо (не смикаємо таблицю
-# маршрутів зайвий раз кожні 20с). Інакше - видаляємо ВСІ наявні
-# default-маршрути на wlan0 (цикл, бо кожен `ip route del` видаляє
-# лише один matching запис за раз) і додаємо один чистий.
-if [[ "${#WLAN_ROUTES[@]}" -eq 1 ]] && echo "${WLAN_ROUTES[0]}" | grep -q "metric $TARGET_METRIC\b"; then
+if [[ "$CURRENT_METRIC" == "$TARGET_METRIC" ]]; then
   exit 0
 fi
 
 echo "==> $TARGET_LABEL (metric=$TARGET_METRIC)"
-while ip route del default dev "$WLAN_IFACE" 2>/dev/null; do :; done
-ip route add default via "$WLAN_GATEWAY" dev "$WLAN_IFACE" metric "$TARGET_METRIC" 2>/dev/null || true
+nmcli connection modify "$CONN_NAME" ipv4.route-metric "$TARGET_METRIC"
+# reapply застосовує зміну без повного перепідключення (уникає
+# короткого розриву WiFi, який спричинив би `connection up`); якщо
+# reapply недоступний (старіша версія NetworkManager) - fallback на
+# повне перепідключення.
+nmcli device reapply "$WLAN_IFACE" 2>/dev/null || nmcli connection up "$CONN_NAME" 2>/dev/null || true
