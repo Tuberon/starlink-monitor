@@ -63,9 +63,32 @@ if [[ "$WAIT_FOR_DISH" -eq 1 ]]; then
 fi
 
 echo "==> Завантажую starlink_grpc.py"
-curl -fsSL \
-  "https://raw.githubusercontent.com/sparky8512/starlink-grpc-tools/main/starlink_grpc.py" \
-  -o "$VENDOR_DIR/starlink_grpc.py"
+GRPC_URL="https://raw.githubusercontent.com/sparky8512/starlink-grpc-tools/main/starlink_grpc.py"
+
+# wlan0 (WiFi Starlink) має нижчий route-metric за eth0 (див.
+# install.sh) - тобто дефолтний маршрут завжди намагається йти через
+# wlan0 першим. Якщо супутниковий канал Starlink саме недоступний
+# (обслуговування, погода, dish щойно ввімкнувся), інтернету через
+# wlan0 немає взагалі, попри те що eth0 (домашня мережа) може мати
+# робочий інтернет. Тому тут - НЕ дефолтний маршрут, а явна спроба
+# через eth0 спочатку (не залежить від того, чи є зараз супутниковий
+# зв'язок), з fallback на дефолтний маршрут, якщо eth0 не підключений
+# чи теж не має інтернету (напр. встановлення без USB-Ethernet взагалі).
+FETCHED=0
+if ip link show eth0 >/dev/null 2>&1 && ip addr show eth0 | grep -q "inet "; then
+  echo "==> Спроба через eth0 (домашня мережа, не залежить від супутникового каналу Starlink)"
+  if curl -fsSL --interface eth0 --connect-timeout 10 "$GRPC_URL" -o "$VENDOR_DIR/starlink_grpc.py"; then
+    FETCHED=1
+    echo "==> Завантажено через eth0"
+  else
+    echo "!! Не вдалося через eth0, пробую дефолтний маршрут"
+  fi
+fi
+
+if [[ "$FETCHED" -eq 0 ]]; then
+  curl -fsSL --connect-timeout 10 "$GRPC_URL" -o "$VENDOR_DIR/starlink_grpc.py"
+  echo "==> Завантажено через дефолтний маршрут"
+fi
 
 echo "==> Готово: $VENDOR_DIR/starlink_grpc.py"
 echo "==> Перевірка (потребує активного WiFi-з'єднання зі Starlink Mini)"

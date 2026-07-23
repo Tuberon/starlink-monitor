@@ -5,6 +5,11 @@ Wants=network-online.target
 # Не блокує основні сервіси - вони й так толерантні до відсутності
 # starlink_grpc.py на старті (просто логують помилку і чекають наступного
 # опитування), а цей сервіс підхопить його, щойно з'явиться WiFi Starlink Mini.
+# StartLimitIntervalSec/StartLimitBurst - директиви розділу [Unit], не
+# [Service] (перевірено на реальному Pi: systemd ігнорує їх з попередженням
+# "Unknown key", якщо вписати в [Service] - обмеження просто не діяло).
+StartLimitIntervalSec=1800
+StartLimitBurst=5
 
 [Service]
 Type=oneshot
@@ -21,8 +26,6 @@ StandardError=journal
 # на випадок повільного підключення WiFi при першому завантаженні.
 Restart=on-failure
 RestartSec=30
-StartLimitIntervalSec=1800
-StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target

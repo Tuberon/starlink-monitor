@@ -24,7 +24,7 @@ router — різні enum з різними назвами станів).
 |---|---|
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, reboot_dish() |
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
-| `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/healthz` |
+| `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
 | `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
@@ -163,3 +163,13 @@ PWA: `static/manifest.json` + `static/sw.js` (service worker) +
 іншими таблицями в `prune_old()`. `POST /api/speedtest-run` виконує
 одноразовий синхронний прогін на вимогу користувача (10-30с, окей
 блокувати — це усвідомлена дія, не фоновий цикл).
+
+## /stats — повна статистика
+
+Головна сторінка показує лише 5 останніх подій журналу і коротку
+summary-панель speedtest (поточні значення + кнопка запуску).
+`/stats` (`templates/stats.html`, `static/stats.js`) — повний журнал
+подій (`limit=500`) і повна історія speedtest-результатів, без інших
+елементів дашборду. "Очистити" на обох сторінках — лише локально в
+браузері (`eventsClearedLocally` в кожному JS-файлі окремо, БД не
+зачіпається), той самий підхід, що вже був на головній.

@@ -30,7 +30,8 @@ CONFIRM_TTL_SEC = 120
 
 def _api_call(method: str, token: str, http_timeout: float, **params):
     try:
-        resp = requests.post(
+        resp = telegram_notify._request_with_eth0_fallback(
+            "post",
             API_BASE.format(token=token, method=method),
             json=params,
             timeout=http_timeout,

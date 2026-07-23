@@ -3,11 +3,15 @@
 бібліотеки python-telegram-bot). Налаштування - в БД (settings),
 керуються з веб-інтерфейсу без перезапуску сервісу.
 """
+import fcntl
 import logging
 import os
 import random
+import socket
+import struct
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from app import db
 
@@ -16,6 +20,57 @@ logger = logging.getLogger("telegram_notify")
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 REQUEST_TIMEOUT = 10
 SIGNATURE_PHRASES_PATH = os.path.join(os.path.dirname(__file__), "signature_phrases.txt")
+
+
+def _get_eth0_ip():
+    """IP-адреса eth0 (USB-Ethernet), якщо інтерфейс підключений. Лінукс-
+    специфічний ioctl (SIOCGIFADDR) - середовище проєкту завжди Linux
+    (Raspberry Pi OS)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ip = socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(), 0x8915, struct.pack("256s", b"eth0"[:15])
+        )[20:24])
+        return ip
+    except OSError:
+        return None
+
+
+class _SourceAddressAdapter(HTTPAdapter):
+    """HTTPAdapter, що прив'язує вихідні з'єднання до конкретної IP-адреси
+    (тут - eth0), а не залишає вибір інтерфейсу ядру (яке піде дефолтним
+    маршрутом - wlan0, WiFi Starlink)."""
+    def __init__(self, source_ip, **kwargs):
+        self._source_address = (source_ip, 0)
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs["source_address"] = self._source_address
+        super().init_poolmanager(*args, **kwargs)
+
+
+def _request_with_eth0_fallback(method: str, url: str, **kwargs):
+    """Виконує HTTP-запит: спочатку звичайним способом (дефолтний
+    маршрут - зазвичай wlan0/WiFi Starlink, нижчий route-metric). Якщо
+    це провалюється мережевою помилкою - пробує ще раз, явно прив'язавши
+    з'єднання до eth0 (USB-Ethernet, домашня мережа). Це критично, коли
+    супутниковий канал Starlink недоступний: wlan0 приймає локальний
+    трафік (dish/router відповідають), але не пропускає нічого в
+    реальний інтернет, тоді як eth0 може мати робоче з'єднання - без
+    цього fallback Telegram-сповіщення мовчали б саме тоді, коли вони
+    найпотрібніші (сповістити про проблему зі зв'язком)."""
+    try:
+        return requests.request(method, url, **kwargs)
+    except requests.RequestException as e:
+        eth0_ip = _get_eth0_ip()
+        if not eth0_ip:
+            raise
+        logger.info("Дефолтний маршрут недоступний (%s), пробую через eth0 (%s)", e, eth0_ip)
+        session = requests.Session()
+        adapter = _SourceAddressAdapter(eth0_ip)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session.request(method, url, **kwargs)
 
 
 def _random_signature_phrase() -> str:
@@ -120,7 +175,8 @@ def send_message(text: str) -> tuple[bool, str]:
     any_ok = False
     for chat_id in chat_ids:
         try:
-            resp = requests.post(
+            resp = _request_with_eth0_fallback(
+                "post",
                 url,
                 json={"chat_id": chat_id, "text": full_text, "parse_mode": "HTML"},
                 timeout=REQUEST_TIMEOUT,
@@ -149,7 +205,8 @@ def test_connection() -> tuple[bool, str]:
     if not token:
         return False, "Не вказано bot token"
     try:
-        resp = requests.get(
+        resp = _request_with_eth0_fallback(
+            "get",
             API_BASE.format(token=token, method="getMe"),
             timeout=REQUEST_TIMEOUT,
         )

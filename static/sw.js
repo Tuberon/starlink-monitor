@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
   "/static/style.css",
   "/static/dashboard.js",
   "/static/settings.js",
+  "/static/stats.js",
   "/static/logo.png",
   "/static/favicon.ico",
 ];

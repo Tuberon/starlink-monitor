@@ -30,6 +30,11 @@ def settings_page():
     return render_template("settings.html")
 
 
+@app.route("/stats")
+def stats_page():
+    return render_template("stats.html")
+
+
 @app.route("/healthz")
 def healthz():
     """Легка перевірка стану для зовнішнього моніторингу (UptimeRobot тощо):

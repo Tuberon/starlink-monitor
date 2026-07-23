@@ -10,8 +10,9 @@
    оновленні ПЗ (dish/router), зі спільним захистом від reboot-loop.
 4. Збирає метрики Pi та історію Starlink в SQLite з автоочищенням.
 5. Веб-дашборд (Flask + Chart.js): live-метрики, графіки, прошивки,
-   WiFi-клієнти, журнал подій, ручний reboot/перевірка оновлень,
-   реальний speedtest поруч із заявленою швидкістю dish.
+   WiFi-клієнти, останні 5 подій журналу, ручний reboot/перевірка
+   оновлень, реальний speedtest поруч із заявленою швидкістю dish.
+   Сторінка `/stats` — повний журнал подій і повна історія speedtest.
 6. Telegram: сповіщення + команди `/status /reboot /id /help` —
    деталі нижче.
 7. Reboot/shutdown Pi з веб-інтерфейсу або фізичної GPIO-кнопки,
@@ -137,9 +138,9 @@ starlink-monitor/
 │   ├── config_editor.py       # редагування env-параметрів через /settings
 │   ├── speedtest_runner.py    # періодичний реальний speedtest
 │   └── vendor/                # сюди завантажується starlink_grpc.py
-├── templates/index.html, settings.html
-├── static/dashboard.js, settings.js, pwa.js, sw.js, style.css, logo.png,
-│           favicon.ico, manifest.json, icon-192.png, icon-512.png
+├── templates/index.html, settings.html, stats.html
+├── static/dashboard.js, settings.js, stats.js, pwa.js, sw.js, style.css,
+│           logo.png, favicon.ico, manifest.json, icon-192.png, icon-512.png
 ├── systemd/
 │   ├── starlink-monitor.service          # watchdog + метрики
 │   ├── starlink-webui.service            # веб-інтерфейс

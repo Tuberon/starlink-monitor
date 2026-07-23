@@ -388,7 +388,7 @@ let eventsClearedLocally = false;
 async function refreshEvents() {
   if (eventsClearedLocally) return;
   try {
-    const res = await fetch('/api/events?limit=30');
+    const res = await fetch('/api/events?limit=5');
     const events = await res.json();
     const log = el('eventLog');
     if (!events.length) {
@@ -531,48 +531,26 @@ async function handleAutoRebootToggle(e) {
   }
 }
 
-let historyTickCounter = 0;
-const HISTORY_REFRESH_EVERY_N_TICKS = 5; // з REFRESH_MS=1000 це кожні ~5с -
-// достатньо часто для плавних графіків, але без зайвих запитів тих самих
-// 120 рядків між реальними новими опитуваннями dish (POLL_INTERVAL_SEC=10с)
-
-async function loadSpeedtestHistory() {
+async function loadSpeedtestSummary() {
   try {
-    const res = await fetch('/api/speedtest-history?limit=20');
+    const res = await fetch('/api/speedtest-history?limit=1');
     const data = await res.json();
-    renderSpeedtest(data);
-  } catch (e) {
-    console.error('speedtest history load failed', e);
-  }
-}
+    const latest = data.latest;
+    el('stDownload').innerHTML = `${latest ? latest.download_mbps : '—'}<span class="unit">Мбіт/с</span>`;
+    el('stUpload').innerHTML = `${latest ? latest.upload_mbps : '—'}<span class="unit">Мбіт/с</span>`;
+    el('stPing').innerHTML = `${latest ? latest.ping_ms : '—'}<span class="unit">мс</span>`;
 
-function renderSpeedtest(data) {
-  const latest = data.latest;
-  el('stDownload').innerHTML = `${latest ? latest.download_mbps : '—'}<span class="unit">Мбіт/с</span>`;
-  el('stUpload').innerHTML = `${latest ? latest.upload_mbps : '—'}<span class="unit">Мбіт/с</span>`;
-  el('stPing').innerHTML = `${latest ? latest.ping_ms : '—'}<span class="unit">мс</span>`;
-
-  const sub = el('speedtestSub');
-  if (!data.enabled) {
-    sub.textContent = 'вимкнено (увімкнути на сторінці Налаштування)';
-  } else if (latest) {
-    sub.textContent = `останній тест: ${fmtTime(latest.ts)}, сервер: ${latest.server_name || '—'}`;
-  } else {
-    sub.textContent = 'ще не запускався';
-  }
-
-  const log = el('speedtestLog');
-  const rows = (data.results || []).slice(0, 10);
-  if (rows.length === 0) {
-    log.innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Ще немає результатів</span></div>';
-    return;
-  }
-  log.innerHTML = rows.map(r => {
-    if (!r.success) {
-      return `<div class="log-row fail"><span class="time">${fmtTime(r.ts)}</span><span class="kind">помилка</span><span>${r.error || 'невідома помилка'}</span></div>`;
+    const sub = el('speedtestSub');
+    if (!data.enabled) {
+      sub.textContent = 'вимкнено (увімкнути на сторінці Налаштування)';
+    } else if (latest) {
+      sub.textContent = `останній тест: ${fmtTime(latest.ts)}, сервер: ${latest.server_name || '—'}`;
+    } else {
+      sub.textContent = 'ще не запускався';
     }
-    return `<div class="log-row ok"><span class="time">${fmtTime(r.ts)}</span><span class="kind">тест</span><span>⬇ ${r.download_mbps} · ⬆ ${r.upload_mbps} Мбіт/с · ping ${r.ping_ms}мс · ${r.server_name || ''}</span></div>`;
-  }).join('');
+  } catch (e) {
+    console.error('speedtest summary load failed', e);
+  }
 }
 
 async function handleSpeedtestRun() {
@@ -586,7 +564,7 @@ async function handleSpeedtestRun() {
     hint.textContent = data.success
       ? `Готово: ⬇ ${data.download_mbps} Мбіт/с, ⬆ ${data.upload_mbps} Мбіт/с`
       : `Помилка: ${data.error || 'невідома'}`;
-    loadSpeedtestHistory();
+    loadSpeedtestSummary();
   } catch (e) {
     hint.textContent = 'Помилка мережі при запуску тесту';
     console.error('speedtest run failed', e);
@@ -596,7 +574,12 @@ async function handleSpeedtestRun() {
 }
 
 let speedtestTickCounter = 0;
-const SPEEDTEST_REFRESH_EVERY_N_TICKS = 60; // раз на ~60с - дані оновлюються рідко (типово раз на 30хв)
+const SPEEDTEST_REFRESH_EVERY_N_TICKS = 60; // раз на ~60с - дані оновлюються рідко
+
+let historyTickCounter = 0;
+const HISTORY_REFRESH_EVERY_N_TICKS = 5; // з REFRESH_MS=1000 це кожні ~5с -
+// достатньо часто для плавних графіків, але без зайвих запитів тих самих
+// 120 рядків між реальними новими опитуваннями dish (POLL_INTERVAL_SEC=10с)
 
 function tick() {
   refreshStatus();
@@ -609,7 +592,7 @@ function tick() {
   refreshEvents();
   speedtestTickCounter++;
   if (speedtestTickCounter % SPEEDTEST_REFRESH_EVERY_N_TICKS === 0) {
-    loadSpeedtestHistory();
+    loadSpeedtestSummary();
   }
 }
 
@@ -623,7 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);
   el('speedtestRunBtn').addEventListener('click', handleSpeedtestRun);
   loadConfigFlags();
-  loadSpeedtestHistory();
+  loadSpeedtestSummary();
   tick();
   setInterval(tick, REFRESH_MS);
 });

@@ -219,3 +219,44 @@ restore не спричиняв неочікуваний рестарт серв
 конкатенація) був продубльований тричі: у `send_message()` та двічі
 в `telegram_bot.py` (`_send`, `_cmd_reboot_request`). Об'єднано в
 один хелпер.
+
+## Баг: StartLimitIntervalSec/StartLimitBurst у [Service] замість [Unit]
+
+**Симптом**: systemd попереджав `Unknown key 'StartLimitIntervalSec'
+in section [Service], ignoring` при кожному старті
+`starlink-grpc-fetch.service`.
+
+**Причина**: ці директиви ("Unit start rate limiting") належать до
+розділу `[Unit]`, не `[Service]` — у неправильній секції systemd
+просто ігнорує їх, обмеження кількості спроб перезапуску (5 за 30хв)
+не діяло взагалі.
+
+**Виправлення**: перенесено в `[Unit]`.
+
+## fetch_starlink_grpc.sh: завантаження через eth0 насамперед
+
+wlan0 (WiFi Starlink) навмисно має нижчий route-metric за eth0 (щоб
+трафік до dish/router завжди йшов через WiFi) — але це ж означає, що
+дефолтний маршрут для ЗОВНІШНЬОГО інтернету (завантаження
+`starlink_grpc.py` з GitHub) теж намагається йти через wlan0 першим.
+Якщо супутниковий канал Starlink саме недоступний (dish щойно
+ввімкнувся, обслуговування, погода), інтернету через wlan0 немає
+взагалі, попри робочий eth0 (домашня мережа). Виправлено: скрипт
+пробує `curl --interface eth0` спочатку (якщо eth0 підключений), і
+лише за невдачі падає на дефолтний маршрут.
+
+## Telegram-сповіщення мовчали при відсутньому інтернеті на Starlink
+
+Той самий root cause, що й для `fetch_starlink_grpc.sh`, але для
+Python-коду: `requests.post`/`requests.get` до `api.telegram.org`
+теж ідуть через дефолтний маршрут (wlan0), який не має інтернету,
+коли супутниковий канал Starlink недоступний — саме тоді, коли
+сповіщення про проблему найпотрібніші.
+
+`telegram_notify._request_with_eth0_fallback()` — спільний хелпер:
+звичайний запит спочатку, і при мережевій помилці - явний retry з
+`requests.Session` + кастомний `HTTPAdapter`, що прив'язує сокет до
+IP-адреси eth0 (`_get_eth0_ip()`, ioctl `SIOCGIFADDR`, Linux-специфічно).
+Застосовано в `send_message()`, `test_connection()` (telegram_notify.py)
+і `_api_call()` (telegram_bot.py, спільний для getUpdates/відповідей
+на команди).

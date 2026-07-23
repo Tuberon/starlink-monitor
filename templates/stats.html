@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Статистика — Dish Watch</title>
+<link rel="icon" type="image/x-icon" id="favicon" href="/static/favicon.ico">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="theme-color" content="#0b1220">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <a href="/" class="settings-link" title="Назад до дашборду">←</a>
+      <div>
+        <h1>Статистика</h1>
+        <p>Dish Watch · журнал подій, результати speedtest</p>
+      </div>
+    </div>
+    <img src="/static/logo.png" alt="logo" class="header-logo">
+  </header>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Журнал подій</h2>
+      <button class="clear-btn" id="clearEventsBtn" title="Очистити журнал подій">Очистити</button>
+    </div>
+    <div class="log" id="eventLog">
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Результати заміру швидкості</h2>
+      <span class="sub" id="speedtestSub"></span>
+    </div>
+    <div class="log" id="speedtestLog">
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+    </div>
+  </div>
+
+  <footer>
+    © 2026 JunioR · Starlink Mini Monitor · Ліцензія MIT
+  </footer>
+</div>
+
+<script src="/static/stats.js"></script>
+<script src="/static/pwa.js"></script>
+</body>
+</html>

@@ -30,6 +30,7 @@
         <span class="dot"></span>
         <span id="statusText">З'єднання...</span>
       </div>
+      <a href="/stats" class="settings-link" title="Статистика">📊</a>
       <a href="/settings" class="settings-link" title="Налаштування">⚙</a>
     </div>
   </header>
@@ -148,7 +149,9 @@
       <button class="check-btn" id="speedtestRunBtn">▶ Запустити зараз</button>
       <span class="hint" id="speedtestHint"></span>
     </div>
-    <div class="log" id="speedtestLog" style="margin-top:12px;"></div>
+    <div class="controls" style="margin-top:8px;">
+      <a href="/stats" class="check-btn" style="text-decoration:none; display:inline-block;">Усі результати →</a>
+    </div>
   </div>
 
   <div class="section-divider">
@@ -181,6 +184,9 @@
     </div>
     <div class="log" id="eventLog">
       <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <a href="/stats" class="check-btn" style="text-decoration:none; display:inline-block;">Уся статистика →</a>
     </div>
   </div>
 
