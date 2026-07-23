@@ -14,13 +14,17 @@
     --font-display: 'Space Grotesk', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   }
-  *{box-sizing:border-box; margin:0; padding:0;}
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   body{
     background: radial-gradient(ellipse 120% 80% at 50% -10%, #101c33 0%, var(--sky-950) 55%);
     color: var(--text-hi);
     font-family: var(--font-display);
     min-height:100vh;
     padding: 28px 20px 60px;
+    /* iPhone з "чубчиком"/заокругленими краями - не дати контенту
+       ховатись під системними елементами в landscape-режимі */
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
   }
   .wrap{max-width:1080px; margin:0 auto;}
 
@@ -72,6 +76,7 @@
     transition: border-color 0.15s, color 0.15s;
   }
   .settings-link:hover{border-color: var(--signal); color: var(--text-hi);}
+  .settings-link:active{border-color: var(--signal); background: var(--sky-800);}
 
   /* ---- metric grid ---- */
   .grid{
@@ -136,6 +141,10 @@
   .status-row-label{
     font-family:var(--font-mono); font-size:0.7rem; text-transform:uppercase;
     letter-spacing:0.05em; color:var(--text-low); flex-shrink:0; min-width:150px;
+  }
+  @media (max-width:480px){
+    .status-row-label{min-width:0; width:100%;}
+    .progress-track{width:100%; max-width:140px;}
   }
   .status-row-body{
     display:flex; align-items:center; gap:12px; flex-wrap:wrap; flex:1;
@@ -242,6 +251,7 @@
     transition: border-color 0.15s, background 0.15s;
   }
   button.reboot-btn:hover{border-color:var(--crit); background:#1a1420;}
+  button.reboot-btn:active{border-color:var(--crit); background:#241a26;}
   button.reboot-btn:disabled{opacity:0.5; cursor:not-allowed;}
   .hint{font-family:var(--font-mono); font-size:0.68rem; color:var(--text-low);}
 
@@ -258,6 +268,7 @@
     transition: border-color 0.15s, background 0.15s;
   }
   button.check-btn:hover{border-color:var(--signal); background:#0f2620;}
+  button.check-btn:active{border-color:var(--signal); background:#123832;}
   button.check-btn:disabled{opacity:0.5; cursor:not-allowed;}
   button.check-btn.spinning{animation: spin-pulse 1s ease-in-out infinite;}
   @keyframes spin-pulse{
@@ -334,6 +345,7 @@
     transition: border-color 0.15s, color 0.15s;
   }
   button.clear-btn:hover{border-color:var(--text-mid); color:var(--text-hi);}
+  button.clear-btn:active{border-color:var(--text-mid); color:var(--text-hi); background:var(--sky-800);}
   button.clear-btn:disabled{opacity:0.5; cursor:not-allowed;}
 
   footer{
@@ -345,4 +357,31 @@
   @media (max-width:600px){
     .grid{grid-template-columns: repeat(2, 1fr);}
     .log-row{grid-template-columns: 70px 90px 1fr; font-size:0.7rem;}
+
+    body{padding: 16px 12px 40px;}
+    .panel{padding:16px;}
+    .metric{padding:14px 12px;}
+    .metric .value{font-size:1.35rem;}
+
+    header{gap:12px; margin-bottom:20px; padding-bottom:14px;}
+    .brand{gap:10px;}
+    .brand h1{font-size:1.1rem;}
+    .header-logo{height:34px;}
+
+    /* Більший touch target на дотикових екранах (мінімум ~44px за
+       рекомендаціями Apple/Google) - на десктопі кнопки лишаються
+       компактнішими, тут лише для мобільних. */
+    button.reboot-btn, button.check-btn{
+      padding:13px 16px; font-size:0.82rem; min-height:44px;
+    }
+    .settings-link{width:44px; height:44px;}
+
+    .panel-head{flex-wrap:wrap; gap:6px;}
+    .status-row{padding:12px 14px; gap:10px;}
+  }
+
+  @media (max-width:360px){
+    .grid{grid-template-columns: 1fr 1fr;}
+    .metric .value{font-size:1.15rem;}
+    .brand p{display:none;}
   }

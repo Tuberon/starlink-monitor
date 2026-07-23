@@ -33,15 +33,45 @@ fi
 
 echo "==> Зупиняю та вимикаю сервіси"
 systemctl stop starlink-monitor.service starlink-webui.service \
-  starlink-grpc-fetch.service starlink-shutdown-button.service 2>/dev/null || true
+  starlink-grpc-fetch.service starlink-shutdown-button.service \
+  starlink-wan-failover.timer starlink-wan-failover.service 2>/dev/null || true
 systemctl disable starlink-monitor.service starlink-webui.service \
-  starlink-grpc-fetch.service starlink-shutdown-button.service 2>/dev/null || true
+  starlink-grpc-fetch.service starlink-shutdown-button.service \
+  starlink-wan-failover.timer 2>/dev/null || true
+
+# Якщо WAN failover-таймер щойно знизив пріоритет wlan0 (metric=9999,
+# бо Starlink був без інтернету), відновлюємо нормальний пріоритет -
+# інакше після видалення проєкту (і самого таймера, який це коригував)
+# wlan0 лишився б назавжди з "зіпсованою" маршрутизацією. Перевіряємо
+# УСІ default-маршрути на wlan0 (не лише перший) - `ip route replace`
+# із вказаним metric додає новий запис замість заміни, якщо такого
+# metric раніше не було, тому могли накопичитись дублікати (metric=50
+# і metric=9999 одночасно) - видаляємо всі, додаємо один чистий.
+mapfile -t WLAN_ROUTES < <(ip route show default dev wlan0 2>/dev/null || true)
+NEEDS_FIX=0
+for route in "${WLAN_ROUTES[@]:-}"; do
+  echo "$route" | grep -q "metric 9999\b" && NEEDS_FIX=1
+done
+if [[ "${#WLAN_ROUTES[@]}" -gt 1 || "$NEEDS_FIX" -eq 1 ]]; then
+  WLAN_GATEWAY=""
+  for route in "${WLAN_ROUTES[@]:-}"; do
+    WLAN_GATEWAY="$(echo "$route" | grep -oP 'via \K[0-9.]+' || true)"
+    [[ -n "$WLAN_GATEWAY" ]] && break
+  done
+  if [[ -n "$WLAN_GATEWAY" ]]; then
+    echo "==> Відновлюю нормальний пріоритет маршруту wlan0 (metric=50)"
+    while ip route del default dev wlan0 2>/dev/null; do :; done
+    ip route add default via "$WLAN_GATEWAY" dev wlan0 metric 50 2>/dev/null || true
+  fi
+fi
 
 echo "==> Видаляю systemd unit-файли"
 rm -f /etc/systemd/system/starlink-monitor.service \
       /etc/systemd/system/starlink-webui.service \
       /etc/systemd/system/starlink-grpc-fetch.service \
-      /etc/systemd/system/starlink-shutdown-button.service
+      /etc/systemd/system/starlink-shutdown-button.service \
+      /etc/systemd/system/starlink-wan-failover.service \
+      /etc/systemd/system/starlink-wan-failover.timer
 systemctl daemon-reload
 
 echo "==> Видаляю sudoers-правило"

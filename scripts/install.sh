@@ -14,6 +14,7 @@ if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" ]]; then
   exit 1
 fi
 RUN_USER="$SUDO_USER"
+RUN_USER_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="/opt/starlink-monitor"
 
@@ -196,7 +197,8 @@ visudo -c -f /etc/sudoers.d/starlink-monitor
 
 echo "==> Встановлюю/оновлюю systemd unit-файли (підстановка користувача $RUN_USER)"
 UNITS_UPDATED=0
-for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service starlink-shutdown-button.service; do
+for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service \
+           starlink-shutdown-button.service starlink-wan-failover.service starlink-wan-failover.timer; do
   NEW_UNIT="$(sed "s/__RUN_USER__/$RUN_USER/g" "$PROJECT_DIR/systemd/$svc")"
   DEST="/etc/systemd/system/$svc"
   if [[ ! -f "$DEST" ]] || ! diff -q <(echo "$NEW_UNIT") "$DEST" >/dev/null 2>&1; then
@@ -213,6 +215,9 @@ systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
 systemctl enable --now starlink-shutdown-button.service
 systemctl enable starlink-grpc-fetch.service
+# .timer вмикається й запускається одразу (не .service - той лише
+# oneshot, запускається таймером за розкладом, не при завантаженні).
+systemctl enable --now starlink-wan-failover.timer
 
 if [[ "$MODE" == "update" ]]; then
   if [[ "$CHANGED_FILES" -gt 0 || "$REQ_CHANGED" -eq 1 || "$UNITS_UPDATED" -eq 1 ]]; then
@@ -334,6 +339,6 @@ fi
 echo " 3. Дашборд: http://$PI_IP:8080"
 echo ""
 echo " Для наступних оновлень: покладіть новий starlink-monitor.tar.gz у"
-echo " домашній каталог і виконайте:"
-echo "      sudo bash scripts/update.sh"
+echo " домашній каталог ($RUN_USER_HOME/) і виконайте (з будь-якого каталогу):"
+echo "      sudo bash /opt/starlink-monitor/scripts/update.sh"
 echo "======================================================================"

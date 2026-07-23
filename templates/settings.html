@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Налаштування — Dish Watch</title>
 <link rel="icon" type="image/x-icon" id="favicon" href="/static/favicon.ico">
 <link rel="manifest" href="/static/manifest.json">
@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="{{ static_v('style.css') }}">
 </head>
 <body>
 <div class="wrap">
@@ -111,7 +111,7 @@
   </footer>
 </div>
 
-<script src="/static/settings.js"></script>
-<script src="/static/pwa.js"></script>
+<script src="{{ static_v('settings.js') }}"></script>
+<script src="{{ static_v('pwa.js') }}"></script>
 </body>
 </html>

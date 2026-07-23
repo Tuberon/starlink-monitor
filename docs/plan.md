@@ -37,6 +37,8 @@
 - [x] `/healthz` для зовнішнього моніторингу (БД + свіжість метрик watchdog)
 - [x] Встановлюваний дашборд (PWA: manifest, service worker, іконки)
 - [x] Реальний speedtest (заявлена dish vs реальна швидкість), вимкнено за замовчуванням
+- [x] Telegram eth0-fallback (SO_BINDTODEVICE + ручний DNS) при недоступному Starlink
+- [x] Системний WAN-failover (wlan0↔eth0 route-metric) - для всієї системи, не лише Telegram
 
 ## Можливі наступні кроки (не заплановані, лише ідеї)
 

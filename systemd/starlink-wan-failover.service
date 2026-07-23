@@ -1,0 +1,22 @@
+[Unit]
+Description=Starlink Monitor - WAN failover (перевірка інтернету через wlan0, переключення на eth0)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/starlink-monitor/scripts/wan_failover_check.sh
+StandardOutput=journal
+StandardError=journal
+
+# Потребує root для зміни таблиці маршрутизації (ip route) - на
+# відміну від решти сервісів проєкту (ті працюють як RUN_USER з
+# вузькими sudo-правами лише на конкретні systemctl-команди). Це
+# єдиний сервіс проєкту, що працює як root, тому звужуємо можливості
+# до мінімально потрібних (CAP_NET_ADMIN для ip route, CAP_NET_RAW для
+# ping) - навіть root тут не має решти системних можливостей.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW

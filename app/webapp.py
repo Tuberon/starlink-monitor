@@ -1,5 +1,6 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, історія, журнал подій, ручний reboot."""
 import logging
+import os
 import subprocess
 import time
 
@@ -18,6 +19,26 @@ app = Flask(__name__, template_folder="../templates", static_folder="../static")
 # дані) цього не стосуються - кешується лише /static/*.
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 client = StarlinkClient()
+
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+
+
+def _static_v(filename: str) -> str:
+    """URL статичного файлу з query-параметром версії (mtime файлу) -
+    cache-busting: щойно файл змінюється (нова версія коду встановлена
+    через update.sh), URL міняється разом з ним, і браузер завантажує
+    свіжу версію негайно, ігноруючи старий закешований файл (замість
+    очікування спливання SEND_FILE_MAX_AGE_DEFAULT=3600с чи покладання
+    на ручний hard refresh користувача)."""
+    path = os.path.join(_STATIC_DIR, filename)
+    try:
+        v = int(os.path.getmtime(path))
+    except OSError:
+        v = 0
+    return f"/static/{filename}?v={v}"
+
+
+app.jinja_env.globals["static_v"] = _static_v
 
 
 @app.route("/")

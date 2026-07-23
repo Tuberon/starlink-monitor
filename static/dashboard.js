@@ -388,7 +388,7 @@ let eventsClearedLocally = false;
 async function refreshEvents() {
   if (eventsClearedLocally) return;
   try {
-    const res = await fetch('/api/events?limit=5');
+    const res = await fetch('/api/events?limit=10');
     const events = await res.json();
     const log = el('eventLog');
     if (!events.length) {
