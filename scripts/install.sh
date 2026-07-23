@@ -281,6 +281,16 @@ if [[ "$MODE" == "install" ]]; then
         ipv4.method manual ipv4.addresses "$WLAN_IP" ipv4.gateway "$WLAN_GW" \
         ipv4.dns "1.1.1.1,8.8.8.8" ipv4.route-metric 50
 
+      # КРИТИЧНО: 192.168.100.0/24 (dish) не має власної підмережі на
+      # wlan0 (це router: 192.168.1.0/24) - трафік до dish іде лише
+      # через ДЕФОЛТНИЙ маршрут. Якщо колись пріоритет дефолтного
+      # маршруту wlan0 знижується (напр. starlink-wan-failover.timer
+      # при відсутньому інтернеті на Starlink), dish стає недосяжним
+      # для Pi, попри те що router (192.168.1.1) лишається доступним.
+      # Явний окремий маршрут - специфічніший за будь-який дефолтний,
+      # завжди пріоритетніший незалежно від metric.
+      nmcli connection modify "$WLAN_CONN" +ipv4.routes "192.168.100.0/24 $WLAN_GW"
+
       # dhcpcd конфліктує з NetworkManager (перевидає власні DHCP-лізинги й
       # маршрути незалежно від профілів nmcli, ігноруючи ipv4.method=manual).
       if systemctl list-unit-files dhcpcd.service >/dev/null 2>&1; then
