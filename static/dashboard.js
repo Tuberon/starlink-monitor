@@ -608,5 +608,22 @@ document.addEventListener('DOMContentLoaded', () => {
   loadConfigFlags();
   loadSpeedtestSummary();
   tick();
-  setInterval(tick, REFRESH_MS);
+
+  // Вкладка згорнута/неактивна - опитування раз на 30с замість
+  // щосекунди (dish/Pi нікуди не дінеться за цей час, а зайві
+  // запити з фонової вкладки лише навантажують слабкий WiFi-канал
+  // і сам Pi Zero 2 W без жодної практичної користі, поки користувач
+  // не дивиться на дашборд).
+  const HIDDEN_REFRESH_MS = 30000;
+  let refreshTimer = setInterval(tick, REFRESH_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    clearInterval(refreshTimer);
+    if (document.visibilityState === 'visible') {
+      tick(); // одразу освіжити дані після повернення на вкладку
+      refreshTimer = setInterval(tick, REFRESH_MS);
+    } else {
+      refreshTimer = setInterval(tick, HIDDEN_REFRESH_MS);
+    }
+  });
 });

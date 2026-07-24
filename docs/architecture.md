@@ -59,7 +59,8 @@ router — різні enum з різними назвами станів).
 | `starlink-webui.service` | Flask dashboard | БЕЗ `NoNewPrivileges` (потрібен sudo для reboot/poweroff Pi), `AmbientCapabilities=CAP_NET_RAW`, `CapabilityBoundingSet` НЕ звужено (sudo systemctl reboot успадкував би обмеження), `ReadWritePaths` включає `signature_phrases.txt` |
 | `starlink-shutdown-button.service` | Слухає GPIO-кнопку виключення | БЕЗ `NoNewPrivileges` (sudo poweroff), `Restart=on-failure` (не `always` — чистий вихід при вимкненій кнопці не збій) |
 | `starlink-grpc-fetch.service` | Одноразово тягне `starlink_grpc.py` при старті | — |
-| `starlink-wan-failover.service`/`.timer` | Періодична (кожні ~20с) перевірка інтернету через wlan0, коригування route-metric | Єдиний root-сервіс проєкту; `CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW` — навіть root тут без решти системних можливостей |
+| `starlink-wan-failover.service`/`.timer` | Періодична (кожні ~20с) перевірка інтернету через wlan0, коригування route-metric | root-сервіс; `CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW` — навіть root тут без решти системних можливостей |
+| `starlink-monitor-healthcheck.service`/`.timer` | Раз/хв опитує `/healthz`, force-restart `starlink-monitor.service` при не-200 (deadlock/livelock, не crash — `Restart=always` цього не бачить) | root-сервіс (потрібен для `systemctl restart` іншого юніта); `NoNewPrivileges=true`, `ProtectSystem=strict` |
 
 `ProtectSystem=strict` на всіх — файлова система read-only, крім явно
 дозволених шляхів.
@@ -208,7 +209,36 @@ $WLAN_GW"` на wlan0-з'єднанні — окремий явний маршр
 самопідживлення (реальний виявлений баг: часті короткі флапи dish,
 підтверджено точним часовим збігом у `journalctl`).
 
-Єдиний root-сервіс проєкту — `CapabilityBoundingSet` звужує навіть
-root до `CAP_NET_ADMIN`+`CAP_NET_RAW` (ping потребує raw-сокети).
+root-сервіс — `CapabilityBoundingSet` звужує навіть root до
+`CAP_NET_ADMIN`+`CAP_NET_RAW` (ping потребує raw-сокети).
 `uninstall.sh` відновлює нормальний metric wlan0 через той самий
 nmcli-підхід, якщо він був демотований на момент видалення.
+
+## Watchdog для watchdog-а (scripts/watchdog_healthcheck.sh)
+
+`Restart=always` на `starlink-monitor.service` рятує від crash, але
+не від зависання (deadlock/livelock) — процес технічно живий,
+systemd цього не бачить. `starlink-monitor-healthcheck.timer`
+(раз/хв) опитує вже наявний `GET /healthz` (окремий процес
+`starlink-webui.service`, незалежний від можливого зависання
+watchdog-потоку) — якщо відповідь не `200`, примусовий `systemctl
+restart starlink-monitor.service`. `OnBootSec=90` — довше за перший
+цикл опитування, щоб уникнути хибного restart одразу після
+завантаження ("no data yet" у `/healthz` саме по собі не є
+деградацією, `ok=True`).
+
+## Періодична оптимізація БД (db.vacuum_and_analyze)
+
+`VACUUM` + `ANALYZE` раз на добу в `monitor.py` (окремий таймер,
+рідше за `prune_old()` — щогодини). `VACUUM` фізично звільняє диску
+сторінки, вивільнені після `DELETE` в `prune_old()` (SQLite сам їх не
+повертає), `ANALYZE` оновлює статистику планувальника запитів. Окреме
+autocommit-з'єднання (не `get_conn()` з WAL) — простіше й надійніше
+для команди, що вимагає ексклюзивного доступу.
+
+## Ротація журналу systemd
+
+`install.sh` ідемпотентно дописує `SystemMaxUse=200M` у
+`/etc/systemd/journald.conf` (лише якщо там ще немає власного
+значення користувача) — без обмеження journald міг би з часом
+накопичити помітний обсяг логів на SD-картці.

@@ -1,0 +1,17 @@
+[Unit]
+Description=Starlink Monitor - Healthcheck (перевірка /healthz, примусовий restart при зависанні)
+After=starlink-monitor.service starlink-webui.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/scripts/watchdog_healthcheck.sh
+StandardOutput=journal
+StandardError=journal
+
+# Потребує root для systemctl restart іншого сервіса. Звужено до
+# мінімуму - лише читання мережі (curl локально) й керування
+# systemd-юнітами, нічого більше.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true

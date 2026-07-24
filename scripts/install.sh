@@ -198,7 +198,8 @@ visudo -c -f /etc/sudoers.d/starlink-monitor
 echo "==> Встановлюю/оновлюю systemd unit-файли (підстановка користувача $RUN_USER)"
 UNITS_UPDATED=0
 for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service \
-           starlink-shutdown-button.service starlink-wan-failover.service starlink-wan-failover.timer; do
+           starlink-shutdown-button.service starlink-wan-failover.service starlink-wan-failover.timer \
+           starlink-monitor-healthcheck.service starlink-monitor-healthcheck.timer; do
   NEW_UNIT="$(sed "s/__RUN_USER__/$RUN_USER/g" "$PROJECT_DIR/systemd/$svc")"
   DEST="/etc/systemd/system/$svc"
   if [[ ! -f "$DEST" ]] || ! diff -q <(echo "$NEW_UNIT") "$DEST" >/dev/null 2>&1; then
@@ -218,6 +219,17 @@ systemctl enable starlink-grpc-fetch.service
 # .timer вмикається й запускається одразу (не .service - той лише
 # oneshot, запускається таймером за розкладом, не при завантаженні).
 systemctl enable --now starlink-wan-failover.timer
+systemctl enable --now starlink-monitor-healthcheck.timer
+
+# Обмеження розміру журналу systemd - за замовчуванням journald може
+# з часом накопичити значний обсяг логів (роками роботи Pi), поки не
+# з'їсть помітну частку SD-картки. Ідемпотентно - додається лише якщо
+# ще не налаштовано (не перезаписує вже наявне значення користувача).
+if ! grep -q "^SystemMaxUse=" /etc/systemd/journald.conf 2>/dev/null; then
+  echo "==> Обмежую розмір журналу systemd (SystemMaxUse=200M)"
+  echo "SystemMaxUse=200M" >> /etc/systemd/journald.conf
+  systemctl restart systemd-journald
+fi
 
 if [[ "$MODE" == "update" ]]; then
   if [[ "$CHANGED_FILES" -gt 0 || "$REQ_CHANGED" -eq 1 || "$UNITS_UPDATED" -eq 1 ]]; then

@@ -415,6 +415,7 @@ class Watchdog:
         # завжди повертає 0.0, тому робимо його тут і відкидаємо результат.
         psutil.cpu_percent(interval=None)
         last_prune = 0
+        last_vacuum = 0
         last_router_poll = 0  # 0 гарантує негайне перше опитування роутера
         while True:
             try:
@@ -437,6 +438,14 @@ class Watchdog:
                 except Exception:
                     logger.exception("Помилка очищення старих записів")
                 last_prune = time.time()
+
+            if time.time() - last_vacuum > 86400:
+                try:
+                    logger.info("Періодична оптимізація БД (VACUUM + ANALYZE)")
+                    db.vacuum_and_analyze()
+                except Exception:
+                    logger.exception("Помилка VACUUM/ANALYZE")
+                last_vacuum = time.time()
 
             time.sleep(config.POLL_INTERVAL_SEC)
 

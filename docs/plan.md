@@ -39,6 +39,10 @@
 - [x] Реальний speedtest (заявлена dish vs реальна швидкість), вимкнено за замовчуванням
 - [x] Telegram eth0-fallback (SO_BINDTODEVICE + ручний DNS) при недоступному Starlink
 - [x] Системний WAN-failover (wlan0↔eth0 route-metric) - для всієї системи, не лише Telegram
+- [x] Watchdog для watchdog-а (healthcheck-таймер, force-restart при зависанні)
+- [x] Періодичний VACUUM/ANALYZE SQLite (раз на добу)
+- [x] Ротація журналу systemd (SystemMaxUse=200M)
+- [x] Менша частота опитування дашборду при прихованій вкладці (visibilitychange)
 
 ## Можливі наступні кроки (не заплановані, лише ідеї)
 

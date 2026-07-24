@@ -343,6 +343,23 @@ def prune_old(days: int = None):
         conn.execute("DELETE FROM speedtest_results WHERE ts < ?", (cutoff,))
 
 
+def vacuum_and_analyze():
+    """Періодична оптимізація БД: VACUUM звільняє місце після DELETE в
+    prune_old() (SQLite не повертає диску вільні сторінки автоматично),
+    ANALYZE оновлює статистику планувальника запитів. Викликається
+    рідше за prune_old (раз на добу, не щогодини) - VACUUM вимагає
+    ексклюзивного доступу й тимчасово до 2x розміру файлу на диску,
+    непотрібно робити це часто на SD-картці. Окреме з'єднання (не
+    get_conn(), який лишає WAL-режим) - VACUUM в WAL-режимі працює,
+    але надійніше й простіше з чистим autocommit-з'єднанням."""
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
+    try:
+        conn.execute("VACUUM")
+        conn.execute("ANALYZE")
+    finally:
+        conn.close()
+
+
 def uptime_stats_24h():
     """Частка часу online за останні 24 години (для дашборду)."""
     cutoff = time.time() - 86400
