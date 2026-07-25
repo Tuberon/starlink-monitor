@@ -58,6 +58,11 @@ DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "90"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
+# Автовимкнення підсвітки при бездіяльності (немає натискань кнопки) -
+# економія при night-режимі. 0 = вимкнено (підсвітка завжди активна,
+# поки не вимкнена вручну). Не рахує redraw екрана як "активність" -
+# лише коротке натискання кнопки скидає таймер.
+DISPLAY_BACKLIGHT_TIMEOUT_SEC = int(os.environ.get("STARLINK_DISPLAY_BACKLIGHT_TIMEOUT_SEC", "60"))
 # Офіційна специфікація модуля не вказує максимальну частоту SPI.
 # 40МГц - консервативний дефолт для типового підключення джампер-
 # дротами (не пресована плата) - на такому монтажі вищі частоти
@@ -69,6 +74,10 @@ DISPLAY_SPI_SPEED_HZ = int(os.environ.get("STARLINK_DISPLAY_SPI_SPEED_HZ", "4000
 # раніше). Обробляється в display.py (не в shutdown_button.py, який
 # сам себе вимикає при DISPLAY_ENABLED=1), бо керування підсвіткою
 # можливе лише через той самий об'єкт, що володіє SPI/BL-піном.
+# Автовимкнення підсвітки через N сек після ввімкнення (нічний режим,
+# економія) - 0 вимикає фічу (підсвітка лишається доти, доки не
+# перемкнеш кнопкою вручну).
+DISPLAY_BACKLIGHT_AUTO_OFF_SEC = int(os.environ.get("STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC", "60"))
 
 # Періодичний реальний speedtest (не лише пропускна здатність з телеметрії
 # dish, яка показує "заявлений" канал, не реальну користувацьку швидкість

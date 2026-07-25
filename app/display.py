@@ -57,6 +57,15 @@ def _status_lines(latest_metric: dict) -> list:
     return lines
 
 
+def _should_auto_off(backlight_on: bool, last_activity_ts: float, now: float, timeout_sec: int) -> bool:
+    """Чи час автоматично вимкнути підсвітку через бездіяльність -
+    чиста функція, легко тестується без реального дисплея/таймерів.
+    timeout_sec<=0 - фіча вимкнена (завжди False)."""
+    if timeout_sec <= 0 or not backlight_on:
+        return False
+    return (now - last_activity_ts) >= timeout_sec
+
+
 def _load_font(size: int):
     from PIL import ImageFont
     for path in FONT_PATHS:
@@ -139,12 +148,15 @@ def run_forever(stop_event=None):
             logger.error("Не вдалося ініціалізувати кнопку GPIO%d: %s", button_pin, e)
 
     backlight_on = True
+    last_activity_ts = time.time()
     last_redraw = 0.0
 
     try:
         while True:
             if stop_event and stop_event.is_set():
                 return
+
+            now = time.time()
 
             if button_get_value and button_tracker:
                 try:
@@ -153,6 +165,8 @@ def run_forever(stop_event=None):
                     if event == "short_press":
                         backlight_on = not backlight_on
                         display.set_backlight(backlight_on)
+                        if backlight_on:
+                            last_activity_ts = now
                         logger.info("Підсвітка %s (коротке натискання GPIO%d)",
                                     "увімкнена" if backlight_on else "вимкнена", button_pin)
                     elif event == "long_press":
@@ -160,7 +174,12 @@ def run_forever(stop_event=None):
                 except Exception as e:
                     logger.warning("Помилка читання кнопки: %s", e)
 
-            now = time.time()
+            if _should_auto_off(backlight_on, last_activity_ts, now, config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC):
+                backlight_on = False
+                display.set_backlight(False)
+                logger.info("Підсвітка вимкнена автоматично (%dс після ввімкнення)",
+                            config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC)
+
             if now - last_redraw >= config.DISPLAY_REFRESH_SEC:
                 try:
                     _redraw(display, Image, ImageDraw, font_big, font_small)

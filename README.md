@@ -78,7 +78,9 @@ STARLINK_DISPLAY_ROTATION=90
 
 Керування підсвіткою — фізичною кнопкою виключення (`STARLINK_SHUTDOWN_BUTTON_PIN`,
 див. секцію вище): коротке натискання вмикає/вимикає підсвітку, довге
-(як завжди) вимикає Pi.
+(як завжди) вимикає Pi. Автоматично вимикається через
+`STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` (типово 60с) після
+кожного ввімкнення — нічний режим/економія; `0` вимикає авто-off.
 
 ## 💬 Telegram-сповіщення та команди
 
@@ -295,6 +297,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
 | `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
+| `STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` | `60` | дисплей: автовимкнення підсвітки, сек (0=вимк.) |
 | `STARLINK_SPEEDTEST_ENABLED` | `0` | періодичний реальний speedtest (0/1) |
 | `STARLINK_SPEEDTEST_INTERVAL` | `1800` | інтервал між speedtest-прогонами, сек |
 
