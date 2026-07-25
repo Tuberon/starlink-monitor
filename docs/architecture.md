@@ -29,7 +29,7 @@ router — різні enum з різними назвами станів).
 | `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
-| `system_metrics.py` | Метрики самого Pi (CPU/RAM/диск/температура) |
+| `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення (кешовано) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `speedtest_runner.py` | Періодичний реальний speedtest (потік у monitor.py, вимкнено за замовчуванням) |
 | `config.py` | Конфігурація, env-змінні |

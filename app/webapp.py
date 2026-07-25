@@ -6,7 +6,7 @@ import time
 
 from flask import Flask, jsonify, render_template, request
 
-from app import config, config_editor, db, telegram_notify
+from app import config, config_editor, db, system_metrics, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -139,7 +139,7 @@ def api_events():
 @app.route("/api/system-status")
 def api_system_status():
     latest = db.get_latest_system_metric()
-    return jsonify({"latest": latest})
+    return jsonify({"latest": latest, "apt": system_metrics.get_apt_updates_info()})
 
 
 @app.route("/api/router-status")

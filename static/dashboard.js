@@ -251,6 +251,15 @@ async function refreshSystemStatus() {
   try {
     const res = await fetch('/api/system-status');
     const data = await res.json();
+
+    const apt = data.apt;
+    if (apt && apt.updates_count != null) {
+      el('sAptUpdates').textContent = apt.updates_count;
+      setValueClass(el('sAptUpdates'), apt.updates_count, 1, 999999);
+    } else {
+      el('sAptUpdates').textContent = '—';
+    }
+
     const latest = data.latest;
     if (!latest) return;
 

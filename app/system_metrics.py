@@ -7,6 +7,8 @@
 додаткових утиліт на кшталт vcgencmd.
 """
 import logging
+import os
+import subprocess
 import time
 
 import psutil
@@ -14,6 +16,47 @@ import psutil
 logger = logging.getLogger("system_metrics")
 
 THERMAL_ZONE_PATH = "/sys/class/thermal/thermal_zone0/temp"
+APT_STAMP_PATH = "/var/lib/apt/periodic/update-success-stamp"
+# apt list читає лише локальний кеш пакетів (без мережевого запиту) -
+# сам кеш оновлює системний apt-daily.timer (стандартний на Raspberry
+# Pi OS) раз на добу, тому частіша перевірка тут не додає нової
+# інформації, лише зайве навантажує Pi Zero 2 W субпроцесом на кожен
+# запит дашборду. Кешується в пам'яті процесу webui.
+_APT_CHECK_INTERVAL_SEC = 3600
+_apt_cache = {"updates_count": None, "last_apt_update_ts": None, "checked_ts": None}
+
+
+def get_apt_updates_info() -> dict:
+    """Кількість доступних оновлень пакетів (apt) і час останньої
+    системної перевірки (mtime apt-daily.timer's stamp-файлу). Ніколи
+    не кидає виняток - при будь-якій помилці count/last_apt_update_ts
+    лишаються None (фронтенд показує "—")."""
+    now = time.time()
+    if _apt_cache["checked_ts"] is not None and now - _apt_cache["checked_ts"] < _APT_CHECK_INTERVAL_SEC:
+        return dict(_apt_cache)
+
+    count = None
+    try:
+        result = subprocess.run(
+            ["apt", "list", "--upgradable"],
+            capture_output=True, text=True, timeout=15,
+        )
+        lines = [
+            line for line in result.stdout.strip().split("\n")
+            if line and not line.startswith("Listing")
+        ]
+        count = len(lines)
+    except Exception as e:
+        logger.debug("Не вдалося перевірити оновлення apt: %s", e)
+
+    last_apt_update_ts = None
+    try:
+        last_apt_update_ts = os.path.getmtime(APT_STAMP_PATH)
+    except OSError:
+        pass
+
+    _apt_cache.update(updates_count=count, last_apt_update_ts=last_apt_update_ts, checked_ts=now)
+    return dict(_apt_cache)
 
 
 def _read_temp_c():
