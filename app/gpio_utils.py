@@ -70,3 +70,48 @@ def open_input_line(pin: int, consumer: str):
     if is_v2:
         return _init_line_v2(gpiod, chip_path, pin, consumer)
     return _init_line_v1(gpiod, chip_path, pin, consumer)
+
+
+class ButtonPressTracker:
+    """Відстежує натискання/утримання кнопки (pull-up, LOW=натиснуто) -
+    чиста, стейтфул структура без залежності від реального GPIO, легко
+    тестується подачею довільної послідовності значень через poll().
+
+    poll(value) повертає:
+      - "long_press"  - утримано довше hold_sec (спрацьовує РІВНО ОДИН
+                         раз, у момент досягнення порогу, поки кнопка
+                         й далі утримується)
+      - "short_press" - відпущено ДО досягнення порогу утримання
+      - None          - нічого не сталось (ідле, чи утримання ще
+                         триває нижче порогу, чи відпущення ПІСЛЯ вже
+                         спрацьованого long_press - не подвійне
+                         спрацювання)
+
+    Використовується і в shutdown_button.py (лише long_press), і в
+    display.py (short_press -> підсвітка, long_press -> shutdown) -
+    та сама фізична кнопка, дві різні дії залежно від тривалості.
+    """
+    def __init__(self, hold_sec: float):
+        self.hold_sec = hold_sec
+        self._pressed_since = None
+        self._triggered = False
+
+    def poll(self, value, now: float = None):
+        import time as _time
+        now = now if now is not None else _time.time()
+        is_pressed = (value == 0)
+
+        if is_pressed:
+            if self._pressed_since is None:
+                self._pressed_since = now
+            elif not self._triggered and (now - self._pressed_since) >= self.hold_sec:
+                self._triggered = True
+                return "long_press"
+        else:
+            was_pressed = self._pressed_since is not None
+            was_triggered = self._triggered
+            self._pressed_since = None
+            self._triggered = False
+            if was_pressed and not was_triggered:
+                return "short_press"
+        return None

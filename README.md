@@ -40,7 +40,14 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 ```
 потім `sudo systemctl restart starlink-shutdown-button.service`.
 Утримання довше заданого часу (типово 3с) → `systemctl poweroff`, з
-подією в журналі й Telegram; короткий дотик ігнорується.
+подією в журналі й Telegram.
+
+Якщо ввімкнено фізичний TFT-дисплей (`STARLINK_DISPLAY_ENABLED=1`) —
+**та сама кнопка** отримує другу дію: **коротке** натискання
+перемикає підсвітку дисплея, **довге** (як і раніше) вимикає Pi.
+Обробляється тоді всередині `starlink-display.service`, а
+`starlink-shutdown-button.service` сам себе вимикає (щоб не
+конкурувати за той самий GPIO-пін).
 
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
@@ -69,14 +76,9 @@ STARLINK_DISPLAY_ROTATION=90
 підключено напряму до 3.3V (не через GPIO Pi) — постав
 `STARLINK_DISPLAY_BL_PIN=0` (без програмного керування підсвіткою).
 
-**Фізична кнопка підсвітки** (опційно): окрема кнопка (pull-up, LOW =
-натиснуто) увімкнення/вимкнення підсвітки — кожне натискання перемикає
-стан (toggle), утримувати не потрібно. Вимкнено за замовчуванням:
-```
-STARLINK_DISPLAY_BACKLIGHT_BUTTON_PIN=22
-```
-Потребує `STARLINK_DISPLAY_BL_PIN` (не 0) — керування підсвіткою й
-опитування кнопки відбуваються в тому самому процесі, що й сам дисплей.
+Керування підсвіткою — фізичною кнопкою виключення (`STARLINK_SHUTDOWN_BUTTON_PIN`,
+див. секцію вище): коротке натискання вмикає/вимикає підсвітку, довге
+(як завжди) вимикає Pi.
 
 ## 💬 Telegram-сповіщення та команди
 
@@ -293,7 +295,6 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
 | `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
-| `STARLINK_DISPLAY_BACKLIGHT_BUTTON_PIN` | `0` | дисплей: GPIO-пін кнопки підсвітки (0=вимк.) |
 | `STARLINK_SPEEDTEST_ENABLED` | `0` | періодичний реальний speedtest (0/1) |
 | `STARLINK_SPEEDTEST_INTERVAL` | `1800` | інтервал між speedtest-прогонами, сек |
 

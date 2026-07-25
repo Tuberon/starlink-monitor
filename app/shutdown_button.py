@@ -2,8 +2,16 @@
 GPIO-кнопка виключення Pi (pull-up, LOW = натиснуто). Утримання довше
 SHUTDOWN_BUTTON_HOLD_SEC -> systemctl poweroff + подія + Telegram.
 Окремий сервіс, виходить одразу якщо SHUTDOWN_BUTTON_GPIO_PIN=0.
+
+Якщо DISPLAY_ENABLED=1 - та сама кнопка обробляється всередині
+display.py (коротке натискання перемикає підсвітку, довге - вимикає
+Pi, як і тут) - цей сервіс тоді одразу завершується, щоб не
+конкурувати з display.py за той самий GPIO-пін (два процеси не
+можуть одночасно тримати запит на один і той самий вхід).
+
 Використовує gpiod (character-device API, не застарілий RPi.GPIO) -
-детальна v1/v2-сумісна логіка в app/gpio_utils.py (спільна з display.py).
+детальна v1/v2-сумісна логіка й детекція короткого/довгого натискання
+в app/gpio_utils.py (спільна з display.py).
 """
 import logging
 import subprocess
@@ -26,6 +34,14 @@ def watch_button():
         logger.info("SHUTDOWN_BUTTON_GPIO_PIN не налаштовано (0) - кнопка вимкнена, завершення")
         return
 
+    if config.DISPLAY_ENABLED:
+        logger.info(
+            "DISPLAY_ENABLED=1 - кнопка GPIO%d обробляється всередині display.py "
+            "(коротке=підсвітка, довге=вимкнення) - цей сервіс не активний, "
+            "щоб не конкурувати за той самий GPIO-пін", pin
+        )
+        return
+
     try:
         import gpiod  # noqa: F401 - лише перевірка наявності бібліотеки
     except ImportError:
@@ -40,8 +56,7 @@ def watch_button():
         logger.error("Не вдалося ініціалізувати GPIO%d: %s", pin, e)
         return
 
-    pressed_since = None
-    triggered = False
+    tracker = gpio_utils.ButtonPressTracker(config.SHUTDOWN_BUTTON_HOLD_SEC)
 
     try:
         while True:
@@ -52,17 +67,8 @@ def watch_button():
                 time.sleep(1)
                 continue
 
-            is_pressed = (value == 0)  # pull-up: натиснуто = LOW
-
-            if is_pressed:
-                if pressed_since is None:
-                    pressed_since = time.time()
-                elif not triggered and (time.time() - pressed_since) >= config.SHUTDOWN_BUTTON_HOLD_SEC:
-                    triggered = True
-                    _trigger_shutdown(pin)
-            else:
-                pressed_since = None
-                triggered = False
+            if tracker.poll(value) == "long_press":
+                _trigger_shutdown(pin)
 
             time.sleep(POLL_INTERVAL_SEC)
     finally:

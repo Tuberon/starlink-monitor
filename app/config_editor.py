@@ -43,7 +43,6 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_DISPLAY_ROTATION", "type": "int", "default": "90", "label": "Дисплей: поворот, ° (0/90/180/270)"},
     {"key": "STARLINK_DISPLAY_REFRESH_SEC", "type": "int", "default": "5", "label": "Дисплей: інтервал оновлення, сек"},
     {"key": "STARLINK_DISPLAY_SPI_SPEED_HZ", "type": "int", "default": "40000000", "label": "Дисплей: швидкість SPI, Гц"},
-    {"key": "STARLINK_DISPLAY_BACKLIGHT_BUTTON_PIN", "type": "int", "default": "0", "label": "Дисплей: GPIO-пін кнопки підсвітки (0=вимк.)"},
     {"key": "STARLINK_SPEEDTEST_ENABLED", "type": "bool", "default": "0", "label": "Періодичний реальний speedtest (0/1)"},
     {"key": "STARLINK_SPEEDTEST_INTERVAL", "type": "int", "default": "1800", "label": "Інтервал speedtest, сек"},
 ]

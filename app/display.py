@@ -1,20 +1,25 @@
 """
 Фізичний TFT-дисплей (ST7789, SPI) - показує live-статус Starlink
 Mini (online/offline, uptime) прямо на екрані, підключеному до Pi,
-без потреби відкривати веб-дашборд. Опційна фізична кнопка
-увімкнення/вимкнення підсвітки (toggle на натискання).
+без потреби відкривати веб-дашборд.
 
-Окремий процес (той самий патерн, що shutdown_button.py) - періодично
-перемальовує кадр через Pillow і надсилає на дисплей бібліотекою
-st7789 (SPI). Вимкнено за замовчуванням (DISPLAY_ENABLED=0) - не всі
-мають цей дисплей підключений. Кнопка підсвітки обробляється в цьому
-самому процесі (не окремим сервісом) - керування BL-піном можливе
-лише через той самий об'єкт st7789.ST7789, який його утримує.
+Та сама кнопка виключення Pi (SHUTDOWN_BUTTON_GPIO_PIN) обробляється
+тут: коротке натискання перемикає підсвітку дисплея, довге (довше
+SHUTDOWN_BUTTON_HOLD_SEC) вимикає Pi - як і раніше. Обробляється саме
+тут (не в окремому shutdown_button.py), бо керування підсвіткою
+можливе лише через той самий об'єкт st7789.ST7789, який володіє
+BL-піном; той сервіс сам себе вимикає, коли DISPLAY_ENABLED=1, щоб не
+конкурувати за той самий GPIO.
+
+Окремий процес - періодично перемальовує кадр через Pillow і надсилає
+на дисплей бібліотекою st7789 (SPI). Вимкнено за замовчуванням
+(DISPLAY_ENABLED=0) - не всі мають цей дисплей підключений.
 """
 import logging
 import time
 
 from app import config, db, gpio_utils
+from app.shutdown_button import _trigger_shutdown
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +31,7 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
-BUTTON_POLL_INTERVAL_SEC = 0.1  # як часто перевіряти кнопку підсвітки
+BUTTON_POLL_INTERVAL_SEC = 0.1  # як часто перевіряти кнопку
 
 
 def _fmt_uptime(uptime_s) -> str:
@@ -50,16 +55,6 @@ def _status_lines(latest_metric: dict) -> list:
     lines = ["● ONLINE" if online else "○ OFFLINE"]
     lines.append(f"Uptime: {_fmt_uptime(latest_metric.get('uptime_s'))}")
     return lines
-
-
-def _button_edge(get_value, was_pressed: bool):
-    """Edge-triggered детекція натискання (pull-up, LOW = натиснуто) -
-    повертає (is_pressed_now, is_new_press). is_new_press=True лише на
-    переході "не натиснуто -> натиснуто" (одне спрацювання на
-    натискання, не на кожен цикл опитування, поки утримується) - чиста
-    функція, легко тестується без реального GPIO."""
-    is_pressed = (get_value() == 0)
-    return is_pressed, (is_pressed and not was_pressed)
 
 
 def _load_font(size: int):
@@ -131,18 +126,19 @@ def run_forever(stop_event=None):
 
     button_get_value = None
     button_release = None
-    button_pin = config.DISPLAY_BACKLIGHT_BUTTON_PIN
+    button_tracker = None
+    button_pin = config.SHUTDOWN_BUTTON_GPIO_PIN
     if button_pin and button_pin > 0:
         try:
             button_get_value, button_release = gpio_utils.open_input_line(
-                button_pin, "starlink-display-backlight-button"
+                button_pin, "starlink-display-button"
             )
-            logger.info("Слухаю кнопку підсвітки на GPIO%d", button_pin)
+            button_tracker = gpio_utils.ButtonPressTracker(config.SHUTDOWN_BUTTON_HOLD_SEC)
+            logger.info("Слухаю кнопку на GPIO%d (коротке=підсвітка, довге=вимкнення Pi)", button_pin)
         except Exception as e:
-            logger.error("Не вдалося ініціалізувати кнопку підсвітки GPIO%d: %s", button_pin, e)
+            logger.error("Не вдалося ініціалізувати кнопку GPIO%d: %s", button_pin, e)
 
     backlight_on = True
-    was_pressed = False
     last_redraw = 0.0
 
     try:
@@ -150,16 +146,19 @@ def run_forever(stop_event=None):
             if stop_event and stop_event.is_set():
                 return
 
-            if button_get_value:
+            if button_get_value and button_tracker:
                 try:
-                    was_pressed, is_new_press = _button_edge(button_get_value, was_pressed)
-                    if is_new_press:
+                    value = button_get_value()
+                    event = button_tracker.poll(value)
+                    if event == "short_press":
                         backlight_on = not backlight_on
                         display.set_backlight(backlight_on)
-                        logger.info("Підсвітка %s (кнопка GPIO%d)",
+                        logger.info("Підсвітка %s (коротке натискання GPIO%d)",
                                     "увімкнена" if backlight_on else "вимкнена", button_pin)
+                    elif event == "long_press":
+                        _trigger_shutdown(button_pin)
                 except Exception as e:
-                    logger.warning("Помилка читання кнопки підсвітки: %s", e)
+                    logger.warning("Помилка читання кнопки: %s", e)
 
             now = time.time()
             if now - last_redraw >= config.DISPLAY_REFRESH_SEC:
