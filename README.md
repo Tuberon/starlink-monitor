@@ -44,8 +44,7 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
-Показує live-статус dish (online/offline, throughput, ping, uptime)
-прямо на екрані. Вимкнено за замовчуванням
+Показує live-статус dish (online/offline, uptime) прямо на екрані. Вимкнено за замовчуванням
 (`STARLINK_DISPLAY_ENABLED=0`).
 
 > ⚠️ SPI зазвичай вимкнений за замовчуванням на Raspberry Pi OS:

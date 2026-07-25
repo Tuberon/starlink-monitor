@@ -1,8 +1,8 @@
 """
 Фізичний TFT-дисплей (ST7789, SPI) - показує live-статус Starlink
-Mini (online/offline, throughput, ping, uptime) прямо на екрані,
-підключеному до Pi, без потреби відкривати веб-дашборд. Опційна
-фізична кнопка увімкнення/вимкнення підсвітки (toggle на натискання).
+Mini (online/offline, uptime) прямо на екрані, підключеному до Pi,
+без потреби відкривати веб-дашборд. Опційна фізична кнопка
+увімкнення/вимкнення підсвітки (toggle на натискання).
 
 Окремий процес (той самий патерн, що shutdown_button.py) - періодично
 перемальовує кадр через Pillow і надсилає на дисплей бібліотекою
@@ -39,19 +39,15 @@ def _fmt_uptime(uptime_s) -> str:
 
 def _status_lines(latest_metric: dict) -> list:
     """Формує рядки тексту для відображення - чиста функція без
-    залежності від самого дисплея, легко тестується окремо."""
+    залежності від самого дисплея, легко тестується окремо. Свідомо
+    НЕ показує downlink/uplink/ping/drop%/obstruction% (замалий екран
+    для змістовних числових метрик, це вже є на веб-дашборді) - лише
+    online/offline статус і uptime."""
     if not latest_metric:
         return ["Немає даних"]
 
     online = bool(latest_metric.get("online"))
     lines = ["● ONLINE" if online else "○ OFFLINE"]
-    if online:
-        down = latest_metric.get("downlink_mbps")
-        up = latest_metric.get("uplink_mbps")
-        ping = latest_metric.get("ping_latency_ms")
-        lines.append(f"\u2193 {down if down is not None else '—'} Мбіт/с")
-        lines.append(f"\u2191 {up if up is not None else '—'} Мбіт/с")
-        lines.append(f"Ping: {ping if ping is not None else '—'} мс")
     lines.append(f"Uptime: {_fmt_uptime(latest_metric.get('uptime_s'))}")
     return lines
 
