@@ -284,6 +284,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
 | `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
+| `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
 | `STARLINK_SPEEDTEST_ENABLED` | `0` | періодичний реальний speedtest (0/1) |
 | `STARLINK_SPEEDTEST_INTERVAL` | `1800` | інтервал між speedtest-прогонами, сек |
 

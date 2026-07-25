@@ -58,6 +58,12 @@ DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "90"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
+# Офіційна специфікація модуля не вказує максимальну частоту SPI.
+# 40МГц - консервативний дефолт для типового підключення джампер-
+# дротами (не пресована плата) - на такому монтажі вищі частоти
+# (60-80МГц) підвищують ризик спотворення сигналу/помилок зчитування.
+# Підніми через env, якщо підключення якісне (короткі дроти/шлейф).
+DISPLAY_SPI_SPEED_HZ = int(os.environ.get("STARLINK_DISPLAY_SPI_SPEED_HZ", "40000000"))
 
 # Періодичний реальний speedtest (не лише пропускна здатність з телеметрії
 # dish, яка показує "заявлений" канал, не реальну користувацьку швидкість

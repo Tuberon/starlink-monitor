@@ -84,7 +84,7 @@ def run_forever(stop_event=None):
             width=config.DISPLAY_WIDTH,
             height=config.DISPLAY_HEIGHT,
             rotation=config.DISPLAY_ROTATION,
-            spi_speed_hz=60_000_000,
+            spi_speed_hz=config.DISPLAY_SPI_SPEED_HZ,
         )
     except Exception as e:
         logger.error(
