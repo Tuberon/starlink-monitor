@@ -70,6 +70,15 @@ STARLINK_DISPLAY_ROTATION=90
 підключено напряму до 3.3V (не через GPIO Pi) — постав
 `STARLINK_DISPLAY_BL_PIN=0` (без програмного керування підсвіткою).
 
+**Фізична кнопка підсвітки** (опційно): окрема кнопка (pull-up, LOW =
+натиснуто) увімкнення/вимкнення підсвітки — кожне натискання перемикає
+стан (toggle), утримувати не потрібно. Вимкнено за замовчуванням:
+```
+STARLINK_DISPLAY_BACKLIGHT_BUTTON_PIN=22
+```
+Потребує `STARLINK_DISPLAY_BL_PIN` (не 0) — керування підсвіткою й
+опитування кнопки відбуваються в тому самому процесі, що й сам дисплей.
+
 ## 💬 Telegram-сповіщення та команди
 
 Налаштовуються на сторінці `/settings` (перехід за іконкою ⚙ на
@@ -285,6 +294,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
 | `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
+| `STARLINK_DISPLAY_BACKLIGHT_BUTTON_PIN` | `0` | дисплей: GPIO-пін кнопки підсвітки (0=вимк.) |
 | `STARLINK_SPEEDTEST_ENABLED` | `0` | періодичний реальний speedtest (0/1) |
 | `STARLINK_SPEEDTEST_INTERVAL` | `1800` | інтервал між speedtest-прогонами, сек |
 

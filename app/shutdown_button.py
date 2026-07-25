@@ -2,13 +2,14 @@
 GPIO-кнопка виключення Pi (pull-up, LOW = натиснуто). Утримання довше
 SHUTDOWN_BUTTON_HOLD_SEC -> systemctl poweroff + подія + Telegram.
 Окремий сервіс, виходить одразу якщо SHUTDOWN_BUTTON_GPIO_PIN=0.
-Використовує gpiod (character-device API, не застарілий RPi.GPIO).
+Використовує gpiod (character-device API, не застарілий RPi.GPIO) -
+детальна v1/v2-сумісна логіка в app/gpio_utils.py (спільна з display.py).
 """
 import logging
 import subprocess
 import time
 
-from app import config, db, telegram_notify
+from app import config, db, gpio_utils, telegram_notify
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,57 +18,6 @@ logging.basicConfig(
 logger = logging.getLogger("shutdown_button")
 
 POLL_INTERVAL_SEC = 0.1  # як часто перевіряти стан піна під час очікування
-GPIO_CHIP = "/dev/gpiochip0"
-
-
-def _find_gpio_chip():
-    """На різних версіях Raspberry Pi OS/ядра основний GPIO-чіп може
-    бути gpiochip0 або інший номер (напр. після додавання HAT-плат,
-    які теж реєструють свої chip'и). Перебираємо перші кілька."""
-    import os
-    for i in range(6):
-        path = f"/dev/gpiochip{i}"
-        if os.path.exists(path):
-            return path
-    return GPIO_CHIP
-
-
-def _init_line_v2(gpiod, chip_path, pin):
-    """gpiod >= 2.0: gpiod.request_lines() з LineSettings, значення
-    читається через request.get_value(pin) (повертає Value.ACTIVE/INACTIVE,
-    не 0/1 як у v1)."""
-    from gpiod.line import Direction, Bias
-
-    request = gpiod.request_lines(
-        chip_path,
-        consumer="starlink-shutdown-button",
-        config={pin: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP)},
-    )
-
-    def get_value():
-        from gpiod.line import Value
-        return 0 if request.get_value(pin) == Value.INACTIVE else 1
-
-    def release():
-        request.release()
-
-    return get_value, release
-
-
-def _init_line_v1(gpiod, chip_path, pin):
-    """gpiod < 2.0 (застарілий API): chip.get_line() + line.request()."""
-    chip = gpiod.Chip(chip_path)
-    line = chip.get_line(pin)
-    line.request(consumer="starlink-shutdown-button", type=gpiod.LINE_REQ_DIR_IN,
-                 flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
-
-    def get_value():
-        return line.get_value()
-
-    def release():
-        line.release()
-
-    return get_value, release
 
 
 def watch_button():
@@ -77,27 +27,17 @@ def watch_button():
         return
 
     try:
-        import gpiod
+        import gpiod  # noqa: F401 - лише перевірка наявності бібліотеки
     except ImportError:
         logger.error("Бібліотека gpiod не встановлена - кнопка виключення не працюватиме")
         return
 
-    chip_path = _find_gpio_chip()
-    logger.info("Слухаю кнопку виключення на GPIO%d (%s), утримання %.1fс", pin, chip_path, config.SHUTDOWN_BUTTON_HOLD_SEC)
-
-    # gpiod v2.x видалив Chip.get_line() (звідси hasattr-перевірка) на
-    # користь request_lines() - API повністю несумісний зі старим v1.x.
-    # Raspberry Pi OS Bookworm+ ставить v2 через apt python3-libgpiod.
-    is_v2 = not hasattr(gpiod.Chip, "get_line")
+    logger.info("Слухаю кнопку виключення на GPIO%d, утримання %.1fс", pin, config.SHUTDOWN_BUTTON_HOLD_SEC)
 
     try:
-        if is_v2:
-            get_value, release = _init_line_v2(gpiod, chip_path, pin)
-        else:
-            get_value, release = _init_line_v1(gpiod, chip_path, pin)
+        get_value, release = gpio_utils.open_input_line(pin, "starlink-shutdown-button")
     except Exception as e:
-        logger.error("Не вдалося ініціалізувати GPIO%d (gpiod %s API): %s",
-                     pin, "v2" if is_v2 else "v1", e)
+        logger.error("Не вдалося ініціалізувати GPIO%d: %s", pin, e)
         return
 
     pressed_since = None
