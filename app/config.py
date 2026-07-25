@@ -51,9 +51,13 @@ SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_S
 DISPLAY_ENABLED = os.environ.get("STARLINK_DISPLAY_ENABLED", "0") == "1"
 DISPLAY_SPI_PORT = int(os.environ.get("STARLINK_DISPLAY_SPI_PORT", "0"))
 DISPLAY_SPI_CS = int(os.environ.get("STARLINK_DISPLAY_SPI_CS", "0"))
-DISPLAY_DC_PIN = int(os.environ.get("STARLINK_DISPLAY_DC_PIN", "9"))
-DISPLAY_RST_PIN = int(os.environ.get("STARLINK_DISPLAY_RST_PIN", "27"))
-DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "19"))
+# DC/RST/BL - НЕ можуть бути в діапазоні BCM 7-11 (апаратні SPI0-піни
+# CE1/CE0/MISO/MOSI/SCLK, зарезервовані на рівні ядра при dtparam=spi=on,
+# недоступні одночасно як звичайні GPIO). 25/24/18 - стандартний,
+# безконфліктний вибір для SPI TFT-дисплеїв на Raspberry Pi.
+DISPLAY_DC_PIN = int(os.environ.get("STARLINK_DISPLAY_DC_PIN", "25"))
+DISPLAY_RST_PIN = int(os.environ.get("STARLINK_DISPLAY_RST_PIN", "24"))
+DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "18"))
 DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "90"))

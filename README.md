@@ -65,9 +65,9 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 `/settings` або `/etc/starlink-monitor/env`:
 ```
 STARLINK_DISPLAY_ENABLED=1
-STARLINK_DISPLAY_DC_PIN=9
-STARLINK_DISPLAY_RST_PIN=27
-STARLINK_DISPLAY_BL_PIN=19
+STARLINK_DISPLAY_DC_PIN=25
+STARLINK_DISPLAY_RST_PIN=24
+STARLINK_DISPLAY_BL_PIN=18
 STARLINK_DISPLAY_WIDTH=170
 STARLINK_DISPLAY_HEIGHT=320
 STARLINK_DISPLAY_ROTATION=90
@@ -289,9 +289,9 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_ENABLED` | `0` | фізичний TFT-дисплей статусу (0/1) |
 | `STARLINK_DISPLAY_SPI_PORT` | `0` | дисплей: SPI-порт |
 | `STARLINK_DISPLAY_SPI_CS` | `0` | дисплей: SPI chip-select |
-| `STARLINK_DISPLAY_DC_PIN` | `9` | дисплей: GPIO-пін DC |
-| `STARLINK_DISPLAY_RST_PIN` | `27` | дисплей: GPIO-пін RES |
-| `STARLINK_DISPLAY_BL_PIN` | `19` | дисплей: GPIO-пін підсвітки (0=не керувати) |
+| `STARLINK_DISPLAY_DC_PIN` | `25` | дисплей: GPIO-пін DC |
+| `STARLINK_DISPLAY_RST_PIN` | `24` | дисплей: GPIO-пін RES |
+| `STARLINK_DISPLAY_BL_PIN` | `18` | дисплей: GPIO-пін підсвітки (0=не керувати) |
 | `STARLINK_DISPLAY_WIDTH` | `170` | дисплей: ширина, px |
 | `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
 | `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
