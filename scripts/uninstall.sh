@@ -35,10 +35,12 @@ echo "==> Зупиняю та вимикаю сервіси"
 systemctl stop starlink-monitor.service starlink-webui.service \
   starlink-grpc-fetch.service starlink-shutdown-button.service \
   starlink-wan-failover.timer starlink-wan-failover.service \
-  starlink-monitor-healthcheck.timer starlink-monitor-healthcheck.service 2>/dev/null || true
+  starlink-monitor-healthcheck.timer starlink-monitor-healthcheck.service \
+  starlink-display.service 2>/dev/null || true
 systemctl disable starlink-monitor.service starlink-webui.service \
   starlink-grpc-fetch.service starlink-shutdown-button.service \
-  starlink-wan-failover.timer starlink-monitor-healthcheck.timer 2>/dev/null || true
+  starlink-wan-failover.timer starlink-monitor-healthcheck.timer \
+  starlink-display.service 2>/dev/null || true
 
 # Якщо WAN failover-таймер щойно знизив пріоритет wlan0 (metric=9999,
 # бо Starlink був без інтернету), відновлюємо нормальний пріоритет -
@@ -65,7 +67,8 @@ rm -f /etc/systemd/system/starlink-monitor.service \
       /etc/systemd/system/starlink-wan-failover.service \
       /etc/systemd/system/starlink-wan-failover.timer \
       /etc/systemd/system/starlink-monitor-healthcheck.service \
-      /etc/systemd/system/starlink-monitor-healthcheck.timer
+      /etc/systemd/system/starlink-monitor-healthcheck.timer \
+      /etc/systemd/system/starlink-display.service
 systemctl daemon-reload
 
 echo "==> Видаляю sudoers-правило"

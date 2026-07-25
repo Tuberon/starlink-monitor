@@ -41,6 +41,24 @@ WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 SHUTDOWN_BUTTON_GPIO_PIN = int(os.environ.get("STARLINK_SHUTDOWN_BUTTON_PIN", "0"))
 SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "3"))
 
+# Фізичний TFT-дисплей (ST7789, SPI) - показує live-статус dish прямо
+# на екрані, без потреби відкривати веб-дашборд. Вимкнено за
+# замовчуванням - не всі мають цей дисплей підключений. Дефолти
+# відповідають офіційній специфікації конкретної моделі (SKU MSP1901,
+# 1.9" IPS, 170x320, driver ST7789, 4-line SPI) - піни (DC/RST/BL)
+# все одно залежать від фактичного підключення до Pi, редагуються
+# через /etc/starlink-monitor/env чи /settings.
+DISPLAY_ENABLED = os.environ.get("STARLINK_DISPLAY_ENABLED", "0") == "1"
+DISPLAY_SPI_PORT = int(os.environ.get("STARLINK_DISPLAY_SPI_PORT", "0"))
+DISPLAY_SPI_CS = int(os.environ.get("STARLINK_DISPLAY_SPI_CS", "0"))
+DISPLAY_DC_PIN = int(os.environ.get("STARLINK_DISPLAY_DC_PIN", "9"))
+DISPLAY_RST_PIN = int(os.environ.get("STARLINK_DISPLAY_RST_PIN", "27"))
+DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "19"))
+DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
+DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
+DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "90"))
+DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
+
 # Періодичний реальний speedtest (не лише пропускна здатність з телеметрії
 # dish, яка показує "заявлений" канал, не реальну користувацьку швидкість
 # крізь весь маршрут до інтернету). Вимкнено за замовчуванням - тест

@@ -119,8 +119,11 @@ if [[ "$MODE" == "install" ]]; then
     echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
   fi
 
-  echo "==> Додаю $RUN_USER до групи gpio (доступ до /dev/gpiochip* для кнопки виключення)"
+  echo "==> Додаю $RUN_USER до групи gpio (доступ до /dev/gpiochip* для кнопки виключення/дисплея)"
   usermod -aG gpio "$RUN_USER" 2>/dev/null || echo "!! Група gpio відсутня в системі - пропускаю (кнопка виключення не працюватиме без неї)"
+
+  echo "==> Додаю $RUN_USER до групи spi (доступ до /dev/spidev* для фізичного TFT-дисплея)"
+  usermod -aG spi "$RUN_USER" 2>/dev/null || echo "!! Група spi відсутня в системі - пропускаю (дисплей не працюватиме без неї, потрібен dtparam=spi=on)"
 else
   echo "==> Режим оновлення — пропускаю перевірку/оновлення системних пакетів"
 fi
@@ -199,7 +202,7 @@ echo "==> Встановлюю/оновлюю systemd unit-файли (підс�
 UNITS_UPDATED=0
 for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service \
            starlink-shutdown-button.service starlink-wan-failover.service starlink-wan-failover.timer \
-           starlink-monitor-healthcheck.service starlink-monitor-healthcheck.timer; do
+           starlink-monitor-healthcheck.service starlink-monitor-healthcheck.timer starlink-display.service; do
   NEW_UNIT="$(sed "s/__RUN_USER__/$RUN_USER/g" "$PROJECT_DIR/systemd/$svc")"
   DEST="/etc/systemd/system/$svc"
   if [[ ! -f "$DEST" ]] || ! diff -q <(echo "$NEW_UNIT") "$DEST" >/dev/null 2>&1; then
@@ -215,6 +218,7 @@ fi
 systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
 systemctl enable --now starlink-shutdown-button.service
+systemctl enable --now starlink-display.service
 systemctl enable starlink-grpc-fetch.service
 # .timer вмикається й запускається одразу (не .service - той лише
 # oneshot, запускається таймером за розкладом, не при завантаженні).
@@ -237,6 +241,7 @@ if [[ "$MODE" == "update" ]]; then
     systemctl restart starlink-monitor.service
     systemctl restart starlink-webui.service
     systemctl restart starlink-shutdown-button.service
+    systemctl restart starlink-display.service
   else
     echo "==> Змін не виявлено — сервіси не перезапускаю"
   fi
@@ -360,6 +365,15 @@ if [[ -z "$PI_IP" ]]; then
 fi
 echo " 3. Дашборд: http://$PI_IP:8080"
 echo ""
+if ! grep -qE "^dtparam=spi=on" /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then
+  echo " 4. Фізичний TFT-дисплей (опційно, вимкнено за замовчуванням):"
+  echo "    SPI зараз ВИМКНЕНИЙ у системі. Щоб використати дисплей:"
+  echo "      sudo raspi-config nonint do_spi 0"
+  echo "      sudo reboot"
+  echo "    Потім увімкни STARLINK_DISPLAY_ENABLED=1 на сторінці /settings"
+  echo "    і перевір/скоригуй піни під конкретну плату."
+  echo ""
+fi
 echo " Для наступних оновлень: покладіть новий starlink-monitor.tar.gz у"
 echo " домашній каталог ($RUN_USER_HOME/) і виконайте (з будь-якого каталогу):"
 echo "      sudo bash /opt/starlink-monitor/scripts/update.sh"

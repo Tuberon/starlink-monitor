@@ -3,6 +3,7 @@
 Автономний монітор і watchdog для Starlink Mini на Raspberry Pi Zero 2 W.
 
 **Зміст**: [Що робить](#що-робить) · [GPIO-кнопка](#фізична-кнопка-виключення-gpio) ·
+[TFT-дисплей](#фізичний-tft-дисплей-st7789-spi) ·
 [Telegram](#telegram-сповіщення-та-команди) · [Backup](#backuprestore-налаштувань) ·
 [healthz/PWA/speedtest](#додатково-healthz-pwa-speedtest) · [Надійність](#надійність) ·
 [Перевірка оновлень](#про-ручну-перевірку-оновлень) · [Мережа](#важливо-розуміти-про-мережу) ·
@@ -40,6 +41,34 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 потім `sudo systemctl restart starlink-shutdown-button.service`.
 Утримання довше заданого часу (типово 3с) → `systemctl poweroff`, з
 подією в журналі й Telegram; короткий дотик ігнорується.
+
+## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
+
+Показує live-статус dish (online/offline, throughput, ping, uptime)
+прямо на екрані. Вимкнено за замовчуванням
+(`STARLINK_DISPLAY_ENABLED=0`).
+
+> ⚠️ SPI зазвичай вимкнений за замовчуванням на Raspberry Pi OS:
+> `sudo raspi-config nonint do_spi 0 && sudo reboot`
+> (`install.sh` попереджає про це наприкінці встановлення, якщо SPI
+> ще не увімкнено).
+
+Роздільна здатність (170×320, driver ST7789, 4-line SPI) підтверджена
+офіційною специфікацією моделі (SKU MSP1901). Піни DC/RST/BL все одно
+залежать від фактичного підключення до Pi — скоригуй за потреби через
+`/settings` або `/etc/starlink-monitor/env`:
+```
+STARLINK_DISPLAY_ENABLED=1
+STARLINK_DISPLAY_DC_PIN=9
+STARLINK_DISPLAY_RST_PIN=27
+STARLINK_DISPLAY_BL_PIN=19
+STARLINK_DISPLAY_WIDTH=170
+STARLINK_DISPLAY_HEIGHT=320
+STARLINK_DISPLAY_ROTATION=90
+```
+потім `sudo systemctl restart starlink-display.service`. Якщо `BLK`
+підключено напряму до 3.3V (не через GPIO Pi) — постав
+`STARLINK_DISPLAY_BL_PIN=0` (без програмного керування підсвіткою).
 
 ## 💬 Telegram-сповіщення та команди
 
@@ -163,6 +192,7 @@ starlink-monitor/
 │   ├── signature_phrases.txt  # фрази в кінці Telegram-повідомлень
 │   ├── webapp.py              # Flask + REST API
 │   ├── shutdown_button.py     # фізична кнопка виключення (GPIO)
+│   ├── display.py             # фізичний TFT-дисплей (ST7789, SPI)
 │   ├── config.py              # конфігурація
 │   ├── config_editor.py       # редагування env-параметрів через /settings
 │   ├── speedtest_runner.py    # періодичний реальний speedtest
@@ -174,6 +204,7 @@ starlink-monitor/
 │   ├── starlink-monitor.service          # watchdog + метрики
 │   ├── starlink-webui.service            # веб-інтерфейс
 │   ├── starlink-shutdown-button.service  # GPIO-кнопка
+│   ├── starlink-display.service          # TFT-дисплей (ST7789)
 │   ├── starlink-grpc-fetch.service       # тягне starlink_grpc.py при старті
 │   ├── starlink-wan-failover.service/.timer  # системний WAN-failover
 │   └── starlink-monitor-healthcheck.service/.timer  # watchdog для watchdog-а
@@ -243,6 +274,16 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
+| `STARLINK_DISPLAY_ENABLED` | `0` | фізичний TFT-дисплей статусу (0/1) |
+| `STARLINK_DISPLAY_SPI_PORT` | `0` | дисплей: SPI-порт |
+| `STARLINK_DISPLAY_SPI_CS` | `0` | дисплей: SPI chip-select |
+| `STARLINK_DISPLAY_DC_PIN` | `9` | дисплей: GPIO-пін DC |
+| `STARLINK_DISPLAY_RST_PIN` | `27` | дисплей: GPIO-пін RES |
+| `STARLINK_DISPLAY_BL_PIN` | `19` | дисплей: GPIO-пін підсвітки (0=не керувати) |
+| `STARLINK_DISPLAY_WIDTH` | `170` | дисплей: ширина, px |
+| `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
+| `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
+| `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
 | `STARLINK_SPEEDTEST_ENABLED` | `0` | періодичний реальний speedtest (0/1) |
 | `STARLINK_SPEEDTEST_INTERVAL` | `1800` | інтервал між speedtest-прогонами, сек |
 

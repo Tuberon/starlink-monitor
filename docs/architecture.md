@@ -31,6 +31,7 @@ router — різні enum з різними назвами станів).
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення (кешовано) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
+| `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
 | `speedtest_runner.py` | Періодичний реальний speedtest (потік у monitor.py, вимкнено за замовчуванням) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
@@ -61,6 +62,7 @@ router — різні enum з різними назвами станів).
 | `starlink-grpc-fetch.service` | Одноразово тягне `starlink_grpc.py` при старті | — |
 | `starlink-wan-failover.service`/`.timer` | Періодична (кожні ~20с) перевірка інтернету через wlan0, коригування route-metric | root-сервіс; `CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW` — навіть root тут без решти системних можливостей |
 | `starlink-monitor-healthcheck.service`/`.timer` | Раз/хв опитує `/healthz`, force-restart `starlink-monitor.service` при не-200 (deadlock/livelock, не crash — `Restart=always` цього не бачить) | root-сервіс (потрібен для `systemctl restart` іншого юніта); `NoNewPrivileges=true`, `ProtectSystem=strict` |
+| `starlink-display.service` | Фізичний TFT-дисплей (ST7789, SPI), вимкнено за замовчуванням | `SupplementaryGroups=gpio spi`; без sudo-дій — `NoNewPrivileges=true` (на відміну від shutdown-button) |
 
 `ProtectSystem=strict` на всіх — файлова система read-only, крім явно
 дозволених шляхів.
@@ -242,3 +244,23 @@ autocommit-з'єднання (не `get_conn()` з WAL) — простіше й 
 `/etc/systemd/journald.conf` (лише якщо там ще немає власного
 значення користувача) — без обмеження journald міг би з часом
 накопичити помітний обсяг логів на SD-картці.
+
+## Фізичний TFT-дисплей (app/display.py)
+
+Окремий процес (той самий патерн, що `shutdown_button.py`) —
+`run_forever()` виходить миттєво, якщо `DISPLAY_ENABLED=0`. Малює
+кадр через Pillow (`Image`/`ImageDraw`) кожні `DISPLAY_REFRESH_SEC`,
+надсилає через `st7789.ST7789.display(image)` (бібліотека Pimoroni,
+SPI). `_status_lines()`/`_fmt_uptime()` — чисті функції форматування,
+незалежні від самого дисплея (легко тестуються без hardware).
+
+Дефолти (роздільна здатність 170×320, driver ST7789, 4-line SPI)
+підтверджені офіційною специфікацією конкретної моделі (SKU MSP1901).
+Піни DC/RST/BL (дефолти 9/27/19) все одно залежать від фактичного
+підключення до Pi — редагуються через `/settings`. За специфікацією
+виробника, `BLK` вмикається HIGH-рівнем; якщо підсвітку підключено
+напряму до 3.3V (не через GPIO Pi) — постав `STARLINK_DISPLAY_BL_PIN=0`
+(не керувати програмно). Потребує `dtparam=spi=on` (вимкнено за
+замовчуванням на Raspberry Pi OS) — `install.sh` попереджає наприкінці
+встановлення, якщо SPI ще не увімкнено. `RUN_USER` додається в групи
+`gpio`+`spi` для доступу без sudo (`SupplementaryGroups` в unit-файлі).

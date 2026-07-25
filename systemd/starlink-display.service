@@ -1,0 +1,31 @@
+[Unit]
+Description=Starlink Monitor - Physical TFT Display (ST7789, SPI)
+After=network-online.target starlink-monitor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+SupplementaryGroups=gpio spi
+WorkingDirectory=/opt/starlink-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/venv/bin/python -m app.display
+# on-failure (не always): якщо дисплей не налаштований (DISPLAY_ENABLED=0),
+# процес одразу завершується з кодом 0 - це не помилка, рестартувати не потрібно.
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Жодних sudo-дій (на відміну від shutdown-button) - NoNewPrivileges
+# можна лишити ввімкненим.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/starlink-monitor
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
