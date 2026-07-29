@@ -58,9 +58,30 @@ DISPLAY_SPI_CS = int(os.environ.get("STARLINK_DISPLAY_SPI_CS", "0"))
 DISPLAY_DC_PIN = int(os.environ.get("STARLINK_DISPLAY_DC_PIN", "25"))
 DISPLAY_RST_PIN = int(os.environ.get("STARLINK_DISPLAY_RST_PIN", "24"))
 DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "18"))
+# 170x320 (portrait) - паспортна роздільна здатність моделі MSP1901,
+# підтверджена офіційною документацією виробника (LCDWIKI) і
+# написом на самій платі ("1.9" IPS 170x320(RGB)"). Попередня версія
+# мала дефолти 320x170 (поміняні місцями) - це БУВ ПОМИЛКОВИЙ
+# висновок з емпіричного тесту (реальна причина залишкового шуму на
+# 320x170 - командування контролеру 320 стовпців, тоді як фізична
+# матриця має лише 170; "покращення" було випадковим побічним
+# ефектом, не правильним рішенням) - див. docs/decisions-log.md.
 DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
-DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "90"))
+# rotation=90/270 бібліотека st7789 (Pimoroni) ЗАБОРОНЯЄ для
+# прямокутних дисплеїв (width!=height) - власне консервативне
+# обмеження бібліотеки, не апаратна вимога контролера ST7789 (той
+# підтримує rotation для будь-якого aspect ratio через MADCTL,
+# офіційна документація виробника показує усі 4 повороти навіть для
+# 170x320). Для 0/180 обмежень немає.
+DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
+# Зміщення видимої області відносно GRAM контролера - типова потреба
+# для дешевих ST7789-клонів (видима область менша за фізичний GRAM
+# контролера, потрібне центрування). 0 - без зміщення (дефолт
+# бібліотеки); підбирається емпірично, якщо лишається частковий шум/
+# зміщене зображення.
+DISPLAY_OFFSET_LEFT = int(os.environ.get("STARLINK_DISPLAY_OFFSET_LEFT", "0"))
+DISPLAY_OFFSET_TOP = int(os.environ.get("STARLINK_DISPLAY_OFFSET_TOP", "0"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
 # Автовимкнення підсвітки при бездіяльності (немає натискань кнопки) -
 # економія при night-режимі. 0 = вимкнено (підсвітка завжди активна,

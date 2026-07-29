@@ -115,8 +115,23 @@ def run_forever(stop_event=None):
             width=config.DISPLAY_WIDTH,
             height=config.DISPLAY_HEIGHT,
             rotation=config.DISPLAY_ROTATION,
+            offset_left=config.DISPLAY_OFFSET_LEFT,
+            offset_top=config.DISPLAY_OFFSET_TOP,
             spi_speed_hz=config.DISPLAY_SPI_SPEED_HZ,
         )
+        # Реальний баг бібліотеки st7789: __init__ викликає _init()
+        # (SPI-команди ініціалізації контролера) ДО того, як RST-пін
+        # взагалі виведено з reset-стану (RST налаштовується як output
+        # і одразу стає LOW/INACTIVE - контролер лишається в апаратному
+        # reset назавжди, якщо нічого не зробити далі). Підсвітка (BL)
+        # - окрема GPIO-лінія, працює незалежно від цього - тому екран
+        # світиться, але залишається порожнім. reset() виводить
+        # контролер з reset належною HIGH->LOW->HIGH послідовністю;
+        # повторний _init() потрібен, бо команди з першого виклику (в
+        # __init__, ще в reset-стані) контролер проігнорував.
+        if config.DISPLAY_RST_PIN:
+            display.reset()
+            display._init()
     except Exception as e:
         logger.error(
             "Не вдалося ініціалізувати дисплей (перевір SPI/піни в /etc/starlink-monitor/env): %s", e

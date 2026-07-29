@@ -59,9 +59,10 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 > (`install.sh` попереджає про це наприкінці встановлення, якщо SPI
 > ще не увімкнено).
 
-Роздільна здатність (170×320, driver ST7789, 4-line SPI) підтверджена
-офіційною специфікацією моделі (SKU MSP1901). Піни DC/RST/BL все одно
-залежать від фактичного підключення до Pi — скоригуй за потреби через
+Паспортна роздільна здатність модуля — 170×320 (SKU MSP1901,
+driver ST7789, portrait), підтверджена офіційною документацією
+LCDWIKI і написом на самій платі. Піни DC/RST/BL все одно залежать
+від фактичного підключення до Pi — скоригуй за потреби через
 `/settings` або `/etc/starlink-monitor/env`:
 ```
 STARLINK_DISPLAY_ENABLED=1
@@ -70,11 +71,23 @@ STARLINK_DISPLAY_RST_PIN=24
 STARLINK_DISPLAY_BL_PIN=18
 STARLINK_DISPLAY_WIDTH=170
 STARLINK_DISPLAY_HEIGHT=320
-STARLINK_DISPLAY_ROTATION=90
+STARLINK_DISPLAY_ROTATION=0
 ```
 потім `sudo systemctl restart starlink-display.service`. Якщо `BLK`
 підключено напряму до 3.3V (не через GPIO Pi) — постав
 `STARLINK_DISPLAY_BL_PIN=0` (без програмного керування підсвіткою).
+
+> ⚠️ `rotation=90/270` заборонено бібліотекою `st7789` (Pimoroni) для
+> прямокутних дисплеїв (width≠height) — власне обмеження бібліотеки,
+> не апаратна вимога контролера. Для 170×320 валідні лише `0`/`180`.
+
+Якщо зображення зміщене чи має шум по краях —
+`STARLINK_DISPLAY_OFFSET_LEFT`/`STARLINK_DISPLAY_OFFSET_TOP` (дефолт
+`0`) підбираються емпірично: типова потреба для дешевих ST7789-клонів,
+де видима область менша за фізичний GRAM контролера. **Не міняй
+місцями WIDTH/HEIGHT** — панель фізично portrait, поміняні місцями
+значення командують контролеру стовпці поза межами реальної матриці
+й спричиняють шум/спотворення.
 
 Керування підсвіткою — фізичною кнопкою виключення (`STARLINK_SHUTDOWN_BUTTON_PIN`,
 див. секцію вище): коротке натискання вмикає/вимикає підсвітку, довге
@@ -294,7 +307,9 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_BL_PIN` | `18` | дисплей: GPIO-пін підсвітки (0=не керувати) |
 | `STARLINK_DISPLAY_WIDTH` | `170` | дисплей: ширина, px |
 | `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
-| `STARLINK_DISPLAY_ROTATION` | `90` | дисплей: поворот, ° |
+| `STARLINK_DISPLAY_ROTATION` | `0` | дисплей: поворот, ° (0/180; 90/270 лише якщо width=height) |
+| `STARLINK_DISPLAY_OFFSET_LEFT` | `0` | дисплей: зміщення X відносно GRAM, px |
+| `STARLINK_DISPLAY_OFFSET_TOP` | `0` | дисплей: зміщення Y відносно GRAM, px |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
 | `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
 | `STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` | `60` | дисплей: автовимкнення підсвітки, сек (0=вимк.) |
