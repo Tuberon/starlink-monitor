@@ -63,7 +63,7 @@ router — різні enum з різними назвами станів).
 | `starlink-grpc-fetch.service` | Одноразово тягне `starlink_grpc.py` при старті | — |
 | `starlink-wan-failover.service`/`.timer` | Періодична (кожні ~20с) перевірка інтернету через wlan0, коригування route-metric | root-сервіс; `CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW` — навіть root тут без решти системних можливостей |
 | `starlink-monitor-healthcheck.service`/`.timer` | Раз/хв опитує `/healthz`, force-restart `starlink-monitor.service` при не-200 (deadlock/livelock, не crash — `Restart=always` цього не бачить) | root-сервіс (потрібен для `systemctl restart` іншого юніта); `NoNewPrivileges=true`, `ProtectSystem=strict` |
-| `starlink-display.service` | Фізичний TFT-дисплей (ST7789, SPI), вимкнено за замовчуванням | `SupplementaryGroups=gpio spi`; без sudo-дій — `NoNewPrivileges=true` (на відміну від shutdown-button) |
+| `starlink-display.service` | Фізичний TFT-дисплей (ST7789, SPI), вимкнено за замовчуванням | `SupplementaryGroups=gpio spi`; БЕЗ `NoNewPrivileges` (кнопка виключення обробляється тут же, потребує `sudo poweroff` — реальний баг був знайдений і виправлений: старий коментар помилково лишав `NoNewPrivileges=true` вже після того, як обробку кнопки перенесли сюди) |
 
 `ProtectSystem=strict` на всіх — файлова система read-only, крім явно
 дозволених шляхів.
@@ -89,6 +89,11 @@ router — різні enum з різними назвами станів).
 ## База даних (SQLite, /var/lib/starlink-monitor/history.db)
 
 WAL journal_mode — паралельне читання (webui) і запис (monitor) без блокувань.
+`synchronous=NORMAL` (не дефолтний `FULL`) — офіційно рекомендований
+режим для WAL: `fsync()` лише при checkpoint, не на кожному commit,
+суттєво менше фізичних записів на SD-картку при опитуванні кожні
+~10с. Ризик — втрата лише кількох останніх транзакцій при раптовому
+знеструмленні (БД не пошкоджується, це гарантує WAL сам по собі).
 
 - `metrics` — історія опитувань dish (throughput, latency, dish_id, update_state, ...)
 - `events` — журнал подій (reboot, зміни стану, попередження, підключення
@@ -257,7 +262,16 @@ autocommit-з'єднання (не `get_conn()` з WAL) — простіше й 
 CircuitPython ST7789** (`adafruit-circuitpython-rgb-display` +
 `adafruit-blinka`). `_status_lines()`/`_fmt_uptime()` — чисті функції
 форматування, незалежні від самого дисплея (легко тестуються без
-hardware).
+hardware). Виводить: статус (ONLINE/OFFLINE, `font_big`=30px), uptime
+(`font_small`=24px), стан оновлення ПЗ dish і версії прошивок
+dish/роутера (`font_tiny`=16px — довгі рядки версій на 170px екрані
+все одно не влазять повністю, менший шрифт хоч показує корисну
+частину, напр. дату релізу). `_truncate_to_width()` обрізає з `…`
+будь-який рядок, що не влазить у ширину екрана (виміряно через
+`draw.textlength()`) — гарантовано коректно для довільного вмісту,
+без здогадок про формат версії. Прошивка роутера читається окремим
+`db.get_router_status()` (не з `get_latest_metric()`, який містить
+лише dish-дані).
 
 Ініціалізація через `board`/`digitalio`/`busio` (Blinka): SPI
 (`board.SCK`/`MOSI`/`MISO`) завжди апаратний; DC/RST/CS/BL — окремі

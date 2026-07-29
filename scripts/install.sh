@@ -77,7 +77,7 @@ if [[ "$MODE" == "install" ]]; then
   apt-get update
   apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip python3-dev build-essential git curl \
-    network-manager python3-libgpiod gpiod
+    network-manager python3-libgpiod gpiod fonts-dejavu-core
 
   echo "==> Перевіряю наявність grpcurl"
   if ! command -v grpcurl >/dev/null 2>&1; then

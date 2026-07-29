@@ -52,18 +52,31 @@ def _fmt_uptime(uptime_s) -> str:
     return f"{h}г {m}хв"
 
 
-def _status_lines(latest_metric: dict) -> list:
+def _status_lines(latest_metric: dict, router_status: dict = None) -> list:
     """Формує рядки тексту для відображення - чиста функція без
     залежності від самого дисплея, легко тестується окремо. Свідомо
     НЕ показує downlink/uplink/ping/drop%/obstruction% (замалий екран
     для змістовних числових метрик, це вже є на веб-дашборді) - лише
-    online/offline статус і uptime."""
+    online/offline статус, uptime, стан оновлення, прошивки dish і
+    роутера."""
     if not latest_metric:
         return ["Немає даних"]
 
     online = bool(latest_metric.get("online"))
     lines = ["● ONLINE" if online else "○ OFFLINE"]
     lines.append(f"Uptime: {_fmt_uptime(latest_metric.get('uptime_s'))}")
+
+    update_state = latest_metric.get("update_state")
+    if update_state:
+        pct = latest_metric.get("update_progress_pct") or 0
+        lines.append(f"Оновлення: {update_state} {pct:.0f}%")
+
+    dish_fw = latest_metric.get("software_version")
+    lines.append(f"Д: {dish_fw if dish_fw else '—'}")
+
+    router_fw = router_status.get("software_version") if router_status else None
+    lines.append(f"Р: {router_fw if router_fw else '—'}")
+
     return lines
 
 
@@ -83,7 +96,24 @@ def _load_font(size: int):
             return ImageFont.truetype(path, size)
         except Exception:
             continue
+    logger.warning(
+        "Жоден шрифт з %s не знайдено - fallback на вбудований bitmap-шрифт "
+        "PIL (НЕ підтримує кирилицю). Встанови пакет 'fonts-dejavu-core'.",
+        FONT_PATHS,
+    )
     return ImageFont.load_default()
+
+
+def _truncate_to_width(draw, text: str, font, max_width: int) -> str:
+    """Обрізає текст з '…' в кінці, якщо він не влазить у max_width
+    (px). Версії прошивок можуть бути довгими рядками, що фізично не
+    вміщаються на вузькому (170px) екрані - без цього текст просто
+    продовжувався б за межі видимої області."""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    while text and draw.textlength(text + "…", font=font) > max_width:
+        text = text[:-1]
+    return text + "…" if text else "…"
 
 
 def _set_backlight(bl_pin, value: bool):
@@ -94,9 +124,10 @@ def _set_backlight(bl_pin, value: bool):
         bl_pin.value = value
 
 
-def _redraw(display, Image, ImageDraw, font_big, font_small):
+def _redraw(display, Image, ImageDraw, font_big, font_small, font_tiny):
     latest = db.get_latest_metric()
-    lines = _status_lines(latest)
+    router_status = db.get_router_status()
+    lines = _status_lines(latest, router_status)
     online = bool(latest and latest.get("online"))
 
     # Бібліотека Adafruit застосовує rotation через img.rotate(),
@@ -112,12 +143,22 @@ def _redraw(display, Image, ImageDraw, font_big, font_small):
 
     img = Image.new("RGB", canvas_size, "black")
     draw = ImageDraw.Draw(img)
+    max_width = canvas_size[0] - 20  # відступи по 10px з кожного боку
     y = 10
     for i, line in enumerate(lines):
-        font = font_big if i == 0 else font_small
-        color = ("lime" if online else "red") if i == 0 else "white"
+        # Рядок 0 (статус) - великий; рядок 1 (uptime) - середній;
+        # решта (оновлення/версії прошивок) - менший шрифт, бо довгі
+        # версії й так фізично не влазять у 170px ширину екрана -
+        # менший розмір хоч показує корисну частину (дату релізу).
+        if i == 0:
+            font, color = font_big, ("lime" if online else "red")
+        elif i == 1:
+            font, color = font_small, "white"
+        else:
+            font, color = font_tiny, "white"
+        line = _truncate_to_width(draw, line, font, max_width)
         draw.text((10, y), line, font=font, fill=color)
-        y += 34 if i == 0 else 28
+        y += 40 if i == 0 else (32 if i == 1 else 22)
 
     display.image(img)
 
@@ -171,8 +212,9 @@ def run_forever(stop_event=None):
 
     logger.info("Дисплей ініціалізовано (%dx%d, поворот %d°)",
                 config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT, config.DISPLAY_ROTATION)
-    font_big = _load_font(26)
-    font_small = _load_font(20)
+    font_big = _load_font(30)
+    font_small = _load_font(24)
+    font_tiny = _load_font(16)
 
     try:
         db.init_db()
@@ -228,7 +270,7 @@ def run_forever(stop_event=None):
 
             if now - last_redraw >= config.DISPLAY_REFRESH_SEC:
                 try:
-                    _redraw(display, Image, ImageDraw, font_big, font_small)
+                    _redraw(display, Image, ImageDraw, font_big, font_small, font_tiny)
                 except Exception:
                     logger.exception("Помилка оновлення дисплея")
                 last_redraw = now

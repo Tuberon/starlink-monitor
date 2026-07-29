@@ -120,6 +120,13 @@ def get_conn():
     # за замовчуванням (rollback journal) запис блокує читання на час
     # транзакції; WAL дозволяє паралельне читання під час запису.
     conn.execute("PRAGMA journal_mode=WAL")
+    # NORMAL (не дефолтний FULL) - офіційно рекомендований режим для
+    # WAL (sqlite.org/pragma.html#pragma_synchronous): fsync лише при
+    # checkpoint, не на кожному commit - значно менше фізичних записів
+    # на SD-картку. БД лишається захищеною від пошкодження (WAL це
+    # гарантує); ризик - втрата лише кількох останніх транзакцій при
+    # раптовому вимкненні живлення, не критично для метрик моніторингу.
+    conn.execute("PRAGMA synchronous=NORMAL")
     try:
         yield conn
         conn.commit()

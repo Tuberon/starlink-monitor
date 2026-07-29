@@ -334,7 +334,10 @@ function signalClass(dbm) {
 function renderRouterClients(clients) {
   const table = el('routerClientsTable');
   const countEl = el('routerClientsCount');
-  const rows = (clients || []).map(c => `
+  // "Controller" - сам роутер Starlink, іноді потрапляє в список
+  // клієнтів API, хоча насправді не є підключеним WiFi-пристроєм.
+  const filtered = (clients || []).filter(c => c.name !== 'Controller');
+  const rows = filtered.map(c => `
     <div class="clients-row">
       <span class="client-name">${c.name || c.mac || '—'}</span>
       <span>${c.ip || '—'}</span>
@@ -349,11 +352,11 @@ function renderRouterClients(clients) {
   if (!clients) {
     countEl.textContent = '—';
     table.innerHTML = header + '<div class="clients-row"><span>ще не опитано</span></div>';
-  } else if (clients.length === 0) {
+  } else if (filtered.length === 0) {
     countEl.textContent = '0 підключено';
     table.innerHTML = header + '<div class="clients-row"><span>немає підключених клієнтів</span></div>';
   } else {
-    countEl.textContent = `${clients.length} підключено`;
+    countEl.textContent = `${filtered.length} підключено`;
     table.innerHTML = header + rows;
   }
 }

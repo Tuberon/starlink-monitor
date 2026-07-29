@@ -20,9 +20,10 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Жодних sudo-дій (на відміну від shutdown-button) - NoNewPrivileges
-# можна лишити ввімкненим.
-NoNewPrivileges=true
+# Кнопка виключення (довге натискання -> sudo systemctl poweroff)
+# обробляється в цьому самому процесі (див. app/display.py) - тому,
+# на відміну від коментаря, який тут раніше був, NoNewPrivileges=true
+# НЕ можна залишати ввімкненим (блокує sudo зсередини процесу).
 ProtectSystem=strict
 ReadWritePaths=/var/lib/starlink-monitor
 ProtectHome=true

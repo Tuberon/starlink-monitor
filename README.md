@@ -51,7 +51,8 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
-Показує live-статус dish (online/offline, uptime) прямо на екрані. Вимкнено за замовчуванням
+Показує live-статус dish (online/offline, uptime, стан оновлення ПЗ,
+версії прошивок dish і роутера) прямо на екрані. Вимкнено за замовчуванням
 (`STARLINK_DISPLAY_ENABLED=0`). Використовує бібліотеку **Adafruit
 CircuitPython ST7789** (`adafruit-circuitpython-rgb-display` +
 `adafruit-blinka`).
