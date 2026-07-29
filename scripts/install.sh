@@ -262,6 +262,7 @@ if [[ "$MODE" == "install" ]]; then
   echo " домашня мережа отримує вищий пріоритет за замовчуванням)."
   echo ""
   read -r -p " Налаштувати статичні IP для USB-Ethernet і WiFi зараз? [т/N]: " SETUP_NET
+  SETUP_NET="$(echo "$SETUP_NET" | tr -d '[:space:]')"
   if [[ "$SETUP_NET" =~ ^[TtYyТт] ]]; then
     ETH_IFACE="eth0"
     WLAN_IFACE="wlan0"
