@@ -524,3 +524,20 @@ systemd видаляє директорію одразу після кожног
 сервісу — файл стану/гістерезис був би втрачений між кожним запуском
 таймера). Шлях у скрипті змінено з `/run/starlink-wan-failover.state`
 на `/run/starlink-wan-failover/state`.
+
+## Баг: pip install падав на rpi_ws281x/RPi.GPIO (Python.h відсутній)
+
+**Симптом**: `pip install -r requirements.txt` падав з `fatal error:
+Python.h: No such file or directory` при компіляції `rpi_ws281x` та
+`RPi.GPIO` (транзитивні залежності `adafruit-blinka` для реального
+GPIO-доступу на Raspberry Pi).
+
+**Причина**: `install.sh` не встановлював `python3-dev` (заголовкові
+файли Python, потрібні для компіляції будь-яких C-розширень) —
+раніше цього не було потрібно, бо попередня бібліотека дисплея не
+мала подібних транзитивних C-залежностей.
+
+**Виправлення**: додано `python3-dev build-essential` до списку
+apt-пакетів в `install.sh`. Діє лише для нових встановлень
+(`MODE=install`) — на вже встановлених системах потрібно виконати
+`sudo apt-get install -y python3-dev build-essential` вручну один раз.

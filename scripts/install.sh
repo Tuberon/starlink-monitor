@@ -76,7 +76,7 @@ if [[ "$MODE" == "install" ]]; then
   echo "==> Встановлюю системні пакети"
   apt-get update
   apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-pip git curl \
+    python3 python3-venv python3-pip python3-dev build-essential git curl \
     network-manager python3-libgpiod gpiod
 
   echo "==> Перевіряю наявність grpcurl"
