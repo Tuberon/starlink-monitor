@@ -11,7 +11,7 @@ ROUTER_ADDR = os.environ.get("STARLINK_ROUTER_ADDR", "192.168.1.1:9000")
 
 POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 6*10s = 60s недоступності
-MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "120"))  # захист від reboot-loop
+MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "180"))  # захист від reboot-loop
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))
 
 # Якщо dish недоступний (WiFi Starlink відсутня) довше цього часу -
@@ -26,7 +26,7 @@ NOTIFICATIONS_MUTE_AFTER_SEC = int(os.environ.get("STARLINK_NOTIFICATIONS_MUTE_A
 # без нової корисної інформації. Після цієї кількості послідовних
 # спроб записи в журнал/БД припиняються (сама спроба reboot триває
 # нормально); один фінальний запис позначає момент припинення.
-MAX_LOGGED_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_LOGGED_FAILURES", "30"))
+MAX_LOGGED_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_LOGGED_FAILURES", "15"))
 
 # reboot при software_update_state==REBOOT_REQUIRED або alerts.install_pending
 AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
@@ -37,8 +37,8 @@ HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
 WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")
 WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 
-# GPIO BCM pin для фізичної кнопки виключення; 0 = вимкнено (за замовчуванням)
-SHUTDOWN_BUTTON_GPIO_PIN = int(os.environ.get("STARLINK_SHUTDOWN_BUTTON_PIN", "0"))
+# GPIO BCM pin для фізичної кнопки виключення; 0 = вимкнено, 27 = дефолт
+SHUTDOWN_BUTTON_GPIO_PIN = int(os.environ.get("STARLINK_SHUTDOWN_BUTTON_PIN", "27"))
 SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "3"))
 
 # Фізичний TFT-дисплей (ST7789, SPI) - показує live-статус dish прямо
@@ -77,10 +77,13 @@ DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
 # Зміщення видимої області відносно GRAM контролера - типова потреба
 # для дешевих ST7789-клонів (видима область менша за фізичний GRAM
-# контролера, потрібне центрування). 0 - без зміщення (дефолт
-# бібліотеки); підбирається емпірично, якщо лишається частковий шум/
-# зміщене зображення.
-DISPLAY_OFFSET_LEFT = int(os.environ.get("STARLINK_DISPLAY_OFFSET_LEFT", "0"))
+# контролера, потрібне центрування). Емпірично підтверджено на
+# реальному Pi для цієї моделі (SKU MSP1901): без зміщення (0)
+# частина екрана показувала стабільний кольоровий шум (не апаратний
+# дефект, як спершу помилково припускалось - див. docs/decisions-
+# log.md). Значення 35-50 (принаймні) усувають шум - це діапазон,
+# не одне точне число; 35 обрано як дефолт.
+DISPLAY_OFFSET_LEFT = int(os.environ.get("STARLINK_DISPLAY_OFFSET_LEFT", "35"))
 DISPLAY_OFFSET_TOP = int(os.environ.get("STARLINK_DISPLAY_OFFSET_TOP", "0"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
 # Офіційна специфікація модуля не вказує максимальну частоту SPI.

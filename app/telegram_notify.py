@@ -221,9 +221,8 @@ def set_signature_phrases_text(text: str) -> tuple[bool, str]:
 
 def get_signature_phrases_enabled() -> bool:
     """Runtime-перемикач: чи додавати випадкову фразу підпису в кінець
-    Telegram-повідомлень. За замовчуванням увімкнено (збігається з
-    попередньою поведінкою до появи цього перемикача)."""
-    return db.get_setting("signature_phrases_enabled", "1") == "1"
+    Telegram-повідомлень. За замовчуванням вимкнено."""
+    return db.get_setting("signature_phrases_enabled", "0") == "1"
 
 
 def set_signature_phrases_enabled(enabled: bool):

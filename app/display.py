@@ -99,7 +99,18 @@ def _redraw(display, Image, ImageDraw, font_big, font_small):
     lines = _status_lines(latest)
     online = bool(latest and latest.get("online"))
 
-    img = Image.new("RGB", (display.width, display.height), "black")
+    # Бібліотека Adafruit застосовує rotation через img.rotate(),
+    # ПІСЛЯ чого перевіряє розмір результату проти display.width/
+    # display.height (які самі НЕ змінюються параметром rotation).
+    # Для 90/270 треба створювати полотно з транспонованими
+    # розмірами (height x width) - після повороту воно стане
+    # width x height і коректно впишеться в дисплей.
+    if config.DISPLAY_ROTATION in (90, 270):
+        canvas_size = (display.height, display.width)
+    else:
+        canvas_size = (display.width, display.height)
+
+    img = Image.new("RGB", canvas_size, "black")
     draw = ImageDraw.Draw(img)
     y = 10
     for i, line in enumerate(lines):

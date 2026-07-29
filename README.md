@@ -31,9 +31,9 @@
 ## 🔘 Фізична кнопка виключення (GPIO)
 
 Кнопка (нормально розімкнута) між обраним GPIO-піном (BCM) і GND,
-внутрішній pull-up налаштовується сервісом. Вимкнено за замовчуванням
-(`STARLINK_SHUTDOWN_BUTTON_PIN=0`); увімкнення — у
-`/etc/starlink-monitor/env`:
+внутрішній pull-up налаштовується сервісом. Увімкнено за замовчуванням
+на `GPIO27` (`STARLINK_SHUTDOWN_BUTTON_PIN=27`); `0` вимикає, зміна
+піна — у `/etc/starlink-monitor/env`:
 ```
 STARLINK_SHUTDOWN_BUTTON_PIN=17
 STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
@@ -74,6 +74,7 @@ STARLINK_DISPLAY_BL_PIN=18
 STARLINK_DISPLAY_WIDTH=170
 STARLINK_DISPLAY_HEIGHT=320
 STARLINK_DISPLAY_ROTATION=0
+STARLINK_DISPLAY_OFFSET_LEFT=35
 ```
 потім `sudo systemctl restart starlink-display.service`. Якщо `BLK`
 підключено напряму до 3.3V (не через GPIO Pi) — постав
@@ -82,13 +83,21 @@ STARLINK_DISPLAY_ROTATION=0
 > ⚠️ `SPI_CS_PIN` — це bit-banged GPIO (не апаратний CE0/CE1), бо
 > бібліотека Adafruit CircuitPython ST7789 сама перемикає CS програмно.
 
-Якщо зображення зміщене чи має шум по краях —
-`STARLINK_DISPLAY_OFFSET_LEFT`/`STARLINK_DISPLAY_OFFSET_TOP` (дефолт
-`0`) підбираються емпірично: типова потреба для дешевих ST7789-клонів,
-де видима область менша за фізичний GRAM контролера. **Не міняй
-місцями WIDTH/HEIGHT** — панель фізично portrait, поміняні місцями
-значення командують контролеру стовпці поза межами реальної матриці
-й спричиняють шум/спотворення.
+`STARLINK_DISPLAY_ROTATION` підтримує `0/90/180/270` для будь-якого
+aspect ratio (портретний дисплей теж) — `_redraw()` сам транспонує
+розміри полотна для `90`/`270`, `OFFSET_LEFT`/`OFFSET_TOP` при цьому
+міняти не потрібно (діють на іншому рівні, не залежать від rotation).
+
+`STARLINK_DISPLAY_OFFSET_LEFT=35` — емпірично підтверджене на
+реальному Pi значення для цієї моделі (SKU MSP1901): без зміщення
+частина екрана показувала стабільний кольоровий шум. Значення
+35-50 (принаймні) усувають шум — діапазон, не одне точне число. Якщо
+у тебе інший екземпляр модуля й з'явиться подібний артефакт —
+підбирай значення емпірично (крок ~10-15px), не поспішай з висновком
+про
+апаратний дефект. **Не міняй місцями WIDTH/HEIGHT** — панель фізично
+portrait, поміняні місцями значення командують контролеру стовпці
+поза межами реальної матриці й спричиняють шум/спотворення.
 
 Керування підсвіткою — фізичною кнопкою виключення (`STARLINK_SHUTDOWN_BUTTON_PIN`,
 див. секцію вище): коротке натискання вмикає/вимикає підсвітку, довге
@@ -127,7 +136,7 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
   (15 хв) — Telegram-звіти про auto-reboot призупиняються (журнал і
   далі пишеться), відновлення завжди повідомляється з тривалістю простою
 - Журнал watchdog-спроб reboot зупиняється після `STARLINK_MAX_LOGGED_FAILURES`
-  (30) послідовних невдач — сама спроба reboot триває, лише запис
+  (15) послідовних невдач — сама спроба reboot триває, лише запис
   припиняється, щоб не засмічувати журнал при багатогодинному збої
 - Завжди приглушені (без Telegram, з журналом): помилка перевірки
   оновлення роутера, "оновлення очікує встановлення", dish-роумінг
@@ -291,14 +300,14 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
-| `STARLINK_MIN_REBOOT_INTERVAL` | `120` | мін. інтервал між авто-ребутами dish, сек |
+| `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
-| `STARLINK_MAX_LOGGED_FAILURES` | `30` | макс. послідовних невдач опитування, що пишуться в журнал/БД |
+| `STARLINK_MAX_LOGGED_FAILURES` | `15` | макс. послідовних невдач опитування, що пишуться в журнал/БД |
 | `STARLINK_OBSTRUCTION_WARN` | `0.05` | поріг попередження про перешкоди (0-1) |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
 | `STARLINK_HISTORY_DAYS` | `30` | скільки днів зберігати історію метрик/подій |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
-| `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
+| `STARLINK_SHUTDOWN_BUTTON_PIN` | `27` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
 | `STARLINK_DISPLAY_ENABLED` | `0` | фізичний TFT-дисплей статусу (0/1) |
 | `STARLINK_DISPLAY_SPI_CS_PIN` | `8` | дисплей: GPIO-пін CS (bit-banged) |
@@ -308,7 +317,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_WIDTH` | `170` | дисплей: ширина, px |
 | `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
 | `STARLINK_DISPLAY_ROTATION` | `0` | дисплей: поворот, ° (0/180; 90/270 лише якщо width=height) |
-| `STARLINK_DISPLAY_OFFSET_LEFT` | `0` | дисплей: зміщення X відносно GRAM, px |
+| `STARLINK_DISPLAY_OFFSET_LEFT` | `35` | дисплей: зміщення X відносно GRAM, px |
 | `STARLINK_DISPLAY_OFFSET_TOP` | `0` | дисплей: зміщення Y відносно GRAM, px |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
 | `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
