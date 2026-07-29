@@ -206,7 +206,9 @@ $WLAN_GW"` на wlan0-з'єднанні — окремий явний маршр
 
 **Гістерезис**: перемикання metric стається лише після
 `REQUIRED_CONSECUTIVE=3` поспіль однакових результатів ping-перевірки
-(стан — `/run/starlink-wan-failover.state`, tmpfs). Без цього кожен
+(стан — `/run/starlink-wan-failover/state`, tmpfs, у межах
+`RuntimeDirectory=` — потрібне для запису під `ProtectSystem=strict`).
+Без цього кожен
 `nmcli device reapply` на мить розриває маршрут до dish, і сам факт
 переключення впливав на результат наступної ж перевірки — петля
 самопідживлення (реальний виявлений баг: часті короткі флапи dish,
@@ -253,27 +255,23 @@ autocommit-з'єднання (не `get_conn()` з WAL) — простіше й 
 кадр через Pillow (`Image`/`ImageDraw`) кожні `DISPLAY_REFRESH_SEC`,
 надсилає через `display.image(image)` — бібліотека **Adafruit
 CircuitPython ST7789** (`adafruit-circuitpython-rgb-display` +
-`adafruit-blinka`, не Pimoroni `st7789`). `_status_lines()`/
-`_fmt_uptime()` — чисті функції форматування, незалежні від самого
-дисплея (легко тестуються без hardware).
+`adafruit-blinka`). `_status_lines()`/`_fmt_uptime()` — чисті функції
+форматування, незалежні від самого дисплея (легко тестуються без
+hardware).
 
 Ініціалізація через `board`/`digitalio`/`busio` (Blinka): SPI
 (`board.SCK`/`MOSI`/`MISO`) завжди апаратний; DC/RST/CS/BL — окремі
 `digitalio.DigitalInOut(getattr(board, f"D{pin}"))` об'єкти. **CS —
 bit-banged GPIO** (`DISPLAY_SPI_CS_PIN`, дефолт 8), не апаратний
 CE0/CE1 — бібліотека сама перемикає його програмно навколо кожної
-SPI-транзакції (на відміну від Pimoroni, де CS був номером апаратного
-chip-select 0/1).
+SPI-транзакції.
 
-Чому саме ця бібліотека, а не Pimoroni `st7789`:
+Ключові особливості цієї бібліотеки:
 - `DisplaySPI.__init__` сам коректно виводить RST з reset-стану
   (`self.rst.switch_to_output(value=0); self.reset()`) ДО виклику
-  `init()` (SPI-команди) — Pimoroni мала реальний баг тут (RST
-  лишався в LOW назавжди, вимагало ручного повторного `reset()`+
-  `_init()` як workaround, який тут більше не потрібен);
-- `rotation` дозволяє `0/90/180/270` для будь-якого aspect ratio
-  (Pimoroni забороняла `90/270`, коли `width != height`) — обертання
-  застосовується програмно через `img.rotate()` на самому
+  `init()` (SPI-команди);
+- `rotation` дозволяє `0/90/180/270` для будь-якого aspect ratio —
+  обертання застосовується програмно через `img.rotate()` на самому
   PIL-зображенні, не через MADCTL-регістр;
 - **немає** вбудованого керування підсвіткою (`set_backlight()`) —
   BL-пін керується напряму окремим `digitalio.DigitalInOut` і

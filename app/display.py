@@ -4,13 +4,11 @@ Mini (online/offline, uptime) прямо на екрані, підключено
 без потреби відкривати веб-дашборд.
 
 Використовує Adafruit CircuitPython ST7789 (adafruit-circuitpython-
-rgb-display + adafruit-blinka), не бібліотеку Pimoroni st7789. На
-відміну від Pimoroni, ця бібліотека:
-- сама коректно виводить RST з reset-стану в конструкторі (Pimoroni
-  мала баг: RST лишався в LOW назавжди, якщо не викликати reset()
-  вручну повторно - тут цього workaround не потрібно);
-- дозволяє rotation=0/90/180/270 для будь-якого aspect ratio (Pimoroni
-  забороняла 90/270 для прямокутних дисплеїв);
+rgb-display + adafruit-blinka). Ключові особливості:
+- reset() з правильною послідовністю викликається автоматично в
+  конструкторі, до SPI-команд ініціалізації;
+- rotation=0/90/180/270 підтримується для будь-якого aspect ratio,
+  застосовується програмно через PIL img.rotate();
 - НЕ має вбудованого керування підсвіткою (set_backlight()) - BL-пін
   керується напряму через окремий digitalio.DigitalInOut в цьому
   модулі (_set_backlight()).
@@ -89,10 +87,9 @@ def _load_font(size: int):
 
 
 def _set_backlight(bl_pin, value: bool):
-    """Adafruit CircuitPython ST7789 не має вбудованого set_backlight()
-    (на відміну від Pimoroni) - BL керується напряму через цей окремий
-    digitalio-пін. bl_pin=None (DISPLAY_BL_PIN=0, підсвітка на 3.3V
-    напряму) - нічого не робимо."""
+    """Adafruit CircuitPython ST7789 не має вбудованого set_backlight() -
+    BL керується напряму через цей окремий digitalio-пін. bl_pin=None
+    (DISPLAY_BL_PIN=0, підсвітка на 3.3V напряму) - нічого не робимо."""
     if bl_pin is not None:
         bl_pin.value = value
 

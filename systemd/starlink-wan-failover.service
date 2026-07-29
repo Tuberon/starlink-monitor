@@ -18,5 +18,11 @@ StandardError=journal
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+# RuntimeDirectoryPreserve=yes - без цього systemd видаляє директорію
+# одразу після кожного завершення oneshot-сервісу, а timer запускає
+# цей сервіс заново кожні ~20с - файл стану (потрібен для гістерезису
+# між запусками) був би втрачений щоразу без цього прапорця.
+RuntimeDirectory=starlink-wan-failover
+RuntimeDirectoryPreserve=yes
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW

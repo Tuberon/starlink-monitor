@@ -49,8 +49,7 @@ SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_S
 # все одно залежать від фактичного підключення до Pi, редагуються
 # через /etc/starlink-monitor/env чи /settings.
 DISPLAY_ENABLED = os.environ.get("STARLINK_DISPLAY_ENABLED", "0") == "1"
-# Adafruit CircuitPython ST7789 (не Pimoroni) - SPI clock/MOSI/MISO
-# завжди апаратні (board.SCK/MOSI/MISO, стандартний SPI0). CS - НЕ
+# Adafruit CircuitPython ST7789 - SPI clock/MOSI/MISO завжди апаратні (board.SCK/MOSI/MISO, стандартний SPI0). CS - НЕ
 # апаратний CE0/CE1 номер (0/1), а звичайний GPIO-пін (бібліотека сама
 # перемикає його програмно навколо кожної транзакції) - дефолт 8
 # (BCM8=CE0 фізично, але тут використовується як bit-banged GPIO).
@@ -72,10 +71,9 @@ DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "18"))
 # ефектом, не правильним рішенням) - див. docs/decisions-log.md.
 DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
-# Adafruit CircuitPython ST7789 дозволяє rotation=0/90/180/270 для
-# будь-якого aspect ratio (на відміну від бібліотеки Pimoroni, яка
-# забороняла 90/270 для прямокутних дисплеїв) - обертання застосовується
-# програмно через PIL img.rotate(), не через MADCTL.
+# rotation=0/90/180/270 підтримується для будь-якого aspect ratio -
+# обертання застосовується програмно через PIL img.rotate(), не через
+# MADCTL.
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
 # Зміщення видимої області відносно GRAM контролера - типова потреба
 # для дешевих ST7789-клонів (видима область менша за фізичний GRAM

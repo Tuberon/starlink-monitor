@@ -43,7 +43,7 @@ CHECK_TIMEOUT=3
 NORMAL_WLAN_METRIC=50
 DEMOTED_WLAN_METRIC=9999
 REQUIRED_CONSECUTIVE=3
-STATE_FILE="/run/starlink-wan-failover.state"
+STATE_FILE="/run/starlink-wan-failover/state"
 
 CONN_NAME="$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | awk -F: -v d="$WLAN_IFACE" '$2==d{print $1; exit}' || true)"
 if [[ -z "$CONN_NAME" ]]; then
