@@ -49,8 +49,12 @@ SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_S
 # все одно залежать від фактичного підключення до Pi, редагуються
 # через /etc/starlink-monitor/env чи /settings.
 DISPLAY_ENABLED = os.environ.get("STARLINK_DISPLAY_ENABLED", "0") == "1"
-DISPLAY_SPI_PORT = int(os.environ.get("STARLINK_DISPLAY_SPI_PORT", "0"))
-DISPLAY_SPI_CS = int(os.environ.get("STARLINK_DISPLAY_SPI_CS", "0"))
+# Adafruit CircuitPython ST7789 (не Pimoroni) - SPI clock/MOSI/MISO
+# завжди апаратні (board.SCK/MOSI/MISO, стандартний SPI0). CS - НЕ
+# апаратний CE0/CE1 номер (0/1), а звичайний GPIO-пін (бібліотека сама
+# перемикає його програмно навколо кожної транзакції) - дефолт 8
+# (BCM8=CE0 фізично, але тут використовується як bit-banged GPIO).
+DISPLAY_SPI_CS_PIN = int(os.environ.get("STARLINK_DISPLAY_SPI_CS_PIN", "8"))
 # DC/RST/BL - НЕ можуть бути в діапазоні BCM 7-11 (апаратні SPI0-піни
 # CE1/CE0/MISO/MOSI/SCLK, зарезервовані на рівні ядра при dtparam=spi=on,
 # недоступні одночасно як звичайні GPIO). 25/24/18 - стандартний,
@@ -68,12 +72,10 @@ DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "18"))
 # ефектом, не правильним рішенням) - див. docs/decisions-log.md.
 DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
-# rotation=90/270 бібліотека st7789 (Pimoroni) ЗАБОРОНЯЄ для
-# прямокутних дисплеїв (width!=height) - власне консервативне
-# обмеження бібліотеки, не апаратна вимога контролера ST7789 (той
-# підтримує rotation для будь-якого aspect ratio через MADCTL,
-# офіційна документація виробника показує усі 4 повороти навіть для
-# 170x320). Для 0/180 обмежень немає.
+# Adafruit CircuitPython ST7789 дозволяє rotation=0/90/180/270 для
+# будь-якого aspect ratio (на відміну від бібліотеки Pimoroni, яка
+# забороняла 90/270 для прямокутних дисплеїв) - обертання застосовується
+# програмно через PIL img.rotate(), не через MADCTL.
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
 # Зміщення видимої області відносно GRAM контролера - типова потреба
 # для дешевих ST7789-клонів (видима область менша за фізичний GRAM
@@ -83,11 +85,6 @@ DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
 DISPLAY_OFFSET_LEFT = int(os.environ.get("STARLINK_DISPLAY_OFFSET_LEFT", "0"))
 DISPLAY_OFFSET_TOP = int(os.environ.get("STARLINK_DISPLAY_OFFSET_TOP", "0"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
-# Автовимкнення підсвітки при бездіяльності (немає натискань кнопки) -
-# економія при night-режимі. 0 = вимкнено (підсвітка завжди активна,
-# поки не вимкнена вручну). Не рахує redraw екрана як "активність" -
-# лише коротке натискання кнопки скидає таймер.
-DISPLAY_BACKLIGHT_TIMEOUT_SEC = int(os.environ.get("STARLINK_DISPLAY_BACKLIGHT_TIMEOUT_SEC", "60"))
 # Офіційна специфікація модуля не вказує максимальну частоту SPI.
 # 40МГц - консервативний дефолт для типового підключення джампер-
 # дротами (не пресована плата) - на такому монтажі вищі частоти

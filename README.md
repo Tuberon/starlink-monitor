@@ -52,7 +52,9 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
 Показує live-статус dish (online/offline, uptime) прямо на екрані. Вимкнено за замовчуванням
-(`STARLINK_DISPLAY_ENABLED=0`).
+(`STARLINK_DISPLAY_ENABLED=0`). Використовує бібліотеку **Adafruit
+CircuitPython ST7789** (`adafruit-circuitpython-rgb-display` +
+`adafruit-blinka`), не Pimoroni `st7789`.
 
 > ⚠️ SPI зазвичай вимкнений за замовчуванням на Raspberry Pi OS:
 > `sudo raspi-config nonint do_spi 0 && sudo reboot`
@@ -77,9 +79,8 @@ STARLINK_DISPLAY_ROTATION=0
 підключено напряму до 3.3V (не через GPIO Pi) — постав
 `STARLINK_DISPLAY_BL_PIN=0` (без програмного керування підсвіткою).
 
-> ⚠️ `rotation=90/270` заборонено бібліотекою `st7789` (Pimoroni) для
-> прямокутних дисплеїв (width≠height) — власне обмеження бібліотеки,
-> не апаратна вимога контролера. Для 170×320 валідні лише `0`/`180`.
+> ⚠️ `SPI_CS_PIN` — це bit-banged GPIO (не апаратний CE0/CE1), бо
+> бібліотека Adafruit CircuitPython ST7789 сама перемикає CS програмно.
 
 Якщо зображення зміщене чи має шум по краях —
 `STARLINK_DISPLAY_OFFSET_LEFT`/`STARLINK_DISPLAY_OFFSET_TOP` (дефолт
@@ -300,8 +301,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `0` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
 | `STARLINK_DISPLAY_ENABLED` | `0` | фізичний TFT-дисплей статусу (0/1) |
-| `STARLINK_DISPLAY_SPI_PORT` | `0` | дисплей: SPI-порт |
-| `STARLINK_DISPLAY_SPI_CS` | `0` | дисплей: SPI chip-select |
+| `STARLINK_DISPLAY_SPI_CS_PIN` | `8` | дисплей: GPIO-пін CS (bit-banged) |
 | `STARLINK_DISPLAY_DC_PIN` | `25` | дисплей: GPIO-пін DC |
 | `STARLINK_DISPLAY_RST_PIN` | `24` | дисплей: GPIO-пін RES |
 | `STARLINK_DISPLAY_BL_PIN` | `18` | дисплей: GPIO-пін підсвітки (0=не керувати) |

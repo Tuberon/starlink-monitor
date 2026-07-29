@@ -3,17 +3,29 @@
 Mini (online/offline, uptime) прямо на екрані, підключеному до Pi,
 без потреби відкривати веб-дашборд.
 
+Використовує Adafruit CircuitPython ST7789 (adafruit-circuitpython-
+rgb-display + adafruit-blinka), не бібліотеку Pimoroni st7789. На
+відміну від Pimoroni, ця бібліотека:
+- сама коректно виводить RST з reset-стану в конструкторі (Pimoroni
+  мала баг: RST лишався в LOW назавжди, якщо не викликати reset()
+  вручну повторно - тут цього workaround не потрібно);
+- дозволяє rotation=0/90/180/270 для будь-якого aspect ratio (Pimoroni
+  забороняла 90/270 для прямокутних дисплеїв);
+- НЕ має вбудованого керування підсвіткою (set_backlight()) - BL-пін
+  керується напряму через окремий digitalio.DigitalInOut в цьому
+  модулі (_set_backlight()).
+
 Та сама кнопка виключення Pi (SHUTDOWN_BUTTON_GPIO_PIN) обробляється
 тут: коротке натискання перемикає підсвітку дисплея, довге (довше
 SHUTDOWN_BUTTON_HOLD_SEC) вимикає Pi - як і раніше. Обробляється саме
 тут (не в окремому shutdown_button.py), бо керування підсвіткою
-можливе лише через той самий об'єкт st7789.ST7789, який володіє
-BL-піном; той сервіс сам себе вимикає, коли DISPLAY_ENABLED=1, щоб не
-конкурувати за той самий GPIO.
+можливе лише через той самий процес, що тримає BL-пін; той сервіс сам
+себе вимикає, коли DISPLAY_ENABLED=1, щоб не конкурувати за той самий
+GPIO.
 
 Окремий процес - періодично перемальовує кадр через Pillow і надсилає
-на дисплей бібліотекою st7789 (SPI). Вимкнено за замовчуванням
-(DISPLAY_ENABLED=0) - не всі мають цей дисплей підключений.
+на дисплей. Вимкнено за замовчуванням (DISPLAY_ENABLED=0) - не всі
+мають цей дисплей підключений.
 """
 import logging
 import time
@@ -76,6 +88,15 @@ def _load_font(size: int):
     return ImageFont.load_default()
 
 
+def _set_backlight(bl_pin, value: bool):
+    """Adafruit CircuitPython ST7789 не має вбудованого set_backlight()
+    (на відміну від Pimoroni) - BL керується напряму через цей окремий
+    digitalio-пін. bl_pin=None (DISPLAY_BL_PIN=0, підсвітка на 3.3V
+    напряму) - нічого не робимо."""
+    if bl_pin is not None:
+        bl_pin.value = value
+
+
 def _redraw(display, Image, ImageDraw, font_big, font_small):
     latest = db.get_latest_metric()
     lines = _status_lines(latest)
@@ -90,7 +111,7 @@ def _redraw(display, Image, ImageDraw, font_big, font_small):
         draw.text((10, y), line, font=font, fill=color)
         y += 34 if i == 0 else 28
 
-    display.display(img)
+    display.image(img)
 
 
 def run_forever(stop_event=None):
@@ -99,39 +120,41 @@ def run_forever(stop_event=None):
         return
 
     try:
-        import st7789
+        import board
+        import digitalio
+        import busio
+        from adafruit_rgb_display import st7789
         from PIL import Image, ImageDraw
     except ImportError as e:
-        logger.error("Пакети для дисплея не встановлено (st7789/Pillow): %s", e)
+        logger.error(
+            "Пакети для дисплея не встановлено (adafruit-blinka/"
+            "adafruit-circuitpython-rgb-display/Pillow): %s", e
+        )
         return
 
+    bl_pin = None
     try:
+        spi = busio.SPI(clock=board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+        cs_pin = digitalio.DigitalInOut(getattr(board, f"D{config.DISPLAY_SPI_CS_PIN}"))
+        dc_pin = digitalio.DigitalInOut(getattr(board, f"D{config.DISPLAY_DC_PIN}"))
+        rst_pin = digitalio.DigitalInOut(getattr(board, f"D{config.DISPLAY_RST_PIN}"))
+
         display = st7789.ST7789(
-            port=config.DISPLAY_SPI_PORT,
-            cs=config.DISPLAY_SPI_CS,
-            dc=config.DISPLAY_DC_PIN,
-            rst=config.DISPLAY_RST_PIN,
-            backlight=config.DISPLAY_BL_PIN or None,
+            spi,
+            cs=cs_pin,
+            dc=dc_pin,
+            rst=rst_pin,
             width=config.DISPLAY_WIDTH,
             height=config.DISPLAY_HEIGHT,
+            baudrate=config.DISPLAY_SPI_SPEED_HZ,
+            x_offset=config.DISPLAY_OFFSET_LEFT,
+            y_offset=config.DISPLAY_OFFSET_TOP,
             rotation=config.DISPLAY_ROTATION,
-            offset_left=config.DISPLAY_OFFSET_LEFT,
-            offset_top=config.DISPLAY_OFFSET_TOP,
-            spi_speed_hz=config.DISPLAY_SPI_SPEED_HZ,
         )
-        # Реальний баг бібліотеки st7789: __init__ викликає _init()
-        # (SPI-команди ініціалізації контролера) ДО того, як RST-пін
-        # взагалі виведено з reset-стану (RST налаштовується як output
-        # і одразу стає LOW/INACTIVE - контролер лишається в апаратному
-        # reset назавжди, якщо нічого не зробити далі). Підсвітка (BL)
-        # - окрема GPIO-лінія, працює незалежно від цього - тому екран
-        # світиться, але залишається порожнім. reset() виводить
-        # контролер з reset належною HIGH->LOW->HIGH послідовністю;
-        # повторний _init() потрібен, бо команди з першого виклику (в
-        # __init__, ще в reset-стані) контролер проігнорував.
-        if config.DISPLAY_RST_PIN:
-            display.reset()
-            display._init()
+
+        if config.DISPLAY_BL_PIN:
+            bl_pin = digitalio.DigitalInOut(getattr(board, f"D{config.DISPLAY_BL_PIN}"))
+            bl_pin.switch_to_output(value=True)
     except Exception as e:
         logger.error(
             "Не вдалося ініціалізувати дисплей (перевір SPI/піни в /etc/starlink-monitor/env): %s", e
@@ -179,7 +202,7 @@ def run_forever(stop_event=None):
                     event = button_tracker.poll(value)
                     if event == "short_press":
                         backlight_on = not backlight_on
-                        display.set_backlight(backlight_on)
+                        _set_backlight(bl_pin, backlight_on)
                         if backlight_on:
                             last_activity_ts = now
                         logger.info("Підсвітка %s (коротке натискання GPIO%d)",
@@ -191,7 +214,7 @@ def run_forever(stop_event=None):
 
             if _should_auto_off(backlight_on, last_activity_ts, now, config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC):
                 backlight_on = False
-                display.set_backlight(False)
+                _set_backlight(bl_pin, False)
                 logger.info("Підсвітка вимкнена автоматично (%dс після ввімкнення)",
                             config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC)
 

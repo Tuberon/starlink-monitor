@@ -468,3 +468,36 @@ MADCTL-командами — тобто немає апаратної прич�
 **Виправлення**: `SETUP_NET="$(echo "$SETUP_NET" | tr -d
 '[:space:]')"` перед перевіркою — прибирає всі пробільні символи
 (включно з `\r`), надійніше розпізнає підтвердження.
+
+## Заміна бібліотеки дисплея: Pimoroni st7789 → Adafruit CircuitPython ST7789
+
+**Причина заміни**: бібліотека Pimoroni `st7789` мала кілька реальних
+проблем, знайдених на живому Pi — RST-баг (`__init__` викликав
+`_init()` до виведення RST з reset-стану, вимагало ручного
+`reset()`+`_init()` workaround), заборону `rotation=90/270` для
+прямокутних дисплеїв (`width != height`), і залишалась невирішена
+проблема з шумом/orientaцією, яку так і не вдалось остаточно
+діагностувати.
+
+**Нова бібліотека**: `adafruit-circuitpython-rgb-display` +
+`adafruit-blinka` (`adafruit_rgb_display.st7789.ST7789`). Перевірено
+читанням вихідного коду бібліотеки (не здогадками):
+- `DisplaySPI.__init__` сам коректно виводить RST з reset (`rst.value=0`
+  → `switch_to_output` → `self.reset()` — LOW→sleep→HIGH→sleep) ДО
+  виклику `init()` (SPI-команди) — RST-баг Pimoroni тут відсутній;
+- `rotation` дозволяє `0/90/180/270` для будь-якого aspect ratio —
+  жодного обмеження на `width==height`;
+- обертання застосовується програмно (`img.rotate()` на PIL-зображенні
+  в методі `image()`), не через MADCTL-регістр;
+- **немає** `set_backlight()` — BL-пін керується напряму окремим
+  `digitalio.DigitalInOut` в `app/display.py` (`_set_backlight()`).
+
+**Архітектурні зміни**: ініціалізація тепер через `board`/`digitalio`/
+`busio` (Blinka) замість простих цілих BCM-номерів; CS — bit-banged
+GPIO (`DISPLAY_SPI_CS_PIN`, дефолт 8), не апаратний номер CE0/CE1
+(`STARLINK_DISPLAY_SPI_PORT`/`STARLINK_DISPLAY_SPI_CS` видалено).
+`display.image(img)` замість `display.display(img)`.
+
+**Попутно знайдено й видалено**: дублікат-сирота
+`DISPLAY_BACKLIGHT_TIMEOUT_SEC` в `config.py` (той самий концепт, що
+й `DISPLAY_BACKLIGHT_AUTO_OFF_SEC`, ніде не використовувався).
