@@ -13,11 +13,6 @@ function fmtUptime(seconds) {
   return `${h}г ${m}хв`;
 }
 
-function fmtTime(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
 function setValueClass(node, value, warnAt, critAt, higherIsBad = true) {
   node.classList.remove('warn', 'crit');
   if (value === null || value === undefined) return;

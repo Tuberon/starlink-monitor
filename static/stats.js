@@ -1,10 +1,5 @@
 function el(id) { return document.getElementById(id); }
 
-function fmtTime(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
 let eventsClearedLocally = false;
 
 async function refreshEvents() {
