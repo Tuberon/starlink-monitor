@@ -52,21 +52,17 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
 Показує live-статус dish (online/offline, uptime, стан оновлення ПЗ,
-версії прошивок dish і роутера) прямо на екрані. Вимкнено за замовчуванням
-(`STARLINK_DISPLAY_ENABLED=0`). Використовує бібліотеку **Adafruit
-CircuitPython ST7789** (`adafruit-circuitpython-rgb-display` +
-`adafruit-blinka`).
+версії прошивок dish і роутера). Вимкнено за замовчуванням
+(`STARLINK_DISPLAY_ENABLED=0`). Бібліотека — **Adafruit CircuitPython
+ST7789** (`adafruit-circuitpython-rgb-display` + `adafruit-blinka`).
 
-> ⚠️ SPI зазвичай вимкнений за замовчуванням на Raspberry Pi OS:
-> `sudo raspi-config nonint do_spi 0 && sudo reboot`
-> (`install.sh` попереджає про це наприкінці встановлення, якщо SPI
-> ще не увімкнено).
+> ⚠️ SPI зазвичай вимкнений за замовчуванням: `sudo raspi-config
+> nonint do_spi 0 && sudo reboot` (`install.sh` попереджає
+> наприкінці, якщо ще не увімкнено).
 
-Паспортна роздільна здатність модуля — 170×320 (SKU MSP1901,
-driver ST7789, portrait), підтверджена офіційною документацією
-LCDWIKI і написом на самій платі. Піни DC/RST/BL все одно залежать
-від фактичного підключення до Pi — скоригуй за потреби через
-`/settings` або `/etc/starlink-monitor/env`:
+Паспортна роздільна здатність — 170×320 (SKU MSP1901, portrait,
+підтверджено документацією LCDWIKI). Піни залежать від підключення —
+скоригуй через `/settings` або `/etc/starlink-monitor/env`:
 ```
 STARLINK_DISPLAY_ENABLED=1
 STARLINK_DISPLAY_DC_PIN=25
@@ -77,34 +73,22 @@ STARLINK_DISPLAY_HEIGHT=320
 STARLINK_DISPLAY_ROTATION=0
 STARLINK_DISPLAY_OFFSET_LEFT=35
 ```
-потім `sudo systemctl restart starlink-display.service`. Якщо `BLK`
-підключено напряму до 3.3V (не через GPIO Pi) — постав
-`STARLINK_DISPLAY_BL_PIN=0` (без програмного керування підсвіткою).
+потім `sudo systemctl restart starlink-display.service`. `BLK`
+напряму до 3.3V (не через GPIO) — постав `STARLINK_DISPLAY_BL_PIN=0`.
+`SPI_CS_PIN` — bit-banged GPIO, не апаратний CE0/CE1 (бібліотека сама
+перемикає CS програмно).
 
-> ⚠️ `SPI_CS_PIN` — це bit-banged GPIO (не апаратний CE0/CE1), бо
-> бібліотека Adafruit CircuitPython ST7789 сама перемикає CS програмно.
+`ROTATION` підтримує `0/90/180/270` для будь-якого aspect ratio;
+`OFFSET_LEFT`/`OFFSET_TOP` не залежать від rotation, міняти не
+потрібно. `OFFSET_LEFT=35` — емпірично підтверджене значення для
+цієї моделі (без зміщення частина екрана показує стабільний
+кольоровий шум; діапазон 35-50 працює, підбирай кроком ~10-15px за
+потреби — не апаратний дефект). **Не міняй місцями WIDTH/HEIGHT** —
+командує контролеру стовпці поза межами матриці, дає шум/спотворення.
 
-`STARLINK_DISPLAY_ROTATION` підтримує `0/90/180/270` для будь-якого
-aspect ratio (портретний дисплей теж) — `_redraw()` сам транспонує
-розміри полотна для `90`/`270`, `OFFSET_LEFT`/`OFFSET_TOP` при цьому
-міняти не потрібно (діють на іншому рівні, не залежать від rotation).
-
-`STARLINK_DISPLAY_OFFSET_LEFT=35` — емпірично підтверджене на
-реальному Pi значення для цієї моделі (SKU MSP1901): без зміщення
-частина екрана показувала стабільний кольоровий шум. Значення
-35-50 (принаймні) усувають шум — діапазон, не одне точне число. Якщо
-у тебе інший екземпляр модуля й з'явиться подібний артефакт —
-підбирай значення емпірично (крок ~10-15px), не поспішай з висновком
-про
-апаратний дефект. **Не міняй місцями WIDTH/HEIGHT** — панель фізично
-portrait, поміняні місцями значення командують контролеру стовпці
-поза межами реальної матриці й спричиняють шум/спотворення.
-
-Керування підсвіткою — фізичною кнопкою виключення (`STARLINK_SHUTDOWN_BUTTON_PIN`,
-див. секцію вище): коротке натискання вмикає/вимикає підсвітку, довге
-(як завжди) вимикає Pi. Автоматично вимикається через
-`STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` (типово 60с) після
-кожного ввімкнення — нічний режим/економія; `0` вимикає авто-off.
+Керування підсвіткою — та сама кнопка виключення (коротке=перемкнути
+підсвітку, довге=вимкнути Pi). Автовимкнення через
+`STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` (типово 60с, `0`=вимкнено).
 
 ## 💬 Telegram-сповіщення та команди
 
@@ -217,42 +201,16 @@ Starlink недоступний — `eth0` автоматично стає де�
 
 ```
 starlink-monitor/
-├── app/
-│   ├── starlink_client.py     # gRPC клієнт: dish + router, reboot
-│   ├── system_metrics.py      # метрики Pi (CPU/RAM/диск/темп.)
-│   ├── labels.py              # людські назви станів/попереджень
-│   ├── db.py                  # SQLite (metrics, events, system_metrics)
-│   ├── monitor.py             # опитування + watchdog-логіка
-│   ├── telegram_notify.py     # відправка сповіщень Telegram
-│   ├── telegram_bot.py        # команди /status /reboot /id
-│   ├── signature_phrases.txt  # фрази в кінці Telegram-повідомлень
-│   ├── webapp.py              # Flask + REST API
-│   ├── shutdown_button.py     # фізична кнопка виключення (GPIO)
-│   ├── display.py             # фізичний TFT-дисплей (ST7789, SPI)
-│   ├── config.py              # конфігурація
-│   ├── config_editor.py       # редагування env-параметрів через /settings
-│   ├── speedtest_runner.py    # періодичний реальний speedtest
-│   └── vendor/                # сюди завантажується starlink_grpc.py
-├── templates/index.html, settings.html, stats.html
-├── static/dashboard.js, settings.js, stats.js, pwa.js, sw.js, style.css,
-│           logo.png, favicon.ico, manifest.json, icon-192.png, icon-512.png
-├── systemd/
-│   ├── starlink-monitor.service          # watchdog + метрики
-│   ├── starlink-webui.service            # веб-інтерфейс
-│   ├── starlink-shutdown-button.service  # GPIO-кнопка
-│   ├── starlink-display.service          # TFT-дисплей (ST7789)
-│   ├── starlink-grpc-fetch.service       # тягне starlink_grpc.py при старті
-│   ├── starlink-wan-failover.service/.timer  # системний WAN-failover
-│   └── starlink-monitor-healthcheck.service/.timer  # watchdog для watchdog-а
-├── scripts/
-│   ├── install.sh              # встановлення/оновлення (авто-детекція)
-│   ├── update.sh                # ручне оновлення з архіву
-│   ├── uninstall.sh             # повне видалення з Pi
-│   ├── fetch_starlink_grpc.sh  # (пере)завантажити starlink_grpc.py
-│   ├── wan_failover_check.sh   # системний WAN-failover (wlan0 vs eth0)
-│   └── watchdog_healthcheck.sh # перевірка /healthz, force-restart при зависанні
+├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
+├── templates/      # HTML (index, settings, stats)
+├── static/         # JS/CSS/іконки
+├── systemd/        # unit-файли сервісів
+├── scripts/        # install/update/uninstall + системні перевірки
+├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
 └── requirements.txt
 ```
+
+Детальний опис кожного файлу — [`docs/index.md`](docs/index.md).
 
 ## 📦 Встановлення та оновлення
 
