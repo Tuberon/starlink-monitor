@@ -43,6 +43,40 @@ FONT_PATHS = [
 ]
 BUTTON_POLL_INTERVAL_SEC = 0.1  # як часто перевіряти кнопку
 
+# Компактні переклади update_state спеціально для вузького TFT-екрана
+# - НЕ ті самі, що в static/dashboard.js: там розраховано на широкий
+# веб-екран, ці переклади довші за оригінальні internal-коди (напр.
+# "GETTING_TARGET_VERSION" 22 символи -> "перевірка наявності
+# оновлення" 30 символів). Тут - навпаки, максимально стисло.
+DISH_UPDATE_STATE_LABELS = {
+    "SOFTWARE_UPDATE_STATE_UNKNOWN": "невідомо",
+    "IDLE": "немає",
+    "FETCHING": "завантаження",
+    "PRE_CHECK": "перевірка",
+    "WRITING": "встановлення",
+    "POST_CHECK": "перевірка",
+    "REBOOT_REQUIRED": "рестарт",
+    "DISABLED": "вимкнено",
+    "FAULTED": "помилка",
+}
+ROUTER_UPDATE_STATE_LABELS = {
+    "NOT_RUN": "немає",
+    "GETTING_TARGET_VERSION": "перевірка",
+    "DOWNLOADING_UPDATE_IMAGE": "завантаження",
+    "FLASHING": "встановлення",
+    "NO_UPDATE_REQUIRED": "непотрібне",
+    "REBOOT_PENDING": "рестарт",
+    "GETTING_TARGET_VERSION_FAILED": "помилка",
+    "GETTING_TARGET_VERSION_EXHAUSTED": "помилка",
+    "NO_VALID_ARTIFACT": "помилка",
+    "ILLEGAL_ARTIFACT": "помилка",
+    # DOWNLOADING_UPDATE_IMAGE_FAILED свідомо відсутній - той самий
+    # стан приховується і на веб-дашборді (static/dashboard.js) як
+    # частина нормального циклу перевірки, не справжня помилка.
+    "DOWNLOADING_UPDATE_IMAGE_EXHAUSTED": "помилка",
+    "FLASHING_FAILED": "помилка",
+}
+
 
 def _fmt_uptime(uptime_s) -> str:
     if not uptime_s:
@@ -71,18 +105,22 @@ def _status_lines(latest_metric: dict, router_status: dict = None) -> list:
     dish_update_state = latest_metric.get("update_state")
     if dish_update_state:
         pct = latest_metric.get("update_progress_pct") or 0
+        label = DISH_UPDATE_STATE_LABELS.get(dish_update_state, dish_update_state)
         lines.append({
             "kind": "update",
-            "text": f"Оновлення тарілки: {dish_update_state} {pct:.0f}%",
+            "text": f"Оновл.Т: {label} {pct:.0f}%",
             "progress": pct,
         })
 
     router_update_state = router_status.get("update_state") if router_status else None
-    if router_update_state:
+    # Той самий стан приховується і на веб-дашборді - частина
+    # нормального циклу перевірки роутера, не справжня помилка.
+    if router_update_state and router_update_state != "DOWNLOADING_UPDATE_IMAGE_FAILED":
         pct = router_status.get("update_progress_pct") or 0
+        label = ROUTER_UPDATE_STATE_LABELS.get(router_update_state, router_update_state)
         lines.append({
             "kind": "update",
-            "text": f"Оновлення роутера: {router_update_state} {pct:.0f}%",
+            "text": f"Оновл.Р: {label} {pct:.0f}%",
             "progress": pct,
         })
 
@@ -163,9 +201,9 @@ def _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny):
     for line in lines:
         kind = line["kind"]
         if kind == "status":
-            font, color, line_height = font_status, ("lime" if online else "red"), 26
+            font, color, line_height = font_status, ("lime" if online else "red"), 23
         elif kind == "update":
-            font, color, line_height = font_update, "white", 24
+            font, color, line_height = font_update, "white", 19
         else:  # "firmware"
             font, color, line_height = font_tiny, "white", 20
 
@@ -234,8 +272,8 @@ def run_forever(stop_event=None):
 
     logger.info("Дисплей ініціалізовано (%dx%d, поворот %d°)",
                 config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT, config.DISPLAY_ROTATION)
-    font_status = _load_font(20)
-    font_update = _load_font(19)
+    font_status = _load_font(18)
+    font_update = _load_font(15)
     font_tiny = _load_font(16)
 
     try:
