@@ -76,7 +76,6 @@ const ROUTER_UPDATE_STATE_LABELS = {
   'GETTING_TARGET_VERSION_EXHAUSTED': 'не вдалося перевірити оновлення',
   'NO_VALID_ARTIFACT': 'відсутній коректний файл оновлення',
   'ILLEGAL_ARTIFACT': 'некоректний файл оновлення',
-  'DOWNLOADING_UPDATE_IMAGE_FAILED': 'помилка завантаження оновлення',
   'DOWNLOADING_UPDATE_IMAGE_EXHAUSTED': 'не вдалося завантажити оновлення',
   'FLASHING_FAILED': 'помилка встановлення оновлення',
 };
@@ -364,14 +363,18 @@ function renderRouterClients(clients) {
 function renderRouterUpdateStatus(latest) {
   const badge = el('routerUpdateStateBadge');
   const state = latest.update_state || 'NOT_RUN';
-  badge.textContent = ROUTER_UPDATE_STATE_LABELS[state] || state;
+  // Не показуємо текст про цю конкретну помилку користувачу - роутер
+  // регулярно проходить через цей стан як частину нормального циклу
+  // перевірки, показ як "помилка" щоразу лише вводить в оману.
+  const displayState = state === 'DOWNLOADING_UPDATE_IMAGE_FAILED' ? 'NOT_RUN' : state;
+  badge.textContent = ROUTER_UPDATE_STATE_LABELS[displayState] || displayState;
 
   badge.classList.remove('state-idle', 'state-active', 'state-reboot');
-  if (state === 'NOT_RUN' || state === 'NO_UPDATE_REQUIRED') {
+  if (displayState === 'NOT_RUN' || displayState === 'NO_UPDATE_REQUIRED') {
     badge.classList.add('state-idle');
-  } else if (state === 'REBOOT_PENDING' || state.includes('FAILED') || state.includes('ILLEGAL')) {
+  } else if (displayState === 'REBOOT_PENDING' || displayState.includes('FAILED') || displayState.includes('ILLEGAL')) {
     badge.classList.add('state-reboot');
-  } else if (['GETTING_TARGET_VERSION', 'DOWNLOADING_UPDATE_IMAGE', 'FLASHING'].includes(state)) {
+  } else if (['GETTING_TARGET_VERSION', 'DOWNLOADING_UPDATE_IMAGE', 'FLASHING'].includes(displayState)) {
     badge.classList.add('state-active');
   }
 
@@ -488,7 +491,8 @@ async function handleCheckUpdates() {
     const data = await res.json();
     if (data.success) {
       const dishState = UPDATE_STATE_LABELS[data.dish.update_state] || data.dish.update_state || 'н/д';
-      const routerState = ROUTER_UPDATE_STATE_LABELS[data.router.update_state] || data.router.update_state || 'н/д';
+      const routerRawState = data.router.update_state === 'DOWNLOADING_UPDATE_IMAGE_FAILED' ? 'NOT_RUN' : data.router.update_state;
+      const routerState = ROUTER_UPDATE_STATE_LABELS[routerRawState] || routerRawState || 'н/д';
       hint.textContent = `Готово. Dish: ${dishState}  ·  Роутер: ${routerState}`;
     } else {
       hint.textContent = 'Помилка перевірки';

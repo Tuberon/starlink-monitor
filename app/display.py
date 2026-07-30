@@ -53,29 +53,44 @@ def _fmt_uptime(uptime_s) -> str:
 
 
 def _status_lines(latest_metric: dict, router_status: dict = None) -> list:
-    """Формує рядки тексту для відображення - чиста функція без
-    залежності від самого дисплея, легко тестується окремо. Свідомо
-    НЕ показує downlink/uplink/ping/drop%/obstruction% (замалий екран
-    для змістовних числових метрик, це вже є на веб-дашборді) - лише
-    online/offline статус, uptime, стан оновлення, прошивки dish і
-    роутера."""
+    """Формує структуровані рядки для відображення - чиста функція
+    без залежності від самого дисплея, легко тестується окремо.
+    Кожен рядок - dict {"kind": ..., "text": ...} (+ "progress" для
+    kind="update") - уникає крихких позиційних індексів, бо рядки
+    оновлення опційні (плавав би індекс прошивок після них). Свідомо
+    НЕ показує downlink/uplink/ping/drop%/obstruction% (замалий
+    екран для змістовних числових метрик, це вже є на веб-дашборді)."""
     if not latest_metric:
-        return ["Немає даних"]
+        return [{"kind": "status", "text": "Немає даних"}]
 
     online = bool(latest_metric.get("online"))
-    lines = ["● ONLINE" if online else "○ OFFLINE"]
-    lines.append(f"Uptime: {_fmt_uptime(latest_metric.get('uptime_s'))}")
+    status_text = ("● ONLINE" if online else "○ OFFLINE") + \
+        f"  Uptime: {_fmt_uptime(latest_metric.get('uptime_s'))}"
+    lines = [{"kind": "status", "text": status_text}]
 
-    update_state = latest_metric.get("update_state")
-    if update_state:
+    dish_update_state = latest_metric.get("update_state")
+    if dish_update_state:
         pct = latest_metric.get("update_progress_pct") or 0
-        lines.append(f"Оновлення: {update_state} {pct:.0f}%")
+        lines.append({
+            "kind": "update",
+            "text": f"Оновлення тарілки: {dish_update_state} {pct:.0f}%",
+            "progress": pct,
+        })
+
+    router_update_state = router_status.get("update_state") if router_status else None
+    if router_update_state:
+        pct = router_status.get("update_progress_pct") or 0
+        lines.append({
+            "kind": "update",
+            "text": f"Оновлення роутера: {router_update_state} {pct:.0f}%",
+            "progress": pct,
+        })
 
     dish_fw = latest_metric.get("software_version")
-    lines.append(f"Д: {dish_fw if dish_fw else '—'}")
+    lines.append({"kind": "firmware", "text": f"Тарілка: {dish_fw if dish_fw else '—'}"})
 
     router_fw = router_status.get("software_version") if router_status else None
-    lines.append(f"Р: {router_fw if router_fw else '—'}")
+    lines.append({"kind": "firmware", "text": f"Роутер: {router_fw if router_fw else '—'}"})
 
     return lines
 
@@ -124,7 +139,7 @@ def _set_backlight(bl_pin, value: bool):
         bl_pin.value = value
 
 
-def _redraw(display, Image, ImageDraw, font_big, font_small, font_tiny):
+def _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny):
     latest = db.get_latest_metric()
     router_status = db.get_router_status()
     lines = _status_lines(latest, router_status)
@@ -145,20 +160,27 @@ def _redraw(display, Image, ImageDraw, font_big, font_small, font_tiny):
     draw = ImageDraw.Draw(img)
     max_width = canvas_size[0] - 20  # відступи по 10px з кожного боку
     y = 10
-    for i, line in enumerate(lines):
-        # Рядок 0 (статус) - великий; рядок 1 (uptime) - середній;
-        # решта (оновлення/версії прошивок) - менший шрифт, бо довгі
-        # версії й так фізично не влазять у 170px ширину екрана -
-        # менший розмір хоч показує корисну частину (дату релізу).
-        if i == 0:
-            font, color = font_big, ("lime" if online else "red")
-        elif i == 1:
-            font, color = font_small, "white"
-        else:
-            font, color = font_tiny, "white"
-        line = _truncate_to_width(draw, line, font, max_width)
-        draw.text((10, y), line, font=font, fill=color)
-        y += 40 if i == 0 else (32 if i == 1 else 22)
+    for line in lines:
+        kind = line["kind"]
+        if kind == "status":
+            font, color, line_height = font_status, ("lime" if online else "red"), 26
+        elif kind == "update":
+            font, color, line_height = font_update, "white", 24
+        else:  # "firmware"
+            font, color, line_height = font_tiny, "white", 20
+
+        text = _truncate_to_width(draw, line["text"], font, max_width)
+        draw.text((10, y), text, font=font, fill=color)
+        y += line_height
+
+        if kind == "update":
+            bar_h = 8
+            draw.rectangle([10, y, 10 + max_width, y + bar_h], outline="white")
+            pct = max(0, min(100, line.get("progress", 0) or 0))
+            filled = int(max_width * pct / 100)
+            if filled > 0:
+                draw.rectangle([10, y, 10 + filled, y + bar_h], fill="lime")
+            y += bar_h + 8
 
     display.image(img)
 
@@ -212,8 +234,8 @@ def run_forever(stop_event=None):
 
     logger.info("Дисплей ініціалізовано (%dx%d, поворот %d°)",
                 config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT, config.DISPLAY_ROTATION)
-    font_big = _load_font(30)
-    font_small = _load_font(24)
+    font_status = _load_font(20)
+    font_update = _load_font(19)
     font_tiny = _load_font(16)
 
     try:
@@ -270,7 +292,7 @@ def run_forever(stop_event=None):
 
             if now - last_redraw >= config.DISPLAY_REFRESH_SEC:
                 try:
-                    _redraw(display, Image, ImageDraw, font_big, font_small, font_tiny)
+                    _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny)
                 except Exception:
                     logger.exception("Помилка оновлення дисплея")
                 last_redraw = now
