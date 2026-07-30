@@ -317,7 +317,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_BL_PIN` | `18` | дисплей: GPIO-пін підсвітки (0=не керувати) |
 | `STARLINK_DISPLAY_WIDTH` | `170` | дисплей: ширина, px |
 | `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
-| `STARLINK_DISPLAY_ROTATION` | `0` | дисплей: поворот, ° (0/180; 90/270 лише якщо width=height) |
+| `STARLINK_DISPLAY_ROTATION` | `0` | дисплей: поворот, ° (0/90/180/270, для будь-якого aspect ratio) |
 | `STARLINK_DISPLAY_OFFSET_LEFT` | `35` | дисплей: зміщення X відносно GRAM, px |
 | `STARLINK_DISPLAY_OFFSET_TOP` | `0` | дисплей: зміщення Y відносно GRAM, px |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
