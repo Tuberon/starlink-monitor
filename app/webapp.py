@@ -108,6 +108,16 @@ def api_history():
     return jsonify(db.get_recent_metrics(limit))
 
 
+@app.route("/api/metrics-chart")
+def api_metrics_chart():
+    try:
+        hours = float(request.args.get("hours", 24))
+    except (TypeError, ValueError):
+        hours = 24
+    hours = min(max(hours, 0.1), 24 * config.HISTORY_RETENTION_DAYS)
+    return jsonify(db.get_metrics_chart_data(hours))
+
+
 @app.route("/api/speedtest-history")
 def api_speedtest_history():
     limit = min(int(request.args.get("limit", 50)), 500)

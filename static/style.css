@@ -194,6 +194,17 @@
   .panel-head h2{font-size:0.95rem; font-weight:600;}
   .panel-head .sub{font-family:var(--font-mono); font-size:0.7rem; color:var(--text-low);}
 
+  .chart-period-select{display:flex; gap:6px;}
+  .chart-period-select button{
+    background:transparent; border:1px solid var(--line); color:var(--text-low);
+    font-family:var(--font-mono); font-size:0.72rem; padding:4px 10px; border-radius:8px;
+    cursor:pointer;
+  }
+  .chart-period-select button.active{background:var(--signal); color:#04121a; border-color:var(--signal);}
+  .chart-block{margin-bottom:18px;}
+  .chart-block:last-child{margin-bottom:0;}
+  .chart-label{font-family:var(--font-mono); font-size:0.72rem; color:var(--text-low); margin-bottom:6px;}
+
   canvas{max-height:154px;}
 
   /* ---- events log ---- */

@@ -28,6 +28,30 @@
 
   <div class="panel">
     <div class="panel-head">
+      <h2>Тренди</h2>
+      <div class="chart-period-select" id="chartPeriodSelect">
+        <button data-hours="6" class="active">6г</button>
+        <button data-hours="24">24г</button>
+        <button data-hours="168">7д</button>
+        <button data-hours="720">30д</button>
+      </div>
+    </div>
+    <div class="chart-block">
+      <div class="chart-label">Швидкість (Мбіт/с)</div>
+      <canvas id="chartThroughput" height="120"></canvas>
+    </div>
+    <div class="chart-block">
+      <div class="chart-label">Пінг (мс) / втрати пакетів (%)</div>
+      <canvas id="chartPing" height="120"></canvas>
+    </div>
+    <div class="chart-block">
+      <div class="chart-label">Перешкоди неба (%)</div>
+      <canvas id="chartObstruction" height="120"></canvas>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
       <h2>Журнал подій</h2>
       <button class="clear-btn" id="clearEventsBtn" title="Очистити журнал подій">Очистити</button>
     </div>

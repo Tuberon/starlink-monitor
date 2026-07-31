@@ -326,6 +326,34 @@ def get_recent_metrics(limit: int = 500):
         return [_parse_metric_row(dict(r)) for r in reversed(rows)]
 
 
+def get_metrics_chart_data(hours: float, target_points: int = 150):
+    """Агреговані дані для графіків на /stats - SQL GROUP BY bucket,
+    без окремої downsampled-таблиці (агрегація "на льоту" з metrics).
+    bucket-розмір масштабується залежно від періоду, щоб завжди
+    повертати ~target_points точок незалежно від того, це 24г чи 30д -
+    довший період не означає повільніший/важчий запит для фронтенду."""
+    period_sec = hours * 3600
+    bucket_sec = max(config.POLL_INTERVAL_SEC, period_sec / target_points)
+    cutoff = time.time() - period_sec
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT
+                 CAST(ts / ? AS INTEGER) * ? as bucket_ts,
+                 AVG(online) as online_fraction,
+                 AVG(downlink_mbps) as downlink_mbps,
+                 AVG(uplink_mbps) as uplink_mbps,
+                 AVG(ping_latency_ms) as ping_latency_ms,
+                 AVG(ping_drop_ratio) as ping_drop_ratio,
+                 AVG(obstruction_fraction) as obstruction_fraction
+               FROM metrics
+               WHERE ts > ?
+               GROUP BY bucket_ts
+               ORDER BY bucket_ts""",
+            (bucket_sec, bucket_sec, cutoff),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_recent_events(limit: int = 50):
     with get_conn() as conn:
         rows = conn.execute(
