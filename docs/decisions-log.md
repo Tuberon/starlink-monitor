@@ -649,3 +649,27 @@ query-параметр (`?hours=abc`) кидав `500 Internal Server Error`
 `/api/history?limit=abc` (не виправлено — поза межами цього завдання),
 але для нового `/api/metrics-chart` додано `try/except` з fallback на
 дефолт.
+
+## Downsampling старих метрик
+
+**Реалізація**: `downsample_old_metrics()` агрегує raw-рядки
+(`metrics`) старші за `DOWNSAMPLE_AFTER_DAYS` (дефолт 3) у
+`DOWNSAMPLE_BUCKET_SEC`-секундні (дефолт 300) середні, окрема таблиця
+`metrics_downsampled`, видаляючи оригінальні детальні рядки.
+Викликається щогодини разом з `prune_old()` (яку теж розширено —
+очищує `metrics_downsampled` за повною `HISTORY_RETENTION_DAYS`-межею).
+
+**Ключове архітектурне рішення**: `get_metrics_chart_data()` тепер
+`UNION ALL` обидві таблиці з тим самим `cutoff = now - period` для
+обох частин запиту — це елегантно уникає потреби явно знати поріг
+downsample у самому query. Де `downsample_old_metrics()` вже перенесла
+дані, там `metrics` для цього періоду просто порожній, і UNION ALL
+природно бере відповідні рядки з `metrics_downsampled` замість них —
+без спеціальної гілки коду типу "якщо період > DOWNSAMPLE_AFTER_DAYS,
+роби інакше".
+
+**Перевірено живим тестом** (найважливіший сценарій): графік за 7
+днів дає **точно ту саму** кількість точок (151) і **нуль** прогалин
+до і після виклику `downsample_old_metrics()` — підтверджує, що
+перехід від raw до downsampled даних на межі cutoff справді
+безшовний, не просто в теорії.

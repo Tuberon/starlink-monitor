@@ -207,12 +207,30 @@ summary-панель speedtest (поточні значення + кнопка �
 дашборд про мережу має лишатись робочим навіть без інтернету, коли
 dish саме offline (CDN-залежність тоді не завантажилась б). Дані —
 `/api/metrics-chart?hours=N` → `db.get_metrics_chart_data()`: SQL
-`GROUP BY` bucket "на льоту" з `metrics` (не окрема downsampled-
-таблиця) — bucket-розмір масштабується залежно від періоду
+`GROUP BY` bucket, `UNION ALL` **обох** таблиць — `metrics` (raw,
+недавні ≤`DOWNSAMPLE_AFTER_DAYS`) і `metrics_downsampled` (старіші,
+вже 5-хвилинні середні). Обидві частини фільтруються тим самим
+`cutoff = now - period`, тому запиту не потрібно явно знати поріг
+downsample — де `downsample_old_metrics()` перенесла дані, там і
+буде читання з `metrics_downsampled`, решта — з raw `metrics`,
+безшовно (перевірено живим тестом: кількість точок графіка і
+відсутність прогалин на межі cutoff не змінюються до/після
+downsampling). bucket-розмір масштабується залежно від періоду
 (`period_sec / 150`), тому 24г і 30д запити повертають приблизно
 однакову кількість точок, довший період не важчий для фронтенду.
 Кожна серія на графіку масштабується під свій власний min/max
 незалежно (без потреби dual-axis для різних одиниць вимірювання).
+
+`downsample_old_metrics()` (щогодини, разом з `prune_old()`) агрегує
+raw-рядки старші за `DOWNSAMPLE_AFTER_DAYS` (дефолт 3) у
+`DOWNSAMPLE_BUCKET_SEC`-секундні (дефолт 300 = 5хв) середні,
+видаляючи оригінальні детальні рядки. `PRIMARY KEY(bucket_ts)` +
+`ON CONFLICT DO NOTHING` — ідемпотентність про всяк випадок (захист
+не мав би бути потрібним, бо raw-рядки видаляються одразу після
+агрегації в тій самій транзакції, але DELETE тут незворотний, тому
+зайвий запобіжник виправданий). `prune_old()` очищує
+`metrics_downsampled` за повною `HISTORY_RETENTION_DAYS`-межею
+аналогічно до `metrics`.
 
 ## Системний WAN-failover (scripts/wan_failover_check.sh)
 

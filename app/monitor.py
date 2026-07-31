@@ -441,6 +441,9 @@ class Watchdog:
             if time.time() - last_prune > 3600:
                 try:
                     db.prune_old()
+                    buckets = db.downsample_old_metrics()
+                    if buckets:
+                        logger.info("Downsampling: агреговано %d bucket-ів старих метрик", buckets)
                 except Exception:
                     logger.exception("Помилка очищення старих записів")
                 last_prune = time.time()

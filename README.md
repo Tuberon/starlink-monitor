@@ -263,6 +263,8 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_OBSTRUCTION_WARN` | `0.05` | поріг попередження про перешкоди (0-1) |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
 | `STARLINK_HISTORY_DAYS` | `30` | скільки днів зберігати історію метрик/подій |
+| `STARLINK_DOWNSAMPLE_AFTER_DAYS` | `3` | агрегувати метрики старші за, днів (менша БД) |
+| `STARLINK_DOWNSAMPLE_BUCKET_SEC` | `300` | розмір bucket для агрегації, сек |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `27` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |

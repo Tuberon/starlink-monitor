@@ -33,6 +33,13 @@ AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "
 
 DB_PATH = os.environ.get("STARLINK_DB_PATH", "/var/lib/starlink-monitor/history.db")
 HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
+# Downsampling: raw-метрики (кожні POLL_INTERVAL_SEC) старші за
+# DOWNSAMPLE_AFTER_DAYS агрегуються в DOWNSAMPLE_BUCKET_SEC-секундні
+# середні (окрема таблиця metrics_downsampled), зменшуючи розмір БД -
+# довгострокові тренди на /stats лишаються видимими (грубіші), лише
+# детальна деталізація старих даних втрачається.
+DOWNSAMPLE_AFTER_DAYS = int(os.environ.get("STARLINK_DOWNSAMPLE_AFTER_DAYS", "3"))
+DOWNSAMPLE_BUCKET_SEC = int(os.environ.get("STARLINK_DOWNSAMPLE_BUCKET_SEC", "300"))
 
 WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")
 WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))

@@ -29,6 +29,8 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_OBSTRUCTION_WARN", "type": "float", "default": "0.05", "label": "Поріг попередження про перешкоди (0-1)"},
     {"key": "STARLINK_AUTO_REBOOT_ON_UPDATE", "type": "bool", "default": "1", "label": "Авто-reboot при готовому оновленні"},
     {"key": "STARLINK_HISTORY_DAYS", "type": "int", "default": "30", "label": "Зберігати історію, днів"},
+    {"key": "STARLINK_DOWNSAMPLE_AFTER_DAYS", "type": "int", "default": "3", "label": "Агрегувати (downsampling) метрики старші за, днів"},
+    {"key": "STARLINK_DOWNSAMPLE_BUCKET_SEC", "type": "int", "default": "300", "label": "Розмір bucket для агрегації, сек"},
     {"key": "STARLINK_WEBUI_PORT", "type": "int", "default": "8080", "label": "Порт веб-інтерфейсу"},
     {"key": "STARLINK_SHUTDOWN_BUTTON_PIN", "type": "int", "default": "27", "label": "GPIO-пін кнопки виключення (0=вимк.)"},
     {"key": "STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "type": "float", "default": "3", "label": "Утримання кнопки перед вимкненням, сек"},
