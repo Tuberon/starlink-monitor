@@ -19,6 +19,13 @@ OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0
 # (подія й далі пишеться в журнал дашборду). Відновлення зв'язку
 # завжди повідомляється, незалежно від тривалості мовчання.
 NOTIFICATIONS_MUTE_AFTER_SEC = int(os.environ.get("STARLINK_NOTIFICATIONS_MUTE_AFTER", "900"))
+# Групування спаму reboot-сповіщень - на відміну від MUTE_AFTER (одна
+# ТРИВАЛА відмова), це про ЧАСТОТУ: REBOOT_SPAM_THRESHOLD+ окремих
+# reboot-сповіщень за REBOOT_SPAM_WINDOW_SEC (флап коротких циклів,
+# кожен проходить MIN_REBOOT_INTERVAL_SEC і тому не приглушується
+# MUTE_AFTER) - призупиняє індивідуальні повідомлення до затишшя.
+REBOOT_SPAM_THRESHOLD = int(os.environ.get("STARLINK_REBOOT_SPAM_THRESHOLD", "3"))
+REBOOT_SPAM_WINDOW_SEC = int(os.environ.get("STARLINK_REBOOT_SPAM_WINDOW_SEC", "1800"))
 
 # При тривалій безперервній недоступності dish кожна watchdog-спроба
 # reboot (кожні MIN_REBOOT_INTERVAL_SEC) і далі пишеться в журнал/БД

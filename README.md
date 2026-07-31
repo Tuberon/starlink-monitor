@@ -120,6 +120,10 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
 - Тиша при недоступності dish довше `STARLINK_NOTIFICATIONS_MUTE_AFTER`
   (15 хв) — Telegram-звіти про auto-reboot призупиняються (журнал і
   далі пишеться), відновлення завжди повідомляється з тривалістю простою
+- Групування частих reboot (флап коротких циклів, не одна тривала
+  відмова — `STARLINK_REBOOT_SPAM_THRESHOLD` (3) за
+  `STARLINK_REBOOT_SPAM_WINDOW_SEC` (30 хв)): одне попередження про
+  групування, далі мовчки рахує до затишшя, потім підсумок
 - Журнал watchdog-спроб reboot зупиняється після `STARLINK_MAX_LOGGED_FAILURES`
   (15) послідовних невдач — сама спроба reboot триває, лише запис
   припиняється, щоб не засмічувати журнал при багатогодинному збої
@@ -259,6 +263,8 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
+| `STARLINK_REBOOT_SPAM_THRESHOLD` | `3` | група reboot-сповіщень: поріг кількості за вікно |
+| `STARLINK_REBOOT_SPAM_WINDOW_SEC` | `1800` | група reboot-сповіщень: вікно часу, сек |
 | `STARLINK_MAX_LOGGED_FAILURES` | `15` | макс. послідовних невдач опитування, що пишуться в журнал/БД |
 | `STARLINK_OBSTRUCTION_WARN` | `0.05` | поріг попередження про перешкоди (0-1) |
 | `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |

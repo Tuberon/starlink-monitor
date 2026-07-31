@@ -46,6 +46,14 @@ class Watchdog:
         # роутера (окремий цикл, без власного dish_id у RouterInfo) до
         # того самого фізичного Mini в таблиці known_devices.
         self.last_known_dish_id = None
+        # Групування спаму reboot-сповіщень: якщо стається кілька
+        # ребутів поспіль за короткий час (флап), кожен окремий
+        # "🔁 перезавантажено" - спам. reboot_notify_ts - timestamps
+        # уже надісланих reboot-сповіщень (не всіх спроб reboot, лише
+        # тих, що дійшли до Telegram) за ковзне вікно.
+        self.reboot_notify_ts = []
+        self.reboot_spam_muted = False
+        self.muted_reboot_count = 0
 
     def _notify(self, text: str):
         """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток
@@ -65,7 +73,53 @@ class Watchdog:
             return False
         return (time.time() - self.first_failure_ts) >= config.NOTIFICATIONS_MUTE_AFTER_SEC
 
+    def _notify_reboot(self, text: str):
+        """Групування спаму reboot-сповіщень - на відміну від
+        _notifications_muted() (приглушує при ОДНІЙ тривалій відмові),
+        це про ЧАСТОТУ: кілька окремих коротких reboot-циклів поспіль
+        (флап), кожен з яких проходить MIN_REBOOT_INTERVAL_SEC і тому
+        не приглушується тим механізмом. Коли за REBOOT_SPAM_WINDOW_SEC
+        назбирались REBOOT_SPAM_THRESHOLD+ такі сповіщення - один раз
+        попереджаємо про групування і замовкаємо до затишшя, коли
+        надсилаємо підсумок (див. _check_reboot_spam_recovery)."""
+        now = time.time()
+        self.reboot_notify_ts = [t for t in self.reboot_notify_ts if now - t < config.REBOOT_SPAM_WINDOW_SEC]
+        self.reboot_notify_ts.append(now)
+
+        if len(self.reboot_notify_ts) < config.REBOOT_SPAM_THRESHOLD:
+            self._notify(text)
+            return
+
+        if not self.reboot_spam_muted:
+            self.reboot_spam_muted = True
+            self.muted_reboot_count = 1
+            window_min = config.REBOOT_SPAM_WINDOW_SEC // 60
+            self._notify(
+                f"⚠️ Часті авто-reboot ({len(self.reboot_notify_ts)} за останні {window_min} хв) — "
+                f"подальші повідомлення про reboot тимчасово згруповано, щоб не спамити"
+            )
+        else:
+            self.muted_reboot_count += 1
+
+    def _check_reboot_spam_recovery(self):
+        """Викликається щоцикл опитування - якщо reboot-флап (див.
+        _notify_reboot) припинився (минуло REBOOT_SPAM_WINDOW_SEC без
+        нового reboot-сповіщення), надсилає підсумок і скидає стан
+        групування, повертаючись до звичайного індивідуального режиму."""
+        if not self.reboot_spam_muted:
+            return
+        if not self.reboot_notify_ts:
+            return
+        if time.time() - self.reboot_notify_ts[-1] < config.REBOOT_SPAM_WINDOW_SEC:
+            return
+        total = self.muted_reboot_count
+        self._notify(f"✅ Часті авто-reboot припинились (усього {total} згруповано)")
+        self.reboot_spam_muted = False
+        self.muted_reboot_count = 0
+        self.reboot_notify_ts = []
+
     def poll_once(self):
+        self._check_reboot_spam_recovery()
         status = self.client.get_status()
         db.insert_metric(status.to_dict())
 
@@ -330,7 +384,7 @@ class Watchdog:
         # спробу негайно, а почекати MIN_REBOOT_INTERVAL_SEC).
         self.last_reboot_ts = now
         if ok:
-            self._notify(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ {component_label} готове: {reason})")
+            self._notify_reboot(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ {component_label} готове: {reason})")
         else:
             self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ {component_label} готове): {msg}")
 
@@ -400,7 +454,7 @@ class Watchdog:
         if ok:
             self.consecutive_failures = 0
             if not self._notifications_muted():
-                self._notify(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
+                self._notify_reboot(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
 
     def run_forever(self):
         db.init_db()
