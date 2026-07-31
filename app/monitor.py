@@ -83,7 +83,9 @@ class Watchdog:
             self._notify_first_dish_connection(status)
             if status.dish_id:
                 self.last_known_dish_id = status.dish_id
-            db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
+            real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
+            if real_change:
+                self._notify(f"🔄 Прошивка тарілки оновлена: {old_version} → {status.software_version}")
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
@@ -234,7 +236,11 @@ class Watchdog:
                 logger.debug("Роутер недоступний: %s", info.error)
                 return
             if self.last_known_dish_id:
-                db.upsert_known_device_router(self.last_known_dish_id, info.hardware_version, info.software_version)
+                real_change, old_version = db.upsert_known_device_router(
+                    self.last_known_dish_id, info.hardware_version, info.software_version
+                )
+                if real_change:
+                    self._notify(f"🔄 Прошивка роутера оновлена: {old_version} → {info.software_version}")
             self._log_router_update_state_change(info)
             self._log_router_alerts_change(info)
             self._maybe_reboot_for_router_update(info)

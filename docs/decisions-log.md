@@ -604,3 +604,24 @@ starlink_grpc = None`), розрахований саме на цей шлях.
 `enable`/`start` автоматично з `install.sh`. Ліцензія файлу
 залишається окремою (upstream-автора), не MIT цього репозиторію —
 явно зазначено в README.
+
+## Сповіщення про зміну версії прошивки dish/router
+
+**Реалізація**: `upsert_known_device_dish()`/`upsert_known_device_router()`
+вже обчислювали `version_changed` внутрішньо (для `*_updated_ts` полів),
+просто не повертали його назовні. Змінено повертати `(real_change,
+old_version)` — `monitor.py` надсилає Telegram-сповіщення, коли
+`real_change=True`.
+
+**Знайдений і виправлений edge case**: перша версія логіки вважала
+"зміною" будь-яку ситуацію, коли рядок `known_devices` уже існував
+(`existing is not None`), незалежно від того, чи конкретне ПОЛЕ
+(`dish_software_version`/`router_software_version`) було раніше `NULL`.
+Оскільки dish і router опитуються в різних циклах і можуть створити
+спільний рядок `known_devices` першим (за `dish_id`), перше заповнення
+"свого" поля (наприклад router вперше отримує `router_software_version`,
+хоча рядок уже існував через dish) хибно рахувалось "зміною версії з
+None". Виправлено: `real_change` тепер `old_version is not None and
+old_version != new_version` — перевіряє саме ПОЛЕ, не факт існування
+рядка. Перевірено живим тестом обох симетричних сценаріїв (dish
+першим/router першим).

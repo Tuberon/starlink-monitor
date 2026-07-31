@@ -385,15 +385,21 @@ def upsert_known_device_dish(dish_id: str, hardware_version: str, software_versi
     dish_software_updated_ts оновлюється лише коли software_version реально
     змінилась відносно попереднього запису (не при кожному опитуванні) -
     так /id у Telegram-боті може показати, коли саме відбулось останнє
-    встановлене оновлення, а не час останнього опитування."""
+    встановлене оновлення, а не час останнього опитування.
+
+    Повертає (real_change, old_version): real_change=True лише коли
+    dish_id вже був відомий РАНІШЕ і версія відрізняється (перший
+    запис для нового dish_id - НЕ "зміна", просто перше знайомство)."""
     if not dish_id:
-        return
+        return False, None
     now = time.time()
     with get_conn() as conn:
         existing = conn.execute(
             "SELECT dish_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
         ).fetchone()
-        version_changed = existing is None or existing["dish_software_version"] != software_version
+        old_version = existing["dish_software_version"] if existing else None
+        version_changed = existing is None or old_version != software_version
+        real_change = old_version is not None and old_version != software_version
 
         conn.execute(
             """INSERT INTO known_devices
@@ -409,6 +415,7 @@ def upsert_known_device_dish(dish_id: str, hardware_version: str, software_versi
             (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
              int(version_changed)),
         )
+    return real_change, old_version
 
 
 def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str):
@@ -416,15 +423,19 @@ def upsert_known_device_router(dish_id: str, hardware_version: str, software_ver
     того самого фізичного Mini. Прив'язується до того ж dish_id - dish і
     router опитуються в різних циклах, тому оновлюються окремо; якщо
     запису для dish_id ще немає (router опитався раніше за dish), рядок
-    створюється з порожніми dish-полями."""
+    створюється з порожніми dish-полями.
+
+    Повертає (real_change, old_version) - див. upsert_known_device_dish."""
     if not dish_id:
-        return
+        return False, None
     now = time.time()
     with get_conn() as conn:
         existing = conn.execute(
             "SELECT router_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
         ).fetchone()
-        version_changed = existing is None or existing["router_software_version"] != software_version
+        old_version = existing["router_software_version"] if existing else None
+        version_changed = existing is None or old_version != software_version
+        real_change = old_version is not None and old_version != software_version
 
         conn.execute(
             """INSERT INTO known_devices
@@ -440,6 +451,7 @@ def upsert_known_device_router(dish_id: str, hardware_version: str, software_ver
             (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
              int(version_changed)),
         )
+    return real_change, old_version
 
 
 def get_known_device(dish_id: str):

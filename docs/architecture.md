@@ -119,6 +119,11 @@ WAL journal_mode — паралельне читання (webui) і запис (
 - `settings` — runtime key-value (auto_reboot_enabled, telegram config, known_dish_ids)
 - `known_devices` — по одному рядку на dish_id: версії ПЗ dish/router
   і час останньої зміни кожної. Джерело для `/id <dish_id>` у Telegram-боті.
+  `upsert_known_device_dish()`/`upsert_known_device_router()` повертають
+  `(real_change, old_version)` — `real_change=True` лише коли версія
+  реально відрізняється від РАНІШЕ ВІДОМОГО значення (не `None`, не
+  перше знайомство з пристроєм/полем) — `monitor.py` надсилає Telegram
+  "🔄 Прошивка тарілки/роутера оновлена: X → Y" саме на цій умові.
 
 Усі таблиці мають автоматичну міграцію колонок при `init_db()` —
 безпечно для вже існуючих БД при оновленні коду.
