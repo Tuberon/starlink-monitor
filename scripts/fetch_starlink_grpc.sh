@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Завантажує starlink_grpc.py з upstream community-репозиторію
+# ОПЦІЙНИЙ інструмент: оновлює app/vendor/starlink_grpc.py до
+# найновішої версії з upstream community-репозиторію
 # sparky8512/starlink-grpc-tools (https://github.com/sparky8512/starlink-grpc-tools).
+#
+# starlink_grpc.py вже включений у проєкт (app/vendor/) для
+# відтворюваності збірки - install.sh НЕ викликає цей скрипт
+# автоматично. Запускай вручну лише якщо свідомо хочеш оновити до
+# найновішої upstream-версії.
 #
 # ПРИМІТКА: поточна версія starlink_grpc.py (гілка main) сама імпортує
 # на верхньому рівні пакет yagrc (gRPC reflection client) - без нього
@@ -11,10 +17,10 @@
 # API dish. reboot_dish() у нашому клієнті все одно викликає grpcurl
 # напряму як subprocess, не залежить від starlink_grpc.
 #
-# Можна запускати вручну, або автоматично через systemd-сервіс
-# starlink-grpc-fetch.service (чекає на WiFi-з'єднання зі Starlink Mini
-# і рестартує основні сервіси після успішного завантаження) —
-# див. scripts/install.sh.
+# Можна запускати вручну, або через systemd-сервіс
+# starlink-grpc-fetch.service (встановлюється, але НЕ enabled/started
+# автоматично — лише `sudo systemctl start starlink-grpc-fetch.service`
+# за бажанням) — див. scripts/install.sh.
 #
 # Опції:
 #   --wait-for-dish   Чекати доступності dish замість негайного виходу з помилкою

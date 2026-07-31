@@ -31,6 +31,7 @@
 | `speedtest_runner.py` | Періодичний реальний speedtest (вимкнено за замовчуванням) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
+| `vendor/starlink_grpc.py` | Vendored (не наш код) — gRPC-хелпери з sparky8512/starlink-grpc-tools, окрема ліцензія |
 
 ## `static/` — фронтенд
 
@@ -60,7 +61,7 @@
 | `starlink-webui.service` | Flask dashboard |
 | `starlink-shutdown-button.service` | Слухає GPIO-кнопку виключення |
 | `starlink-display.service` | Фізичний TFT-дисплей |
-| `starlink-grpc-fetch.service` | Одноразово тягне `starlink_grpc.py` при старті |
+| `starlink-grpc-fetch.service` | Опційне ручне оновлення vendored `starlink_grpc.py` (не автоматичне) |
 | `starlink-wan-failover.service`/`.timer` | Періодична перевірка інтернету через wlan0 |
 | `starlink-monitor-healthcheck.service`/`.timer` | Раз/хв опитує `/healthz`, force-restart при зависанні |
 
@@ -71,7 +72,7 @@
 | `install.sh` | Повне встановлення (системні пакети, venv, sudo-права, systemd) |
 | `update.sh` | Оновлення вже встановленого проєкту |
 | `uninstall.sh` | Повне видалення |
-| `fetch_starlink_grpc.sh` | Завантаження `starlink_grpc.py` (чекає dish WiFi) |
+| `fetch_starlink_grpc.sh` | Опційне оновлення vendored `starlink_grpc.py` до найновішої upstream-версії |
 | `wan_failover_check.sh` | Перевірка інтернету через wlan0, коригування route-metric |
 | `watchdog_healthcheck.sh` | Перевірка `/healthz`, force-restart при не-200 |
 

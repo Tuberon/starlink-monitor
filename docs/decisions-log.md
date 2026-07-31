@@ -582,3 +582,25 @@ poweroff` на довге натискання) перенесли з окрем
 echo "Storage=volatile" | sudo tee -a /etc/systemd/journald.conf
 sudo systemctl restart systemd-journald
 ```
+
+## starlink_grpc.py винесено як vendor-файл для відтворюваності збірки
+
+**Було**: `install.sh` при кожному першому встановленні запускав
+`starlink-grpc-fetch.service` у фоні, який динамічно завантажував
+`starlink_grpc.py` з GitHub (sparky8512/starlink-grpc-tools) при
+старті. Це означало: (а) встановлення залежало від доступності
+інтернету саме в той момент, (б) різні інсталяції могли отримати
+різні версії файлу залежно від того, коли саме встановлювались, (в)
+upstream міг випустити несумісну зміну без нашого відома/тестування.
+
+**Стало**: реальний файл (перевірено — синтаксично валідний, реально
+імпортується з `grpc`+`yagrc`) завантажено один раз і покладено в
+`app/vendor/starlink_grpc.py` як частину архіву проєкту.
+`starlink_client.py` не потребував жодних змін — уже мав graceful
+fallback (`from app.vendor import starlink_grpc` / `except ImportError:
+starlink_grpc = None`), розрахований саме на цей шлях.
+`starlink-grpc-fetch.service` і далі встановлюється (для опційного
+ручного оновлення до найновішої upstream-версії), але більше не
+`enable`/`start` автоматично з `install.sh`. Ліцензія файлу
+залишається окремою (upstream-автора), не MIT цього репозиторію —
+явно зазначено в README.

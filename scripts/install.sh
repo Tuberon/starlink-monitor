@@ -219,7 +219,13 @@ systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
 systemctl enable --now starlink-shutdown-button.service
 systemctl enable --now starlink-display.service
-systemctl enable starlink-grpc-fetch.service
+# starlink-grpc-fetch.service НЕ enable/start автоматично -
+# starlink_grpc.py тепер vendored (app/vendor/starlink_grpc.py, вже в
+# архіві проєкту) для відтворюваності збірки, не завантажується
+# динамічно з інтернету при встановленні. Unit-файл встановлюється
+# (вище) лише для ручного, опційного оновлення vendored копії до
+# найновішої upstream-версії: `sudo systemctl start
+# starlink-grpc-fetch.service`.
 # .timer вмикається й запускається одразу (не .service - той лише
 # oneshot, запускається таймером за розкладом, не при завантаженні).
 systemctl enable --now starlink-wan-failover.timer
@@ -245,8 +251,6 @@ if [[ "$MODE" == "update" ]]; then
   else
     echo "==> Змін не виявлено — сервіси не перезапускаю"
   fi
-else
-  systemctl start starlink-grpc-fetch.service &
 fi
 
 if [[ "$MODE" == "install" ]]; then
@@ -355,10 +359,10 @@ echo ""
 echo " 1. Підключіть wlan0 до WiFi Starlink Mini (якщо ще не підключений):"
 echo "      sudo nmcli device wifi connect \"<SSID Starlink>\" password \"<пароль>\" ifname wlan0"
 echo ""
-echo " 2. starlink_grpc.py завантажиться АВТОМАТИЧНО, щойно dish стане доступним"
-echo "    (сервіс starlink-grpc-fetch.service вже запущений у фоні й чекає)."
-echo "    Перевірити прогрес:"
-echo "      journalctl -u starlink-grpc-fetch.service -f"
+echo " 2. starlink_grpc.py вже включений у проєкт (app/vendor/) - нічого"
+echo "    завантажувати не треба. Щоб оновити до найновішої upstream-"
+echo "    версії (опційно, не обов'язково): sudo systemctl start"
+echo "    starlink-grpc-fetch.service"
 echo ""
 PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 if [[ -z "$PI_IP" ]]; then

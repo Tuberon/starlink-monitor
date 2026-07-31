@@ -1,5 +1,5 @@
 [Unit]
-Description=Starlink Monitor - Auto-fetch starlink_grpc.py (one-shot, waits for dish WiFi)
+Description=Starlink Monitor - Оновити vendored starlink_grpc.py (опційно, не enabled за замовчуванням)
 After=network-online.target
 Wants=network-online.target
 # Не блокує основні сервіси - вони й так толерантні до відсутності

@@ -235,9 +235,7 @@ sudo bash /opt/starlink-monitor/scripts/update.sh
 
 **✅ Після встановлення:**
 1. `sudo nmcli device wifi connect "<SSID>" password "<пароль>" ifname wlan0`
-2. `starlink_grpc.py` завантажиться автоматично; прогрес:
-   `journalctl -u starlink-grpc-fetch.service -f`
-3. Дашборд: `http://<ip-пристрою>:8080`
+2. Дашборд: `http://<ip-пристрою>:8080`
 
 **🗑️ Повне видалення:**
 ```bash
@@ -296,7 +294,10 @@ sudo systemctl restart starlink-monitor.service starlink-webui.service
 © 2026 JunioR. Розповсюджується під ліцензією MIT — див. файл
 [`LICENSE`](./LICENSE).
 
-Проєкт використовує `starlink_grpc.py` зі стороннього репозиторію
-[sparky8512/starlink-grpc-tools](https://github.com/sparky8512/starlink-grpc-tools),
-який завантажується окремо (`scripts/fetch_starlink_grpc.sh`) і не входить
-до складу цього репозиторію — його ліцензійні умови визначає власний автор.
+Проєкт включає (vendored, `app/vendor/starlink_grpc.py`) файл зі
+стороннього репозиторію
+[sparky8512/starlink-grpc-tools](https://github.com/sparky8512/starlink-grpc-tools)
+для відтворюваності збірки (не завантажується динамічно при
+встановленні) — **його ліцензійні умови визначає власний автор**,
+окремо від MIT цього репозиторію. Оновлення до найновішої
+upstream-версії — опційно, `scripts/fetch_starlink_grpc.sh`.

@@ -37,6 +37,19 @@ router — різні enum з різними назвами станів).
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 
+`app/vendor/starlink_grpc.py` — **vendored** (фізично включений в архів
+проєкту, не в таблиці вище, бо не наш код) файл зі стороннього
+репозиторію sparky8512/starlink-grpc-tools, для відтворюваності
+збірки: install.sh НЕ завантажує його динамічно з інтернету при
+встановленні (раніше завантажував — `starlink-grpc-fetch.service`
+через systemd при кожному першому встановленні; тепер той сервіс
+встановлюється, але НЕ enabled/started автоматично, лише опційний
+ручний виклик для оновлення до найновішої upstream-версії).
+`starlink_client.py` імпортує через `from app.vendor import
+starlink_grpc` з graceful fallback (`starlink_grpc = None` при
+відсутньому файлі — код і далі коректно працює, лише
+`DishStatus(online=False, error="starlink_grpc module missing")`).
+
 ## Автоматичний reboot dish/router — умови спрацювання
 
 1. **Watchdog**: dish не відповідає N опитувань поспіль
@@ -60,7 +73,7 @@ router — різні enum з різними назвами станів).
 | `starlink-monitor.service` | Watchdog + Telegram-бот (потік) | `NoNewPrivileges=true`, `AmbientCapabilities=CAP_NET_RAW` (SO_BINDTODEVICE), `CapabilityBoundingSet` звужено до цієї capability |
 | `starlink-webui.service` | Flask dashboard | БЕЗ `NoNewPrivileges` (потрібен sudo для reboot/poweroff Pi), `AmbientCapabilities=CAP_NET_RAW`, `CapabilityBoundingSet` НЕ звужено (sudo systemctl reboot успадкував би обмеження), `ReadWritePaths` включає `signature_phrases.txt` |
 | `starlink-shutdown-button.service` | Слухає GPIO-кнопку виключення | БЕЗ `NoNewPrivileges` (sudo poweroff), `Restart=on-failure` (не `always` — чистий вихід при вимкненій кнопці не збій) |
-| `starlink-grpc-fetch.service` | Одноразово тягне `starlink_grpc.py` при старті | — |
+| `starlink-grpc-fetch.service` | Опційне ручне оновлення vendored `starlink_grpc.py` до найновішої upstream-версії — НЕ enabled/started автоматично (файл vendored, `app/vendor/`) | — |
 | `starlink-wan-failover.service`/`.timer` | Періодична (кожні ~20с) перевірка інтернету через wlan0, коригування route-metric | root-сервіс; `CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW` — навіть root тут без решти системних можливостей |
 | `starlink-monitor-healthcheck.service`/`.timer` | Раз/хв опитує `/healthz`, force-restart `starlink-monitor.service` при не-200 (deadlock/livelock, не crash — `Restart=always` цього не бачить) | root-сервіс (потрібен для `systemctl restart` іншого юніта); `NoNewPrivileges=true`, `ProtectSystem=strict` |
 | `starlink-display.service` | Фізичний TFT-дисплей (ST7789, SPI), вимкнено за замовчуванням | `SupplementaryGroups=gpio spi`; БЕЗ `NoNewPrivileges` (кнопка виключення обробляється тут же, потребує `sudo poweroff` — реальний баг був знайдений і виправлений: старий коментар помилково лишав `NoNewPrivileges=true` вже після того, як обробку кнопки перенесли сюди) |
