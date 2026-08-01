@@ -84,14 +84,14 @@ async function loadCharts(hours) {
     drawLineChart(el('chartThroughput'), [
       { data: data.map(d => d.downlink_mbps), color: '#5ee6c4' },
       { data: data.map(d => d.uplink_mbps), color: '#ffb454' },
-    ]);
+    ], { beginAtZero: true });
     drawLineChart(el('chartPing'), [
       { data: data.map(d => d.ping_latency_ms), color: '#5ee6c4' },
       { data: data.map(d => d.ping_drop_ratio != null ? d.ping_drop_ratio * 100 : null), color: '#ff6b6b' },
     ]);
     drawLineChart(el('chartObstruction'), [
       { data: data.map(d => d.obstruction_fraction != null ? d.obstruction_fraction * 100 : null), color: '#ffb454' },
-    ]);
+    ], { beginAtZero: true });
   } catch (e) {
     console.error('Помилка завантаження графіків:', e);
   }

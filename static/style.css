@@ -257,7 +257,7 @@
   .chart-legend span{display:flex; align-items:center; gap:6px;}
   .chart-legend-dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
 
-  canvas{max-height:154px;}
+  canvas{width:100%; max-height:154px; display:block;}
 
   /* ---- events log ---- */
   .log{font-family:var(--font-mono); font-size:0.78rem;}

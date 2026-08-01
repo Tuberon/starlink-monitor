@@ -239,7 +239,7 @@ async function refreshHistory() {
     drawLineChart(el('throughputChart'), [
       { data: rows.map(r => r.downlink_mbps), color: '#5ee6c4' },
       { data: rows.map(r => r.uplink_mbps), color: '#7aa2ff' },
-    ]);
+    ], { beginAtZero: true });
   } catch (e) {
     console.error('history refresh failed', e);
   }
