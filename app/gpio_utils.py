@@ -5,9 +5,10 @@
 виключення: коротке натискання перемикає підсвітку, довге вимикає Pi).
 """
 import os
+from typing import Any, Callable, Optional
 
 
-def find_gpio_chip():
+def find_gpio_chip() -> str:
     """На різних версіях Raspberry Pi OS/ядра основний GPIO-чіп може
     бути gpiochip0 або інший номер (напр. після додавання HAT-плат,
     які теж реєструють свої chip'и). Перебираємо перші кілька."""
@@ -18,7 +19,9 @@ def find_gpio_chip():
     return "/dev/gpiochip0"
 
 
-def _init_line_v2(gpiod, chip_path, pin, consumer):
+def _init_line_v2(
+    gpiod: Any, chip_path: str, pin: int, consumer: str
+) -> tuple[Callable[[], int], Callable[[], None]]:
     """gpiod >= 2.0: gpiod.request_lines() з LineSettings, значення
     читається через request.get_value(pin) (повертає Value.ACTIVE/INACTIVE,
     не 0/1 як у v1)."""
@@ -30,33 +33,35 @@ def _init_line_v2(gpiod, chip_path, pin, consumer):
         config={pin: gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP)},
     )
 
-    def get_value():
+    def get_value() -> int:
         from gpiod.line import Value
         return 0 if request.get_value(pin) == Value.INACTIVE else 1
 
-    def release():
+    def release() -> None:
         request.release()
 
     return get_value, release
 
 
-def _init_line_v1(gpiod, chip_path, pin, consumer):
+def _init_line_v1(
+    gpiod: Any, chip_path: str, pin: int, consumer: str
+) -> tuple[Callable[[], int], Callable[[], None]]:
     """gpiod < 2.0 (застарілий API): chip.get_line() + line.request()."""
     chip = gpiod.Chip(chip_path)
     line = chip.get_line(pin)
     line.request(consumer=consumer, type=gpiod.LINE_REQ_DIR_IN,
                  flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
 
-    def get_value():
+    def get_value() -> int:
         return line.get_value()
 
-    def release():
+    def release() -> None:
         line.release()
 
     return get_value, release
 
 
-def open_input_line(pin: int, consumer: str):
+def open_input_line(pin: int, consumer: str) -> tuple[Callable[[], int], Callable[[], None]]:
     """Відкриває GPIO-пін як цифровий вхід з pull-up (сумісно з gpiod
     v1 і v2). Повертає (get_value, release) або кидає виняток, якщо
     gpiod не встановлено чи ініціалізація провалилась - виклик має
@@ -92,12 +97,12 @@ class ButtonPressTracker:
     display.py (short_press -> підсвітка, long_press -> shutdown) -
     та сама фізична кнопка, дві різні дії залежно від тривалості.
     """
-    def __init__(self, hold_sec: float):
+    def __init__(self, hold_sec: float) -> None:
         self.hold_sec = hold_sec
-        self._pressed_since = None
+        self._pressed_since: Optional[float] = None
         self._triggered = False
 
-    def poll(self, value, now: float = None):
+    def poll(self, value: int, now: Optional[float] = None) -> Optional[str]:
         import time as _time
         now = now if now is not None else _time.time()
         is_pressed = (value == 0)

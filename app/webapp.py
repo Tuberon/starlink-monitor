@@ -5,6 +5,7 @@ import subprocess
 import time
 
 from flask import Flask, jsonify, render_template, request
+from flask.typing import ResponseReturnValue
 
 from app import config, config_editor, db, system_metrics, telegram_notify
 from app.starlink_client import StarlinkClient
@@ -42,22 +43,22 @@ app.jinja_env.globals["static_v"] = _static_v
 
 
 @app.route("/")
-def index():
+def index() -> ResponseReturnValue:
     return render_template("index.html")
 
 
 @app.route("/settings")
-def settings_page():
+def settings_page() -> ResponseReturnValue:
     return render_template("settings.html")
 
 
 @app.route("/stats")
-def stats_page():
+def stats_page() -> ResponseReturnValue:
     return render_template("stats.html")
 
 
 @app.route("/healthz")
-def healthz():
+def healthz() -> ResponseReturnValue:
     """Легка перевірка стану для зовнішнього моніторингу (UptimeRobot тощо):
     (1) БД доступна для читання/запису, (2) watchdog реально опитує dish
     (останній запис метрики не старіший за 3 цикли опитування - якщо
@@ -96,20 +97,20 @@ def healthz():
 
 
 @app.route("/api/status")
-def api_status():
+def api_status() -> ResponseReturnValue:
     latest = db.get_latest_metric()
     uptime_pct = db.uptime_stats_24h()
     return jsonify({"latest": latest, "uptime_24h_pct": uptime_pct})
 
 
 @app.route("/api/history")
-def api_history():
+def api_history() -> ResponseReturnValue:
     limit = min(int(request.args.get("limit", 500)), 5000)
     return jsonify(db.get_recent_metrics(limit))
 
 
 @app.route("/api/metrics-chart")
-def api_metrics_chart():
+def api_metrics_chart() -> ResponseReturnValue:
     try:
         hours = float(request.args.get("hours", 24))
     except (TypeError, ValueError):
@@ -119,7 +120,7 @@ def api_metrics_chart():
 
 
 @app.route("/api/speedtest-history")
-def api_speedtest_history():
+def api_speedtest_history() -> ResponseReturnValue:
     limit = min(int(request.args.get("limit", 50)), 500)
     return jsonify({
         "results": db.get_recent_speedtest_results(limit),
@@ -129,7 +130,7 @@ def api_speedtest_history():
 
 
 @app.route("/api/speedtest-run", methods=["POST"])
-def api_speedtest_run():
+def api_speedtest_run() -> ResponseReturnValue:
     """Ручний одноразовий speedtest на вимогу користувача - виконується
     синхронно (10-30с), бо це усвідомлена дія користувача, який готовий
     почекати на результат, а не фоновий цикл, що не повинен блокувати
@@ -141,24 +142,24 @@ def api_speedtest_run():
 
 
 @app.route("/api/events")
-def api_events():
+def api_events() -> ResponseReturnValue:
     limit = min(int(request.args.get("limit", 30)), 500)
     return jsonify(db.get_recent_events(limit))
 
 
 @app.route("/api/system-status")
-def api_system_status():
+def api_system_status() -> ResponseReturnValue:
     latest = db.get_latest_system_metric()
     return jsonify({"latest": latest, "apt": system_metrics.get_apt_updates_info()})
 
 
 @app.route("/api/router-status")
-def api_router_status():
+def api_router_status() -> ResponseReturnValue:
     return jsonify({"latest": db.get_router_status()})
 
 
 @app.route("/api/reboot-dish", methods=["POST"])
-def api_reboot_dish():
+def api_reboot_dish() -> ResponseReturnValue:
     ok, msg = client.reboot_dish()
     db.insert_event("dish_reboot", f"Ручний reboot через веб-інтерфейс: {msg}", success=ok)
     if ok:
@@ -169,7 +170,7 @@ def api_reboot_dish():
 
 
 @app.route("/api/check-updates", methods=["POST"])
-def api_check_updates():
+def api_check_updates() -> ResponseReturnValue:
     """
     Ручна перевірка стану оновлень. ВАЖЛИВО: локальний gRPC API dish/router
     не має команди "примусово перевірити оновлення в хмарі SpaceX" — це
@@ -213,7 +214,7 @@ def api_check_updates():
 
 
 @app.route("/api/config")
-def api_config():
+def api_config() -> ResponseReturnValue:
     """Не чутливі налаштування — для відображення на дашборді."""
     return jsonify({
         "poll_interval_sec": config.POLL_INTERVAL_SEC,
@@ -227,7 +228,7 @@ def api_config():
 
 
 @app.route("/api/auto-reboot", methods=["POST"])
-def api_set_auto_reboot():
+def api_set_auto_reboot() -> ResponseReturnValue:
     """Вмикає/вимикає автоматичний reboot dish/router при готовому
     оновленні. Зберігається в БД (не в env-файлі), тож застосовується
     одразу, без перезапуску сервісу."""
@@ -243,7 +244,7 @@ def api_set_auto_reboot():
 
 
 @app.route("/api/telegram-config")
-def api_get_telegram_config():
+def api_get_telegram_config() -> ResponseReturnValue:
     """Токен повертається лише замаскованим (щоб не показувати secret
     у відкритому вигляді в мережі/консолі браузера), крапка входу для
     перевірки, чи він взагалі заданий."""
@@ -260,7 +261,7 @@ def api_get_telegram_config():
 
 
 @app.route("/api/telegram-config", methods=["POST"])
-def api_set_telegram_config():
+def api_set_telegram_config() -> ResponseReturnValue:
     payload = request.get_json(silent=True) or {}
     token = payload.get("token")
     chat_ids_raw = payload.get("chat_ids")
@@ -283,7 +284,7 @@ def api_set_telegram_config():
 
 
 @app.route("/api/telegram-test", methods=["POST"])
-def api_telegram_test():
+def api_telegram_test() -> ResponseReturnValue:
     ok, msg = telegram_notify.test_connection()
     if ok:
         send_ok, send_msg = telegram_notify.send_message(
@@ -294,7 +295,7 @@ def api_telegram_test():
 
 
 @app.route("/api/signature-phrases")
-def api_get_signature_phrases():
+def api_get_signature_phrases() -> ResponseReturnValue:
     return jsonify({
         "text": telegram_notify.get_signature_phrases_text(),
         "enabled": telegram_notify.get_signature_phrases_enabled(),
@@ -302,7 +303,7 @@ def api_get_signature_phrases():
 
 
 @app.route("/api/signature-phrases", methods=["POST"])
-def api_set_signature_phrases():
+def api_set_signature_phrases() -> ResponseReturnValue:
     payload = request.get_json(silent=True) or {}
     text = payload.get("text", "")
     ok, msg = telegram_notify.set_signature_phrases_text(text)
@@ -311,7 +312,7 @@ def api_set_signature_phrases():
 
 
 @app.route("/api/signature-phrases-enabled", methods=["POST"])
-def api_set_signature_phrases_enabled():
+def api_set_signature_phrases_enabled() -> ResponseReturnValue:
     payload = request.get_json(silent=True) or {}
     enabled = bool(payload.get("enabled"))
     telegram_notify.set_signature_phrases_enabled(enabled)
@@ -327,7 +328,7 @@ BACKUP_FORMAT_VERSION = 2
 
 
 @app.route("/api/settings-backup")
-def api_settings_backup():
+def api_settings_backup() -> ResponseReturnValue:
     """Повертає всі налаштування (Telegram config, фрази підпису,
     auto-reboot, перевизначені параметри app/config.py) одним JSON-файлом
     для завантаження. Bot token включається у відкритому вигляді - файл
@@ -356,7 +357,7 @@ def api_settings_backup():
 
 
 @app.route("/api/settings-restore", methods=["POST"])
-def api_settings_restore():
+def api_settings_restore() -> ResponseReturnValue:
     """Відновлює налаштування з JSON, отриманого через /api/settings-backup.
     Приймає лише відомі поля - невідомі/сторонні ключі ігноруються.
     env_params (параметри app/config.py) записуються в env-файл так само,
@@ -405,12 +406,12 @@ def api_settings_restore():
 
 
 @app.route("/api/env-config")
-def api_get_env_config():
+def api_get_env_config() -> ResponseReturnValue:
     return jsonify({"params": config_editor.read_current_values()})
 
 
 @app.route("/api/env-config", methods=["POST"])
-def api_set_env_config():
+def api_set_env_config() -> ResponseReturnValue:
     payload = request.get_json(silent=True) or {}
     values = payload.get("values", {})
     ok, msg = config_editor.save_values(values)
@@ -419,7 +420,7 @@ def api_set_env_config():
 
 
 @app.route("/api/env-config-restart", methods=["POST"])
-def api_restart_after_env_change():
+def api_restart_after_env_change() -> ResponseReturnValue:
     """Перезапускає starlink-monitor.service і starlink-webui.service, щоб
     застосувати щойно змінені env-параметри (читаються один раз при старті).
     webui.service перезапускає й самого себе - відповідь клієнту може не
@@ -430,7 +431,7 @@ def api_restart_after_env_change():
     return jsonify({"success": ok1 and ok2, "message": f"monitor: {msg1}; webui: {msg2}"})
 
 
-def _run_system_command(cmd: list) -> tuple:
+def _run_system_command(cmd: list[str]) -> tuple[bool, str]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
@@ -443,8 +444,8 @@ def _run_system_command(cmd: list) -> tuple:
         return False, str(e)
 
 
-def _execute_pi_power_action(cmd: list, event_kind: str, event_label: str,
-                              success_text: str, fail_verb: str) -> tuple:
+def _execute_pi_power_action(cmd: list[str], event_kind: str, event_label: str,
+                              success_text: str, fail_verb: str) -> tuple[bool, str]:
     """Спільна логіка для system-reboot/system-shutdown: виконати команду,
     записати подію в журнал, надіслати Telegram-сповіщення про результат."""
     ok, msg = _run_system_command(cmd)
@@ -457,7 +458,7 @@ def _execute_pi_power_action(cmd: list, event_kind: str, event_label: str,
 
 
 @app.route("/api/system-reboot", methods=["POST"])
-def api_system_reboot():
+def api_system_reboot() -> ResponseReturnValue:
     ok, msg = _execute_pi_power_action(
         ["sudo", "systemctl", "reboot"], "pi_reboot", "перезавантаження",
         "🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс", "перезавантажити",
@@ -466,7 +467,7 @@ def api_system_reboot():
 
 
 @app.route("/api/system-shutdown", methods=["POST"])
-def api_system_shutdown():
+def api_system_shutdown() -> ResponseReturnValue:
     ok, msg = _execute_pi_power_action(
         ["sudo", "systemctl", "poweroff"], "pi_shutdown", "виключення",
         "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "вимкнути",
@@ -474,7 +475,7 @@ def api_system_shutdown():
     return jsonify({"success": ok, "message": msg})
 
 
-def main():
+def main() -> None:
     db.init_db()
     app.run(host=config.WEBUI_HOST, port=config.WEBUI_PORT)
 

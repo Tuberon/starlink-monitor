@@ -28,7 +28,7 @@ logger = logging.getLogger("shutdown_button")
 POLL_INTERVAL_SEC = 0.1  # як часто перевіряти стан піна під час очікування
 
 
-def watch_button():
+def watch_button() -> None:
     pin = config.SHUTDOWN_BUTTON_GPIO_PIN
     if not pin or pin <= 0:
         logger.info("SHUTDOWN_BUTTON_GPIO_PIN не налаштовано (0) - кнопка вимкнена, завершення")
@@ -78,7 +78,7 @@ def watch_button():
             pass
 
 
-def _trigger_shutdown(pin: int):
+def _trigger_shutdown(pin: int) -> None:
     logger.warning("Кнопка виключення утримана %.1fс на GPIO%d - виконую poweroff", config.SHUTDOWN_BUTTON_HOLD_SEC, pin)
     try:
         db.init_db()
@@ -97,7 +97,7 @@ def _trigger_shutdown(pin: int):
         logger.error("Не вдалося виконати poweroff: %s", e)
 
 
-def main():
+def main() -> None:
     watch_button()
 
 

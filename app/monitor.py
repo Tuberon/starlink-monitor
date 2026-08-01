@@ -9,12 +9,13 @@ import json
 import logging
 import threading
 import time
+from typing import Optional
 
 import psutil
 
 from app import config, db, telegram_notify
 from app.labels import ALERT_LABELS, ROUTER_ALERT_LABELS, ROUTER_UPDATE_STATE_LABELS, UPDATE_STATE_LABELS
-from app.starlink_client import StarlinkClient
+from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
 
 logging.basicConfig(
@@ -25,7 +26,7 @@ logger = logging.getLogger("monitor")
 
 
 class Watchdog:
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
         self.last_reboot_ts = 0.0
@@ -34,28 +35,28 @@ class Watchdog:
         # Telegram-сповіщення про auto-reboot при тривалій (>15 хв, за
         # замовчуванням) відсутності WiFi Starlink - події й далі пишуться
         # в журнал дашборду, лише Telegram-звіти призупиняються.
-        self.first_failure_ts = None
+        self.first_failure_ts: Optional[float] = None
         # Попередні значення для детекції змін стану оновлення/попереджень.
         # None означає "ще не бачили жодного online-статусу" - перший
         # реальний статус теж логуємо, якщо він не порожній/не IDLE-без-алертів.
-        self.prev_update_state = None
-        self.prev_alerts = None
-        self.prev_router_update_state = None
-        self.prev_router_alerts = None
+        self.prev_update_state: Optional[str] = None
+        self.prev_alerts: Optional[set[str]] = None
+        self.prev_router_update_state: Optional[str] = None
+        self.prev_router_alerts: Optional[set[str]] = None
         # Останній відомий dish_id - потрібен, щоб прив'язати опитування
         # роутера (окремий цикл, без власного dish_id у RouterInfo) до
         # того самого фізичного Mini в таблиці known_devices.
-        self.last_known_dish_id = None
+        self.last_known_dish_id: Optional[str] = None
         # Групування спаму reboot-сповіщень: якщо стається кілька
         # ребутів поспіль за короткий час (флап), кожен окремий
         # "🔁 перезавантажено" - спам. reboot_notify_ts - timestamps
         # уже надісланих reboot-сповіщень (не всіх спроб reboot, лише
         # тих, що дійшли до Telegram) за ковзне вікно.
-        self.reboot_notify_ts = []
+        self.reboot_notify_ts: list[float] = []
         self.reboot_spam_muted = False
         self.muted_reboot_count = 0
 
-    def _notify(self, text: str):
+    def _notify(self, text: str) -> None:
         """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток
         назовні і не блокує основний цикл моніторингу."""
         try:
@@ -73,7 +74,7 @@ class Watchdog:
             return False
         return (time.time() - self.first_failure_ts) >= config.NOTIFICATIONS_MUTE_AFTER_SEC
 
-    def _notify_reboot(self, text: str):
+    def _notify_reboot(self, text: str) -> None:
         """Групування спаму reboot-сповіщень - на відміну від
         _notifications_muted() (приглушує при ОДНІЙ тривалій відмові),
         це про ЧАСТОТУ: кілька окремих коротких reboot-циклів поспіль
@@ -101,7 +102,7 @@ class Watchdog:
         else:
             self.muted_reboot_count += 1
 
-    def _check_reboot_spam_recovery(self):
+    def _check_reboot_spam_recovery(self) -> None:
         """Викликається щоцикл опитування - якщо reboot-флап (див.
         _notify_reboot) припинився (минуло REBOOT_SPAM_WINDOW_SEC без
         нового reboot-сповіщення), надсилає підсумок і скидає стан
@@ -118,7 +119,7 @@ class Watchdog:
         self.muted_reboot_count = 0
         self.reboot_notify_ts = []
 
-    def poll_once(self):
+    def poll_once(self) -> DishStatus:
         self._check_reboot_spam_recovery()
         status = self.client.get_status()
         db.insert_metric(status.to_dict())
@@ -174,7 +175,7 @@ class Watchdog:
     # після успішного перезавантаження з новою версією).
     ACTIVE_UPDATE_STATES = DOWNLOADING_UPDATE_STATES | {"REBOOT_REQUIRED"}
 
-    def _log_update_state_change(self, status):
+    def _log_update_state_change(self, status: DishStatus) -> None:
         """Пише подію в журнал кожного разу, коли змінюється стан оновлення ПЗ dish."""
         state = status.update_state or "SOFTWARE_UPDATE_STATE_UNKNOWN"
         if state == self.prev_update_state:
@@ -206,7 +207,7 @@ class Watchdog:
                 self._notify("✅ Оновлення ПЗ dish завершено (нова версія встановлена)")
         self.prev_update_state = state
 
-    def _log_alerts_change(self, status):
+    def _log_alerts_change(self, status: DishStatus) -> None:
         """Пише окрему подію для кожного попередження, яке з'явилось або зникло."""
         current = set(status.active_alerts or [])
         previous = self.prev_alerts
@@ -235,7 +236,7 @@ class Watchdog:
 
         self.prev_alerts = current
 
-    def _notify_first_dish_connection(self, status):
+    def _notify_first_dish_connection(self, status: DishStatus) -> None:
         """Надсилає в Telegram ID тарілки один раз - лише при першому
         підключенні кожної конкретної тарілки (за dish_id) до Pi. Усі
         колись бачені ID зберігаються в settings (JSON-список), тож
@@ -245,7 +246,7 @@ class Watchdog:
         if not status.dish_id:
             return
 
-        raw = db.get_setting("known_dish_ids", "[]")
+        raw = db.get_setting("known_dish_ids", "[]") or "[]"
         try:
             known_ids = json.loads(raw)
         except (TypeError, json.JSONDecodeError):
@@ -259,7 +260,7 @@ class Watchdog:
         db.insert_event("dish_connected", f"Підключено Starlink Mini, ID: {status.dish_id}", success=True)
         self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
 
-    def poll_system_metrics(self):
+    def poll_system_metrics(self) -> None:
         try:
             metrics = get_system_metrics()
             db.insert_system_metric(metrics)
@@ -278,7 +279,7 @@ class Watchdog:
     MUTED_ROUTER_ALERTS = {"install_pending"}
     MUTED_ROUTER_UPDATE_STATES = {"GETTING_TARGET_VERSION_FAILED"}
 
-    def poll_router(self):
+    def poll_router(self) -> None:
         """Опитує окремий роутерний компонент Starlink Mini (інша адреса,
         ніж dish). Версія прошивки роутера змінюється рідко, тому зберігаємо
         лише останній відомий стан (без історії/графіків)."""
@@ -301,7 +302,7 @@ class Watchdog:
         except Exception as e:
             logger.warning("Не вдалося опитати роутер: %s", e)
 
-    def _log_router_update_state_change(self, info):
+    def _log_router_update_state_change(self, info: RouterInfo) -> None:
         """Пише подію в журнал кожного разу, коли змінюється стан оновлення ПЗ роутера."""
         state = info.update_state or "NOT_RUN"
         if state == self.prev_router_update_state:
@@ -325,7 +326,7 @@ class Watchdog:
                 self._notify(f"⚠️ Помилка оновлення ПЗ роутера: {label}")
         self.prev_router_update_state = state
 
-    def _log_router_alerts_change(self, info):
+    def _log_router_alerts_change(self, info: RouterInfo) -> None:
         """Пише окрему подію для кожного попередження роутера, яке з'явилось або зникло.
         info.active_alerts тут уже профільтровано від IGNORED_ROUTER_ALERTS (poll_router)."""
         current = set(info.active_alerts or [])
@@ -353,7 +354,7 @@ class Watchdog:
 
         self.prev_router_alerts = current
 
-    def _reboot_for_update_ready(self, component_label: str, reason: str):
+    def _reboot_for_update_ready(self, component_label: str, reason: str) -> None:
         """Спільна логіка для _maybe_reboot_for_update/_maybe_reboot_for_router_update:
         обидва мають ідентичну послідовність дій (лише текст сповіщень
         відрізняється), винесено сюди, щоб не дублювати - зокрема захист
@@ -388,7 +389,7 @@ class Watchdog:
         else:
             self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ {component_label} готове): {msg}")
 
-    def _maybe_reboot_for_router_update(self, info):
+    def _maybe_reboot_for_router_update(self, info: RouterInfo) -> None:
         """Автоматичний reboot усього Starlink Mini, коли роутерний компонент
         повідомляє про готове до встановлення оновлення (REBOOT_PENDING або
         install_pending). Reboot виконується через dish_addr - dish і router
@@ -401,7 +402,7 @@ class Watchdog:
         reason = info.update_state if info.update_state == "REBOOT_PENDING" else "install_pending"
         self._reboot_for_update_ready("роутера", reason)
 
-    def _maybe_reboot_for_update(self, status):
+    def _maybe_reboot_for_update(self, status: DishStatus) -> None:
         if not db.get_auto_reboot_enabled():
             return
         update_ready = status.update_state == "REBOOT_REQUIRED" or status.update_install_pending
@@ -410,7 +411,7 @@ class Watchdog:
         reason = status.update_state if status.update_state == "REBOOT_REQUIRED" else "install_pending"
         self._reboot_for_update_ready("dish", reason)
 
-    def _maybe_reboot(self):
+    def _maybe_reboot(self) -> None:
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
             return
 
@@ -456,7 +457,7 @@ class Watchdog:
             if not self._notifications_muted():
                 self._notify_reboot(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
 
-    def run_forever(self):
+    def run_forever(self) -> None:
         db.init_db()
         logger.info("Starlink watchdog запущено. Опитування кожні %d с.", config.POLL_INTERVAL_SEC)
 
@@ -474,9 +475,9 @@ class Watchdog:
         # "Прогрів" psutil.cpu_percent: перший виклик без базового заміру
         # завжди повертає 0.0, тому робимо його тут і відкидаємо результат.
         psutil.cpu_percent(interval=None)
-        last_prune = 0
-        last_vacuum = 0
-        last_router_poll = 0  # 0 гарантує негайне перше опитування роутера
+        last_prune = 0.0
+        last_vacuum = 0.0
+        last_router_poll = 0.0  # 0 гарантує негайне перше опитування роутера
         while True:
             try:
                 self.poll_once()
@@ -513,7 +514,7 @@ class Watchdog:
             time.sleep(config.POLL_INTERVAL_SEC)
 
 
-def main():
+def main() -> None:
     Watchdog().run_forever()
 
 

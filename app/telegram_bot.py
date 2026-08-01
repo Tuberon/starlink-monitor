@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Optional
 
 import requests
 
@@ -28,7 +29,7 @@ REQUEST_TIMEOUT_POLL = POLL_TIMEOUT_SEC + 5  # трохи більше за time
 CONFIRM_TTL_SEC = 120
 
 
-def _api_call(method: str, token: str, http_timeout: float, **params):
+def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Optional[dict[str, Any]]:
     try:
         resp = telegram_notify._request_with_eth0_fallback(
             "post",
@@ -43,13 +44,13 @@ def _api_call(method: str, token: str, http_timeout: float, **params):
 
 
 class TelegramBot:
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = StarlinkClient()
         self._last_update_id = 0
         self._stop_event = threading.Event()
-        self._thread = None
+        self._thread: Optional[threading.Thread] = None
         # Очікуючі підтвердження /reboot: chat_id -> час запиту (для TTL)
-        self._pending_reboot_confirm = {}
+        self._pending_reboot_confirm: dict[str, float] = {}
         # Обробка кожного update (зокрема /status, що робить блокуючі
         # gRPC-виклики до dish/router з таймаутом до ~15с) виконується
         # в окремому потоці з цього пулу - інакше повільна/недоступна
@@ -57,7 +58,7 @@ class TelegramBot:
         # команди чекають, поки не завершиться поточна.
         self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="tg-cmd")
 
-    def start(self):
+    def start(self) -> None:
         """Запускає polling у фоновому демон-потоці. Викликається один раз
         з monitor.run_forever()."""
         if self._thread is not None:
@@ -66,11 +67,11 @@ class TelegramBot:
         self._thread.start()
         logger.info("Telegram-бот: потік опитування команд запущено")
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop_event.set()
         self._executor.shutdown(wait=False)
 
-    def _run_loop(self):
+    def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
                 token, allowed_chat_ids, enabled = telegram_notify.get_telegram_config()
@@ -84,7 +85,7 @@ class TelegramBot:
                 logger.exception("Неочікувана помилка в циклі Telegram-бота")
                 time.sleep(5)
 
-    def _poll_once(self, token: str, allowed_chat_ids: set):
+    def _poll_once(self, token: str, allowed_chat_ids: set[str]) -> None:
         data = _api_call(
             "getUpdates",
             token,
@@ -107,7 +108,7 @@ class TelegramBot:
         # обробитись РАНІШЕ за встановлення pending-стану командою /reboot.
         # Різні чати й далі обробляються паралельно (одна повільна команда
         # від одного користувача не блокує інших).
-        groups = {}
+        groups: dict[str, list[dict[str, Any]]] = {}
         for update in data.get("result", []):
             chat_id = self._extract_chat_id(update)
             groups.setdefault(chat_id, []).append(update)
@@ -122,14 +123,14 @@ class TelegramBot:
         message = update.get("message") or update.get("edited_message") or {}
         return str(message.get("chat", {}).get("id", ""))
 
-    def _handle_updates_sequential(self, token: str, allowed_chat_ids: set, updates: list):
+    def _handle_updates_sequential(self, token: str, allowed_chat_ids: set[str], updates: list[dict[str, Any]]) -> None:
         for update in updates:
             try:
                 self._handle_update(token, allowed_chat_ids, update)
             except Exception:
                 logger.exception("Помилка обробки Telegram update: %s", update)
 
-    def _handle_update(self, token: str, allowed_chat_ids: set, update: dict):
+    def _handle_update(self, token: str, allowed_chat_ids: set[str], update: dict[str, Any]) -> None:
         if "callback_query" in update:
             self._handle_callback(token, allowed_chat_ids, update["callback_query"])
             return
@@ -161,7 +162,7 @@ class TelegramBot:
         else:
             self._send(token, chat_id, "Невідома команда. /help — список команд.")
 
-    def _handle_callback(self, token: str, allowed_chat_ids: set, callback: dict):
+    def _handle_callback(self, token: str, allowed_chat_ids: set[str], callback: dict[str, Any]) -> None:
         chat_id = str(callback.get("message", {}).get("chat", {}).get("id", ""))
         data = callback.get("data", "")
         callback_id = callback.get("id")
@@ -189,7 +190,7 @@ class TelegramBot:
             _api_call("answerCallbackQuery", token, REQUEST_TIMEOUT_SEND, callback_query_id=callback_id)
             self._send(token, chat_id, "Скасовано.")
 
-    def _cmd_status(self, token: str, chat_id: str):
+    def _cmd_status(self, token: str, chat_id: str) -> None:
         dish = self.client.get_status()
         router = self.client.get_router_info()
 
@@ -223,7 +224,7 @@ class TelegramBot:
 
         self._send(token, chat_id, "\n".join(lines))
 
-    def _cmd_reboot_request(self, token: str, chat_id: str):
+    def _cmd_reboot_request(self, token: str, chat_id: str) -> None:
         self._pending_reboot_confirm[chat_id] = time.time()
         text = telegram_notify.append_signature(
             "\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини."
@@ -242,7 +243,7 @@ class TelegramBot:
             },
         )
 
-    def _cmd_help(self, token: str, chat_id: str):
+    def _cmd_help(self, token: str, chat_id: str) -> None:
         text = (
             "<b>Starlink Monitor — команди</b>\n\n"
             "/status — поточний стан оновлення ПЗ тарілки й роутера, активні попередження\n"
@@ -254,7 +255,7 @@ class TelegramBot:
         )
         self._send(token, chat_id, text)
 
-    def _cmd_id(self, token: str, chat_id: str, arg: str):
+    def _cmd_id(self, token: str, chat_id: str, arg: str) -> None:
         if not arg:
             devices = db.get_all_known_devices()
             if not devices:
@@ -317,6 +318,6 @@ class TelegramBot:
         days = int(delta // 86400)
         return f"{days} дн тому"
 
-    def _send(self, token: str, chat_id: str, text: str):
+    def _send(self, token: str, chat_id: str, text: str) -> None:
         full_text = telegram_notify.append_signature(text)
         _api_call("sendMessage", token, REQUEST_TIMEOUT_SEND, chat_id=chat_id, text=full_text, parse_mode="HTML")

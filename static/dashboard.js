@@ -138,15 +138,62 @@ function initCharts() {
   });
 }
 
+const OFFLINE_CACHE_KEY = 'starlink_last_status_v1';
+
+// Зберігаємо лише latest - невеликий JSON-об'єкт (кілька полів метрик),
+// localStorage простіший і достатній тут (синхронний API, немає
+// потреби у транзакціях/великому обсязі, які виправдовували б IndexedDB).
+function _cacheLastStatus(latest) {
+  try {
+    localStorage.setItem(OFFLINE_CACHE_KEY, JSON.stringify({ latest, cachedAt: Date.now() / 1000 }));
+  } catch (e) {
+    // Приватний режим браузера/переповнення квоти - offline-fallback
+    // просто не спрацює цього разу, не критично для основної функції.
+    console.warn('Не вдалося закешувати стан:', e);
+  }
+}
+
+function _loadCachedStatus() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function _showOfflineBanner(cachedAt) {
+  const banner = el('offlineBanner');
+  el('offlineBannerAgo').textContent = fmtAgo(cachedAt);
+  banner.style.display = 'block';
+}
+
+function _hideOfflineBanner() {
+  el('offlineBanner').style.display = 'none';
+}
+
 async function refreshStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
     const latest = data.latest;
+    if (!latest) return;
+    _cacheLastStatus(latest);
+    _hideOfflineBanner();
+    _renderStatusData(latest);
+  } catch (e) {
+    console.error('status refresh failed', e);
+    const cached = _loadCachedStatus();
+    if (cached && cached.latest) {
+      _renderStatusData(cached.latest);
+      _showOfflineBanner(cached.cachedAt);
+    }
+  }
+}
+
+function _renderStatusData(latest) {
     const pill = el('statusPill');
     const ring = el('ring');
-
-    if (!latest) return;
 
     if (latest.online) {
       pill.classList.add('online');
@@ -184,9 +231,6 @@ async function refreshStatus() {
 
     renderUpdateStatus(latest);
     renderAlerts(latest);
-  } catch (e) {
-    console.error('status refresh failed', e);
-  }
 }
 
 function renderUpdateStatus(latest) {

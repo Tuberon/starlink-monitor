@@ -4,6 +4,7 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
+from typing import Any, Iterator, Optional
 
 from app import config
 
@@ -115,14 +116,14 @@ CREATE INDEX IF NOT EXISTS idx_speedtest_results_ts ON speedtest_results(ts);
 """
 
 
-def _ensure_dir():
+def _ensure_dir() -> None:
     d = os.path.dirname(config.DB_PATH)
     if d:
         os.makedirs(d, exist_ok=True)
 
 
 @contextmanager
-def get_conn():
+def get_conn() -> Iterator[sqlite3.Connection]:
     _ensure_dir()
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -145,7 +146,7 @@ def get_conn():
         conn.close()
 
 
-def init_db():
+def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
         _migrate_table_columns(conn, "metrics", {
@@ -170,7 +171,7 @@ def init_db():
         })
 
 
-def _migrate_table_columns(conn, table: str, new_columns: dict):
+def _migrate_table_columns(conn: sqlite3.Connection, table: str, new_columns: dict[str, str]) -> None:
     """Додає нові колонки в уже існуючу таблицю (для баз, створених до
     появи цих полів). CREATE TABLE IF NOT EXISTS не чіпає існуючу
     таблицю, тому колонки додаємо окремо через ALTER TABLE."""
@@ -180,7 +181,7 @@ def _migrate_table_columns(conn, table: str, new_columns: dict):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
 
 
-def insert_metric(status_dict: dict):
+def insert_metric(status_dict: dict[str, Any]) -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO metrics
@@ -214,7 +215,7 @@ def insert_metric(status_dict: dict):
         )
 
 
-def _json_field(raw) -> list:
+def _json_field(raw: Any) -> list[Any]:
     """Парсить JSON-серіалізоване поле (active_alerts, clients) назад у
     список, з безпечним fallback на порожній список при відсутності чи
     пошкодженні даних. Спільний хелпер для трьох місць, де раніше було
@@ -227,7 +228,7 @@ def _json_field(raw) -> list:
         return []
 
 
-def insert_event(kind: str, message: str, success: bool = True):
+def insert_event(kind: str, message: str, success: bool = True) -> None:
     """Записує подію в журнал. Якщо остання подія має той самий
     kind і message (типово - серія однакових попереджень підряд),
     замість нового рядка інкрементує count і оновлює last_ts/ts
@@ -249,7 +250,7 @@ def insert_event(kind: str, message: str, success: bool = True):
             )
 
 
-def insert_system_metric(m: dict):
+def insert_system_metric(m: dict[str, Any]) -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO system_metrics
@@ -271,7 +272,7 @@ def insert_system_metric(m: dict):
         )
 
 
-def set_router_status(r: dict):
+def set_router_status(r: dict[str, Any]) -> None:
     """Записує останній відомий стан роутера. Таблиця завжди містить
     рівно один рядок (id=1) - історія не потрібна, лише поточний стан."""
     with get_conn() as conn:
@@ -306,7 +307,7 @@ def set_router_status(r: dict):
         )
 
 
-def get_router_status():
+def get_router_status() -> Optional[dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM router_status WHERE id = 1").fetchone()
         if not row:
@@ -317,19 +318,19 @@ def get_router_status():
         return d
 
 
-def get_latest_system_metric():
+def get_latest_system_metric() -> Optional[dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM system_metrics ORDER BY ts DESC LIMIT 1").fetchone()
         return dict(row) if row else None
 
 
-def _parse_metric_row(row: dict) -> dict:
+def _parse_metric_row(row: dict[str, Any]) -> dict[str, Any]:
     """Розпарсити JSON-серіалізований active_alerts назад у список для API."""
     row["active_alerts"] = _json_field(row.get("active_alerts"))
     return row
 
 
-def get_recent_metrics(limit: int = 500):
+def get_recent_metrics(limit: int = 500) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM metrics ORDER BY ts DESC LIMIT ?", (limit,)
@@ -337,7 +338,7 @@ def get_recent_metrics(limit: int = 500):
         return [_parse_metric_row(dict(r)) for r in reversed(rows)]
 
 
-def get_metrics_chart_data(hours: float, target_points: int = 150):
+def get_metrics_chart_data(hours: float, target_points: int = 150) -> list[dict[str, Any]]:
     """Агреговані дані для графіків на /stats - SQL GROUP BY bucket,
     об'єднує raw metrics (недавні, повна 10с деталізація) і
     metrics_downsampled (старіші за DOWNSAMPLE_AFTER_DAYS, вже
@@ -378,7 +379,7 @@ def get_metrics_chart_data(hours: float, target_points: int = 150):
         return [dict(r) for r in rows]
 
 
-def downsample_old_metrics():
+def downsample_old_metrics() -> int:
     """Агрегує raw-метрики (app/db.py: таблиця metrics) старші за
     config.DOWNSAMPLE_AFTER_DAYS у config.DOWNSAMPLE_BUCKET_SEC-
     секундні середні (metrics_downsampled), видаляючи оригінальні
@@ -424,7 +425,7 @@ def downsample_old_metrics():
     return len(rows)
 
 
-def get_recent_events(limit: int = 50):
+def get_recent_events(limit: int = 50) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM events ORDER BY ts DESC LIMIT ?", (limit,)
@@ -432,13 +433,13 @@ def get_recent_events(limit: int = 50):
         return [dict(r) for r in rows]
 
 
-def get_latest_metric():
+def get_latest_metric() -> Optional[dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM metrics ORDER BY ts DESC LIMIT 1").fetchone()
         return _parse_metric_row(dict(row)) if row else None
 
 
-def prune_old(days: int = None):
+def prune_old(days: Optional[int] = None) -> None:
     days = days or config.HISTORY_RETENTION_DAYS
     cutoff = time.time() - days * 86400
     with get_conn() as conn:
@@ -449,7 +450,7 @@ def prune_old(days: int = None):
         conn.execute("DELETE FROM speedtest_results WHERE ts < ?", (cutoff,))
 
 
-def vacuum_and_analyze():
+def vacuum_and_analyze() -> None:
     """Періодична оптимізація БД: VACUUM звільняє місце після DELETE в
     prune_old() (SQLite не повертає диску вільні сторінки автоматично),
     ANALYZE оновлює статистику планувальника запитів. Викликається
@@ -466,7 +467,7 @@ def vacuum_and_analyze():
         conn.close()
 
 
-def uptime_stats_24h():
+def uptime_stats_24h() -> Optional[float]:
     """Частка часу online за останні 24 години (для дашборду)."""
     cutoff = time.time() - 86400
     with get_conn() as conn:
@@ -479,7 +480,7 @@ def uptime_stats_24h():
         return round(100.0 * (row["up"] or 0) / row["total"], 2)
 
 
-def upsert_known_device_dish(dish_id: str, hardware_version: str, software_version: str):
+def upsert_known_device_dish(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
     """Записує/оновлює відому інформацію про dish для конкретного dish_id.
     dish_software_updated_ts оновлюється лише коли software_version реально
     змінилась відносно попереднього запису (не при кожному опитуванні) -
@@ -517,7 +518,7 @@ def upsert_known_device_dish(dish_id: str, hardware_version: str, software_versi
     return real_change, old_version
 
 
-def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str):
+def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
     """Аналогічно до upsert_known_device_dish, але для роутерної частини
     того самого фізичного Mini. Прив'язується до того ж dish_id - dish і
     router опитуються в різних циклах, тому оновлюються окремо; якщо
@@ -553,19 +554,19 @@ def upsert_known_device_router(dish_id: str, hardware_version: str, software_ver
     return real_change, old_version
 
 
-def get_known_device(dish_id: str):
+def get_known_device(dish_id: str) -> Optional[dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM known_devices WHERE dish_id = ?", (dish_id,)).fetchone()
         return dict(row) if row else None
 
 
-def get_all_known_devices():
+def get_all_known_devices() -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM known_devices ORDER BY last_seen_ts DESC").fetchall()
         return [dict(r) for r in rows]
 
 
-def insert_speedtest_result(data: dict):
+def insert_speedtest_result(data: dict[str, Any]) -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO speedtest_results
@@ -583,7 +584,7 @@ def insert_speedtest_result(data: dict):
         )
 
 
-def get_recent_speedtest_results(limit: int = 50):
+def get_recent_speedtest_results(limit: int = 50) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM speedtest_results ORDER BY ts DESC LIMIT ?", (limit,)
@@ -591,7 +592,7 @@ def get_recent_speedtest_results(limit: int = 50):
         return [dict(r) for r in rows]
 
 
-def get_latest_speedtest_result():
+def get_latest_speedtest_result() -> Optional[dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM speedtest_results WHERE success = 1 ORDER BY ts DESC LIMIT 1"
@@ -599,13 +600,13 @@ def get_latest_speedtest_result():
         return dict(row) if row else None
 
 
-def get_setting(key: str, default=None):
+def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     with get_conn() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
 
 
-def set_setting(key: str, value: str):
+def set_setting(key: str, value: str) -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO settings (key, value) VALUES (?, ?)
@@ -625,5 +626,5 @@ def get_auto_reboot_enabled() -> bool:
     return val == "1"
 
 
-def set_auto_reboot_enabled(enabled: bool):
+def set_auto_reboot_enabled(enabled: bool) -> None:
     set_setting("auto_reboot_enabled", "1" if enabled else "0")

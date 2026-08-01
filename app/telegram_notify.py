@@ -7,6 +7,7 @@ import logging
 import os
 import random
 import socket
+from typing import Any, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -44,7 +45,7 @@ def _bind_to_eth0(sock: socket.socket) -> bool:
         return False
 
 
-def _get_eth0_ip():
+def _get_eth0_ip() -> Optional[str]:
     """IP-адреса eth0 (USB-Ethernet), якщо інтерфейс підключений."""
     try:
         import fcntl
@@ -58,7 +59,7 @@ def _get_eth0_ip():
         return None
 
 
-def _resolve_via_eth0(hostname: str):
+def _resolve_via_eth0(hostname: str) -> Optional[str]:
     """Резолвить hostname у IP явним DNS-запитом (UDP, A-запис) через
     сокет, форсований на eth0 через SO_BINDTODEVICE - не системний
     резолвер (/etc/resolv.conf) і не dnspython's власний сокет (той
@@ -97,7 +98,7 @@ class _Eth0BoundAdapter(HTTPAdapter):
     інтерфейс eth0 (SO_BINDTODEVICE, через urllib3's socket_options -
     застосовується до кожного нового сокета пулу з'єднань автоматично,
     без потреби перевизначати низькорівневий connect())."""
-    def init_poolmanager(self, *args, **kwargs):
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
         import urllib3.connection
         kwargs["socket_options"] = urllib3.connection.HTTPConnection.default_socket_options + [
             (socket.SOL_SOCKET, socket.SO_BINDTODEVICE, _ETH0_IFACE),
@@ -105,7 +106,7 @@ class _Eth0BoundAdapter(HTTPAdapter):
         super().init_poolmanager(*args, **kwargs)
 
 
-def _request_via_eth0(method: str, url: str, resolved_ip: str = None, **kwargs):
+def _request_via_eth0(method: str, url: str, resolved_ip: Optional[str] = None, **kwargs: Any) -> requests.Response:
     """HTTP-запит, форсований через eth0 (SO_BINDTODEVICE). Якщо
     resolved_ip заданий (системний DNS теж недоступний), запит іде
     напряму на цю IP замість hostname з URL, з оригінальним hostname
@@ -148,7 +149,7 @@ def _request_via_eth0(method: str, url: str, resolved_ip: str = None, **kwargs):
     return session.request(method, ip_url, headers=headers, verify=False, **kwargs)
 
 
-def _request_with_eth0_fallback(method: str, url: str, **kwargs):
+def _request_with_eth0_fallback(method: str, url: str, **kwargs: Any) -> requests.Response:
     """Виконує HTTP-запит: спочатку звичайним способом (дефолтний
     маршрут - зазвичай wlan0/WiFi Starlink, нижчий route-metric). Якщо
     це провалюється мережевою помилкою - пробує через eth0
@@ -225,7 +226,7 @@ def get_signature_phrases_enabled() -> bool:
     return db.get_setting("signature_phrases_enabled", "0") == "1"
 
 
-def set_signature_phrases_enabled(enabled: bool):
+def set_signature_phrases_enabled(enabled: bool) -> None:
     db.set_setting("signature_phrases_enabled", "1" if enabled else "0")
 
 
@@ -239,7 +240,7 @@ def append_signature(text: str) -> str:
     return f"{text}\n\n{phrase}" if phrase else text
 
 
-def get_telegram_config():
+def get_telegram_config() -> tuple[str, list[str], bool]:
     """Повертає (token, chat_id, enabled) з БД. chat_id може містити
     кілька id через кому (сповіщення кільком отримувачам)."""
     token = db.get_setting("telegram_bot_token", "") or ""
@@ -249,7 +250,11 @@ def get_telegram_config():
     return token, chat_ids, enabled
 
 
-def set_telegram_config(token: str = None, chat_ids: list = None, enabled: bool = None):
+def set_telegram_config(
+    token: Optional[str] = None,
+    chat_ids: Optional[list[str]] = None,
+    enabled: Optional[bool] = None,
+) -> None:
     if token is not None:
         db.set_setting("telegram_bot_token", token.strip())
     if chat_ids is not None:

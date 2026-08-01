@@ -11,6 +11,7 @@ app/config.py: назва env-змінної, тип для валідації, 
 import logging
 import os
 import re
+from typing import Any
 
 from app import config
 
@@ -76,7 +77,7 @@ def _validate_value(param: dict, raw_value: str) -> tuple:
         return False, f"очікується {t}"
 
 
-def read_current_values() -> dict:
+def read_current_values() -> list[dict[str, Any]]:
     """Читає поточні значення з env-файлу (якщо параметр там не
     перевизначений - повертає значення з config.py, яке саме й діє
     зараз у запущеному процесі)."""
@@ -104,7 +105,7 @@ def read_current_values() -> dict:
     return result
 
 
-def save_values(values: dict) -> tuple:
+def save_values(values: dict[str, str]) -> tuple[bool, str]:
     """values: {ENV_KEY: raw_value_str}. Валідує всі значення, потім
     перезаписує env-файл: рядки з відомих EDITABLE_PARAMS замінюються/
     додаються, довільний інший вміст файлу (коментарі, невідомі

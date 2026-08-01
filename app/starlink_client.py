@@ -15,8 +15,9 @@ import logging
 import shutil
 import subprocess
 import time
+import types
 from dataclasses import dataclass, asdict, field
-from typing import List
+from typing import Any, List, Optional
 
 from app import config
 
@@ -109,6 +110,7 @@ ROUTER_ALERT_FIELD_NAMES = [
     "wired_mesh_not_using_wan_iface",
 ]
 
+starlink_grpc: Optional[types.ModuleType]
 try:
     from app.vendor import starlink_grpc
 except ImportError:
@@ -143,7 +145,7 @@ class DishStatus:
     # Попередження dish (активні alert-прапорці)
     active_alerts: List[str] = field(default_factory=list)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["active_alerts"] = json.dumps(d["active_alerts"], ensure_ascii=False)
         return d
@@ -166,7 +168,7 @@ class RouterInfo:
     # Список клієнтів, під'єднаних до WiFi роутера (WifiClient[])
     clients: List[dict] = field(default_factory=list)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["active_alerts"] = json.dumps(d["active_alerts"], ensure_ascii=False)
         d["clients"] = json.dumps(d["clients"], ensure_ascii=False)
@@ -174,7 +176,12 @@ class RouterInfo:
 
 
 class StarlinkClient:
-    def __init__(self, dish_addr: str = None, router_addr: str = None, timeout: float = None):
+    def __init__(
+        self,
+        dish_addr: Optional[str] = None,
+        router_addr: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> None:
         self.dish_addr = dish_addr or config.DISH_ADDR
         self.router_addr = router_addr or config.ROUTER_ADDR
         self.timeout = timeout or config.DISH_HTTP_TIMEOUT

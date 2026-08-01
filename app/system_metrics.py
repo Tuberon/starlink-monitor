@@ -10,6 +10,7 @@ import logging
 import os
 import subprocess
 import time
+from typing import Any, Optional
 
 import psutil
 
@@ -23,10 +24,10 @@ APT_STAMP_PATH = "/var/lib/apt/periodic/update-success-stamp"
 # інформації, лише зайве навантажує Pi Zero 2 W субпроцесом на кожен
 # запит дашборду. Кешується в пам'яті процесу webui.
 _APT_CHECK_INTERVAL_SEC = 3600
-_apt_cache = {"updates_count": None, "last_apt_update_ts": None, "checked_ts": None}
+_apt_cache: dict[str, Optional[float]] = {"updates_count": None, "last_apt_update_ts": None, "checked_ts": None}
 
 
-def get_apt_updates_info() -> dict:
+def get_apt_updates_info() -> dict[str, Any]:
     """Кількість доступних оновлень пакетів (apt) і час останньої
     системної перевірки (mtime apt-daily.timer's stamp-файлу). Ніколи
     не кидає виняток - при будь-якій помилці count/last_apt_update_ts
@@ -59,7 +60,7 @@ def get_apt_updates_info() -> dict:
     return dict(_apt_cache)
 
 
-def _read_temp_c():
+def _read_temp_c() -> Optional[float]:
     try:
         with open(THERMAL_ZONE_PATH) as f:
             raw = f.read().strip()
@@ -69,10 +70,10 @@ def _read_temp_c():
         return None
 
 
-def get_system_metrics() -> dict:
+def get_system_metrics() -> dict[str, Any]:
     """Збирає поточні системні метрики. Ніколи не кидає виняток -
     відсутні/недоступні метрики просто лишаються None/0."""
-    result = {"timestamp": time.time()}
+    result: dict[str, Any] = {"timestamp": time.time()}
 
     try:
         result["uptime_s"] = int(time.time() - psutil.boot_time())

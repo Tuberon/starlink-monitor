@@ -17,16 +17,17 @@ monitor.py поруч з Telegram-ботом, лише якщо SPEEDTEST_ENABLE
 import logging
 import threading
 import time
+from typing import Any, Optional
 
 from app import config, db
 
 logger = logging.getLogger("speedtest_runner")
 
 
-def run_once() -> dict:
+def run_once() -> dict[str, Any]:
     """Один прогін speedtest. Ніколи не кидає виняток назовні - помилка
     кладеться в поле error, success=False."""
-    result = {"ts": time.time(), "success": False}
+    result: dict[str, Any] = {"ts": time.time(), "success": False}
     try:
         import speedtest
     except ImportError:
@@ -60,7 +61,7 @@ def run_once() -> dict:
     return result
 
 
-def run_forever(stop_event: threading.Event = None):
+def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     """Цикл: раз на SPEEDTEST_INTERVAL_SEC запускає run_once() і зберігає
     результат у БД. stop_event дозволяє коректно зупинити потік ззовні
     (той самий патерн, що telegram_bot._stop_event)."""

@@ -26,7 +26,9 @@ GPIO.
 мають цей дисплей підключений.
 """
 import logging
+import threading
 import time
+from typing import Any, Optional
 
 from app import config, db, gpio_utils
 from app.shutdown_button import _trigger_shutdown
@@ -78,7 +80,7 @@ ROUTER_UPDATE_STATE_LABELS = {
 }
 
 
-def _fmt_uptime(uptime_s) -> str:
+def _fmt_uptime(uptime_s: Optional[float]) -> str:
     if not uptime_s:
         return "—"
     h = int(uptime_s) // 3600
@@ -86,7 +88,7 @@ def _fmt_uptime(uptime_s) -> str:
     return f"{h}г {m}хв"
 
 
-def _status_lines(latest_metric: dict, router_status: dict = None) -> list:
+def _status_lines(latest_metric: Optional[dict[str, Any]], router_status: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
     """Формує структуровані рядки для відображення - чиста функція
     без залежності від самого дисплея, легко тестується окремо.
     Кожен рядок - dict {"kind": ..., "text": ...} (+ "progress" для
@@ -100,7 +102,7 @@ def _status_lines(latest_metric: dict, router_status: dict = None) -> list:
     online = bool(latest_metric.get("online"))
     status_text = ("● ONLINE" if online else "○ OFFLINE") + \
         f"  Uptime: {_fmt_uptime(latest_metric.get('uptime_s'))}"
-    lines = [{"kind": "status", "text": status_text}]
+    lines: list[dict[str, Any]] = [{"kind": "status", "text": status_text}]
 
     dish_update_state = latest_metric.get("update_state")
     if dish_update_state:
@@ -115,7 +117,7 @@ def _status_lines(latest_metric: dict, router_status: dict = None) -> list:
     router_update_state = router_status.get("update_state") if router_status else None
     # Той самий стан приховується і на веб-дашборді - частина
     # нормального циклу перевірки роутера, не справжня помилка.
-    if router_update_state and router_update_state != "DOWNLOADING_UPDATE_IMAGE_FAILED":
+    if router_status is not None and router_update_state and router_update_state != "DOWNLOADING_UPDATE_IMAGE_FAILED":
         pct = router_status.get("update_progress_pct") or 0
         label = ROUTER_UPDATE_STATE_LABELS.get(router_update_state, router_update_state)
         lines.append({
@@ -142,7 +144,7 @@ def _should_auto_off(backlight_on: bool, last_activity_ts: float, now: float, ti
     return (now - last_activity_ts) >= timeout_sec
 
 
-def _load_font(size: int):
+def _load_font(size: int) -> Any:
     from PIL import ImageFont
     for path in FONT_PATHS:
         try:
@@ -157,7 +159,7 @@ def _load_font(size: int):
     return ImageFont.load_default()
 
 
-def _truncate_to_width(draw, text: str, font, max_width: int) -> str:
+def _truncate_to_width(draw: Any, text: str, font: Any, max_width: int) -> str:
     """Обрізає текст з '…' в кінці, якщо він не влазить у max_width
     (px). Версії прошивок можуть бути довгими рядками, що фізично не
     вміщаються на вузькому (170px) екрані - без цього текст просто
@@ -169,7 +171,7 @@ def _truncate_to_width(draw, text: str, font, max_width: int) -> str:
     return text + "…" if text else "…"
 
 
-def _set_backlight(bl_pin, value: bool):
+def _set_backlight(bl_pin: Any, value: bool) -> None:
     """Adafruit CircuitPython ST7789 не має вбудованого set_backlight() -
     BL керується напряму через цей окремий digitalio-пін. bl_pin=None
     (DISPLAY_BL_PIN=0, підсвітка на 3.3V напряму) - нічого не робимо."""
@@ -177,7 +179,7 @@ def _set_backlight(bl_pin, value: bool):
         bl_pin.value = value
 
 
-def _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny):
+def _redraw(display: Any, Image: Any, ImageDraw: Any, font_status: Any, font_update: Any, font_tiny: Any) -> None:
     latest = db.get_latest_metric()
     router_status = db.get_router_status()
     lines = _status_lines(latest, router_status)
@@ -223,7 +225,7 @@ def _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny):
     display.image(img)
 
 
-def run_forever(stop_event=None):
+def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     if not config.DISPLAY_ENABLED:
         logger.info("DISPLAY_ENABLED не встановлено (0) - дисплей вимкнено, завершення")
         return
@@ -344,7 +346,7 @@ def run_forever(stop_event=None):
                 pass
 
 
-def main():
+def main() -> None:
     run_forever()
 
 
