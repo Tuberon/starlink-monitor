@@ -99,45 +99,6 @@ const ROUTER_ALERT_LABELS = {
   'wired_mesh_not_using_wan_iface': 'дротовий mesh не використовує WAN',
 };
 
-let throughputChart;
-
-function initCharts() {
-  const commonOpts = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 300 },
-    interaction: { mode: 'index', intersect: false },
-    scales: {
-      x: {
-        ticks: { color: '#5b6b8c', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 },
-        grid: { color: '#1b2740' },
-      },
-      y: {
-        ticks: { color: '#5b6b8c', font: { family: 'JetBrains Mono', size: 10 } },
-        grid: { color: '#1b2740' },
-        beginAtZero: true,
-      },
-    },
-    plugins: {
-      legend: {
-        labels: { color: '#93a4c3', font: { family: 'Space Grotesk', size: 11 }, boxWidth: 12, usePointStyle: true },
-      },
-    },
-  };
-
-  throughputChart = new Chart(el('throughputChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        { label: 'Downlink Мбіт/с', data: [], borderColor: '#5ee6c4', backgroundColor: 'rgba(94,230,196,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-        { label: 'Uplink Мбіт/с', data: [], borderColor: '#7aa2ff', backgroundColor: 'rgba(122,162,255,0.06)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-      ],
-    },
-    options: commonOpts,
-  });
-}
-
 const OFFLINE_CACHE_KEY = 'starlink_last_status_v1';
 
 // Зберігаємо лише latest - невеликий JSON-об'єкт (кілька полів метрик),
@@ -274,12 +235,11 @@ async function refreshHistory() {
   try {
     const res = await fetch('/api/history?limit=120');
     const rows = await res.json();
-    const labels = rows.map(r => fmtTime(r.ts));
 
-    throughputChart.data.labels = labels;
-    throughputChart.data.datasets[0].data = rows.map(r => r.downlink_mbps);
-    throughputChart.data.datasets[1].data = rows.map(r => r.uplink_mbps);
-    throughputChart.update('none');
+    drawLineChart(el('throughputChart'), [
+      { data: rows.map(r => r.downlink_mbps), color: '#5ee6c4' },
+      { data: rows.map(r => r.uplink_mbps), color: '#7aa2ff' },
+    ]);
   } catch (e) {
     console.error('history refresh failed', e);
   }
@@ -652,7 +612,6 @@ function tick() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initCharts();
   el('rebootBtn').addEventListener('click', handleReboot);
   el('piRebootBtn').addEventListener('click', handlePiReboot);
   el('piShutdownBtn').addEventListener('click', handlePiShutdown);

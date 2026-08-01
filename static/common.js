@@ -17,3 +17,42 @@ function fmtAgo(ts) {
   if (delta < 86400) return `${Math.floor(delta / 3600)} год тому`;
   return `${Math.floor(delta / 86400)} дн тому`;
 }
+
+// Малий, самодостатній line-chart на голому Canvas API - БЕЗ
+// сторонньої бібліотеки (Chart.js тощо): дашборд про мережу має
+// лишатись робочим навіть без інтернету, коли dish саме offline
+// (CDN-залежність тоді не завантажилась б). Кожна серія масштабується
+// під свій власний min/max незалежно (без потреби dual-axis для
+// різних одиниць вимірювання). Використовується на / (throughputChart)
+// і на /stats (усі графіки трендів).
+function drawLineChart(canvas, series) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = 4;
+  for (const s of series) {
+    const pts = s.data.filter(v => v != null);
+    if (pts.length < 2) continue;
+    const min = Math.min(...pts);
+    const max = Math.max(...pts);
+    const range = (max - min) || 1;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    s.data.forEach((v, i) => {
+      if (v == null) { started = false; return; }
+      const x = (i / (s.data.length - 1)) * (w - 2 * pad) + pad;
+      const y = h - pad - ((v - min) / range) * (h - 2 * pad);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else { ctx.lineTo(x, y); }
+    });
+    ctx.stroke();
+  }
+}

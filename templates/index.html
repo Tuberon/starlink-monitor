@@ -4,13 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Dish Watch — Starlink Monitor</title>
-<link rel="icon" type="image/x-icon" id="favicon" href="/static/favicon.ico">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="manifest" href="/static/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// Застосовує збережену тему СИНХРОННО, ДО завантаження style.css -
+// без цього був би помітний "спалах" неправильної теми при кожному
+// завантаженні сторінки (FOUC). Розташовано ПІСЛЯ <meta theme-color>
+// (потрібен у DOM для querySelector) і ПЕРЕД <link rel="stylesheet">
+// (щоб усе ще запобігати FOUC для CSS). try/catch - localStorage може
+// бути недоступний (приватний режим деяких браузерів).
+try {
+  if (localStorage.getItem('theme') === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#eef2f8');
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="{{ static_v('style.css') }}">
 </head>
 <body>
@@ -40,7 +53,7 @@
     </div>
   </header>
 
-  <div class="grid" id="metricsGrid">
+  <div class="grid">
     <div class="metric wide"><div class="label">Стан</div><div class="value text-value" id="mState">—</div></div>
     <div class="metric"><div class="label">Downlink</div><div class="value" id="mDown">—<span class="unit">Мбіт/с</span></div></div>
     <div class="metric"><div class="label">Uplink</div><div class="value" id="mUp">—<span class="unit">Мбіт/с</span></div></div>
@@ -53,11 +66,11 @@
     <div class="metric wide"><div class="label">Прошивка роутера</div><div class="value firmware-value" id="mFirmwareRouter">—</div></div>
   </div>
 
-  <div class="status-row" id="updateRow">
+  <div class="status-row">
     <div class="status-row-label">Оновлення ПЗ dish</div>
     <div class="status-row-body">
       <span class="badge" id="updateStateBadge">—</span>
-      <div class="progress-track" id="updateProgressTrack">
+      <div class="progress-track">
         <div class="progress-fill" id="updateProgressFill" style="width:0%"></div>
       </div>
       <span class="progress-pct" id="updateProgressPct">—</span>
@@ -66,18 +79,18 @@
     </div>
   </div>
 
-  <div class="status-row" id="alertsRow">
+  <div class="status-row">
     <div class="status-row-label">Попередження dish</div>
     <div class="status-row-body" id="alertsBody">
       <span class="alerts-none">активних попереджень немає</span>
     </div>
   </div>
 
-  <div class="status-row" id="routerUpdateRow">
+  <div class="status-row">
     <div class="status-row-label">Оновлення ПЗ роутера</div>
     <div class="status-row-body">
       <span class="badge" id="routerUpdateStateBadge">—</span>
-      <div class="progress-track" id="routerUpdateProgressTrack">
+      <div class="progress-track">
         <div class="progress-fill" id="routerUpdateProgressFill" style="width:0%"></div>
       </div>
       <span class="progress-pct" id="routerUpdateProgressPct">—</span>
@@ -85,7 +98,7 @@
     </div>
   </div>
 
-  <div class="status-row" id="routerAlertsRow">
+  <div class="status-row">
     <div class="status-row-label">Попередження роутера</div>
     <div class="status-row-body" id="routerAlertsBody">
       <span class="alerts-none">активних попереджень немає</span>
@@ -136,7 +149,11 @@
       <h2>Пропускна здатність</h2>
       <span class="sub">останні опитування</span>
     </div>
-    <canvas id="throughputChart"></canvas>
+    <div class="chart-legend">
+      <span><span class="chart-legend-dot" style="background:#5ee6c4"></span>Downlink Мбіт/с</span>
+      <span><span class="chart-legend-dot" style="background:#7aa2ff"></span>Uplink Мбіт/с</span>
+    </div>
+    <canvas id="throughputChart" height="120"></canvas>
   </div>
 
   <div class="panel">
@@ -163,7 +180,7 @@
     <span>Raspberry Pi Zero 2 W</span>
   </div>
 
-  <div class="grid" id="sysMetricsGrid">
+  <div class="grid">
     <div class="metric"><div class="label">Uptime Pi</div><div class="value" id="sUptime">—</div></div>
     <div class="metric"><div class="label">Температура</div><div class="value" id="sTemp">—<span class="unit">°C</span></div></div>
     <div class="metric"><div class="label">CPU</div><div class="value" id="sCpu">—<span class="unit">%</span></div></div>
@@ -204,6 +221,7 @@
 
 <script src="{{ static_v('common.js') }}"></script>
 <script src="{{ static_v('dashboard.js') }}"></script>
+<script src="{{ static_v('theme.js') }}"></script>
 <script src="{{ static_v('pwa.js') }}"></script>
 </body>
 </html>

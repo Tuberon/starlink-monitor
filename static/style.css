@@ -11,12 +11,45 @@
     --text-hi: #eaf1fb;
     --text-mid: #93a4c3;
     --text-low: #5b6b8c;
+    --gradient-start: #101c33;
+    --warn-border: #6b4f1f;
+    --crit-border: #6b2020;
+    --btn-crit-hover-bg: #1a1420;
+    --btn-crit-active-bg: #241a26;
+    --btn-signal-hover-bg: #0f2620;
+    --btn-signal-active-bg: #123832;
     --font-display: 'Space Grotesk', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   }
+  /* Світла тема - та сама семантика змінних (не змінюй імена, лише
+     значення), інвертована яскравість. Застосовується через атрибут
+     data-theme на <html>, встановлюється inline-скриптом у <head>
+     ДО завантаження style.css (уникає "спалаху" неправильної теми
+     при кожному завантаженні сторінки - FOUC). */
+  [data-theme="light"]{
+    --sky-950: #f4f7fb;
+    --sky-900: #eef2f8;
+    --sky-800: #ffffff;
+    --sky-700: #e4e9f2;
+    --line: #d7deea;
+    --signal: #1fae8c;
+    --signal-dim: #d1f2ea;
+    --warn: #d98a1f;
+    --crit: #e14b4b;
+    --text-hi: #0b1220;
+    --text-mid: #4a5875;
+    --text-low: #8291ab;
+    --gradient-start: #dce6f5;
+    --warn-border: #e8c896;
+    --crit-border: #f0b8b8;
+    --btn-crit-hover-bg: #fdeeee;
+    --btn-crit-active-bg: #fbe0e0;
+    --btn-signal-hover-bg: #e3f7f1;
+    --btn-signal-active-bg: #d1f0e8;
+  }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   body{
-    background: radial-gradient(ellipse 120% 80% at 50% -10%, #101c33 0%, var(--sky-950) 55%);
+    background: radial-gradient(ellipse 120% 80% at 50% -10%, var(--gradient-start) 0%, var(--sky-950) 55%);
     color: var(--text-hi);
     font-family: var(--font-display);
     min-height:100vh;
@@ -165,8 +198,8 @@
     background: var(--sky-800); color: var(--text-mid); border:1px solid var(--line);
   }
   .badge.state-idle{color:var(--signal); border-color:var(--signal-dim);}
-  .badge.state-active{color:var(--warn); border-color:#6b4f1f;}
-  .badge.state-reboot{color:var(--crit); border-color:#6b2020;}
+  .badge.state-active{color:var(--warn); border-color:var(--warn-border);}
+  .badge.state-reboot{color:var(--crit); border-color:var(--crit-border);}
   .progress-track{
     width:140px; height:6px; border-radius:4px; background:var(--sky-800);
     overflow:hidden; flex-shrink:0;
@@ -181,7 +214,7 @@
   .flag{
     font-family:var(--font-mono); font-size:0.68rem; color:var(--warn);
     padding:3px 9px; border-radius:6px; background:rgba(255,180,84,0.1);
-    border:1px solid #6b4f1f;
+    border:1px solid var(--warn-border);
   }
   .alerts-none{
     font-family:var(--font-mono); font-size:0.75rem; color:var(--text-low);
@@ -189,7 +222,7 @@
   .alert-chip{
     font-family:var(--font-mono); font-size:0.68rem; color:var(--crit);
     padding:3px 9px; border-radius:6px; background:rgba(255,107,107,0.1);
-    border:1px solid #6b2020;
+    border:1px solid var(--crit-border);
   }
 
   /* ---- panels ---- */
@@ -217,6 +250,12 @@
   .chart-block{margin-bottom:18px;}
   .chart-block:last-child{margin-bottom:0;}
   .chart-label{font-family:var(--font-mono); font-size:0.72rem; color:var(--text-low); margin-bottom:6px;}
+  .chart-legend{
+    display:flex; gap:16px; font-family:var(--font-mono); font-size:0.72rem;
+    color:var(--text-low); margin-bottom:8px;
+  }
+  .chart-legend span{display:flex; align-items:center; gap:6px;}
+  .chart-legend-dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
 
   canvas{max-height:154px;}
 
@@ -271,8 +310,8 @@
     cursor:pointer;
     transition: border-color 0.15s, background 0.15s;
   }
-  button.reboot-btn:hover{border-color:var(--crit); background:#1a1420;}
-  button.reboot-btn:active{border-color:var(--crit); background:#241a26;}
+  button.reboot-btn:hover{border-color:var(--crit); background:var(--btn-crit-hover-bg);}
+  button.reboot-btn:active{border-color:var(--crit); background:var(--btn-crit-active-bg);}
   button.reboot-btn:disabled{opacity:0.5; cursor:not-allowed;}
   .hint{font-family:var(--font-mono); font-size:0.68rem; color:var(--text-low);}
 
@@ -288,8 +327,8 @@
     cursor:pointer;
     transition: border-color 0.15s, background 0.15s;
   }
-  button.check-btn:hover{border-color:var(--signal); background:#0f2620;}
-  button.check-btn:active{border-color:var(--signal); background:#123832;}
+  button.check-btn:hover{border-color:var(--signal); background:var(--btn-signal-hover-bg);}
+  button.check-btn:active{border-color:var(--signal); background:var(--btn-signal-active-bg);}
   button.check-btn:disabled{opacity:0.5; cursor:not-allowed;}
   button.check-btn.spinning{animation: spin-pulse 1s ease-in-out infinite;}
   @keyframes spin-pulse{
