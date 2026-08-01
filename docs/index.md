@@ -13,6 +13,7 @@
 | `requirements.txt` | Python-залежності (pip), встановлюються на Pi |
 | `requirements-dev.txt` | Залежності розробки (mypy) - НЕ встановлюються на Pi |
 | `mypy.ini` | Конфігурація статичної типізації (виключає `app/vendor/`) |
+| `.gitignore` | `__pycache__/`, `.mypy_cache/`, `*.db` — не мають потрапляти в архів |
 | `LICENSE` | Ліцензія |
 
 ## `app/` — Python-модулі
@@ -39,7 +40,8 @@
 
 | Файл | Опис |
 |---|---|
-| `common.js` | Спільні функції для dashboard.js/stats.js (напр. `fmtTime`) |
+| `common.js` | Спільні для dashboard.js/stats.js: `fmtTime`, `fmtAgo`, `drawLineChart` (canvas-графіки без CDN) |
+| `theme.js` | Темна/світла тема - toggle на /settings, підключено на всіх 3 сторінках |
 | `dashboard.js` | Логіка головної сторінки (`/`) |
 | `settings.js` | Логіка сторінки налаштувань (`/settings`) |
 | `stats.js` | Логіка сторінки статистики (`/stats`) |

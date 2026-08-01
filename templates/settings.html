@@ -10,6 +10,20 @@
 <meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+// Застосовує збережену тему СИНХРОННО, ДО завантаження style.css -
+// без цього був би помітний "спалах" неправильної теми при кожному
+// завантаженні сторінки (FOUC). Розташовано ПІСЛЯ <meta theme-color>
+// (потрібен у DOM для querySelector) і ПЕРЕД <link rel="stylesheet">
+// (щоб усе ще запобігати FOUC для CSS). try/catch - localStorage може
+// бути недоступний (приватний режим деяких браузерів).
+try {
+  if (localStorage.getItem('theme') === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#eef2f8');
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="{{ static_v('style.css') }}">
 </head>
 <body>
@@ -25,6 +39,19 @@
     </div>
     <img src="/static/logo.png" alt="logo" class="header-logo">
   </header>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Вигляд</h2>
+    </div>
+    <div class="controls">
+      <label class="toggle-switch">
+        <input type="checkbox" id="lightThemeToggle">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+      <span class="toggle-label">Світла тема</span>
+    </div>
+  </div>
 
   <div class="panel">
     <div class="panel-head">
@@ -112,6 +139,7 @@
 </div>
 
 <script src="{{ static_v('settings.js') }}"></script>
+<script src="{{ static_v('theme.js') }}"></script>
 <script src="{{ static_v('pwa.js') }}"></script>
 </body>
 </html>
