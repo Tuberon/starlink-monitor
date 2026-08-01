@@ -480,12 +480,20 @@ def uptime_stats_24h() -> Optional[float]:
         return round(100.0 * (row["up"] or 0) / row["total"], 2)
 
 
-def upsert_known_device_dish(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
-    """Записує/оновлює відому інформацію про dish для конкретного dish_id.
-    dish_software_updated_ts оновлюється лише коли software_version реально
-    змінилась відносно попереднього запису (не при кожному опитуванні) -
-    так /id у Telegram-боті може показати, коли саме відбулось останнє
-    встановлене оновлення, а не час останнього опитування.
+def _upsert_known_device(dish_id: str, prefix: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
+    """Записує/оновлює відому dish- чи router-частину known_devices для
+    конкретного dish_id (prefix = "dish" або "router" - обирає, яку пару
+    колонок {prefix}_hardware_version/{prefix}_software_version/
+    {prefix}_software_updated_ts чіпати). dish і router опитуються в
+    різних циклах, тому оновлюються окремо; якщо запису для dish_id ще
+    немає (одна частина опиталась раніше за іншу), рядок створюється з
+    порожніми полями іншої частини.
+
+    {prefix}_software_updated_ts оновлюється лише коли software_version
+    реально змінилась відносно попереднього запису (не при кожному
+    опитуванні) - так /id у Telegram-боті може показати, коли саме
+    відбулось останнє встановлене оновлення, а не час останнього
+    опитування.
 
     Повертає (real_change, old_version): real_change=True лише коли
     dish_id вже був відомий РАНІШЕ і версія відрізняється (перший
@@ -493,65 +501,38 @@ def upsert_known_device_dish(dish_id: str, hardware_version: str, software_versi
     if not dish_id:
         return False, None
     now = time.time()
+    version_col = f"{prefix}_software_version"
     with get_conn() as conn:
         existing = conn.execute(
-            "SELECT dish_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
+            f"SELECT {version_col} FROM known_devices WHERE dish_id = ?", (dish_id,)
         ).fetchone()
-        old_version = existing["dish_software_version"] if existing else None
+        old_version = existing[version_col] if existing else None
         version_changed = existing is None or old_version != software_version
         real_change = old_version is not None and old_version != software_version
 
         conn.execute(
-            """INSERT INTO known_devices
-               (dish_id, first_seen_ts, last_seen_ts, dish_hardware_version,
-                dish_software_version, dish_software_updated_ts)
+            f"""INSERT INTO known_devices
+               (dish_id, first_seen_ts, last_seen_ts, {prefix}_hardware_version,
+                {version_col}, {prefix}_software_updated_ts)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(dish_id) DO UPDATE SET
                  last_seen_ts = excluded.last_seen_ts,
-                 dish_hardware_version = excluded.dish_hardware_version,
-                 dish_software_version = excluded.dish_software_version,
-                 dish_software_updated_ts = CASE WHEN ? THEN excluded.dish_software_updated_ts
-                                                  ELSE known_devices.dish_software_updated_ts END""",
+                 {prefix}_hardware_version = excluded.{prefix}_hardware_version,
+                 {version_col} = excluded.{version_col},
+                 {prefix}_software_updated_ts = CASE WHEN ? THEN excluded.{prefix}_software_updated_ts
+                                                  ELSE known_devices.{prefix}_software_updated_ts END""",
             (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
              int(version_changed)),
         )
     return real_change, old_version
+
+
+def upsert_known_device_dish(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
+    return _upsert_known_device(dish_id, "dish", hardware_version, software_version)
 
 
 def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
-    """Аналогічно до upsert_known_device_dish, але для роутерної частини
-    того самого фізичного Mini. Прив'язується до того ж dish_id - dish і
-    router опитуються в різних циклах, тому оновлюються окремо; якщо
-    запису для dish_id ще немає (router опитався раніше за dish), рядок
-    створюється з порожніми dish-полями.
-
-    Повертає (real_change, old_version) - див. upsert_known_device_dish."""
-    if not dish_id:
-        return False, None
-    now = time.time()
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT router_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
-        ).fetchone()
-        old_version = existing["router_software_version"] if existing else None
-        version_changed = existing is None or old_version != software_version
-        real_change = old_version is not None and old_version != software_version
-
-        conn.execute(
-            """INSERT INTO known_devices
-               (dish_id, first_seen_ts, last_seen_ts, router_hardware_version,
-                router_software_version, router_software_updated_ts)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(dish_id) DO UPDATE SET
-                 last_seen_ts = excluded.last_seen_ts,
-                 router_hardware_version = excluded.router_hardware_version,
-                 router_software_version = excluded.router_software_version,
-                 router_software_updated_ts = CASE WHEN ? THEN excluded.router_software_updated_ts
-                                                    ELSE known_devices.router_software_updated_ts END""",
-            (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
-             int(version_changed)),
-        )
-    return real_change, old_version
+    return _upsert_known_device(dish_id, "router", hardware_version, software_version)
 
 
 def get_known_device(dish_id: str) -> Optional[dict[str, Any]]:
