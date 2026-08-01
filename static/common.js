@@ -31,6 +31,14 @@ function fmtAgo(ts) {
 // всю висоту графіка, виглядаючи як драматичні піки). Числові
 // підписи max-значення (кольором лінії) - без них графік показує
 // лише форму, без жодної конкретної величини (неінформативно).
+function _percentile(sortedArr, p) {
+  const idx = (sortedArr.length - 1) * p;
+  const lower = Math.floor(idx);
+  const upper = Math.ceil(idx);
+  if (lower === upper) return sortedArr[lower];
+  return sortedArr[lower] + (sortedArr[upper] - sortedArr[lower]) * (idx - lower);
+}
+
 function drawLineChart(canvas, series, options = {}) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -61,17 +69,31 @@ function drawLineChart(canvas, series, options = {}) {
     const pts = s.data.filter(v => v != null);
     if (pts.length < 2) continue;
     let min = Math.min(...pts);
-    let max = Math.max(...pts);
+    const trueMax = Math.max(...pts);
     if (options.beginAtZero) min = Math.min(min, 0);
-    const range = (max - min) || 1;
+
+    // Один різкий викид (напр. початковий сплеск при підключенні)
+    // стискає всю реально цікаву варіацію решти даних у тонку смужку
+    // біля низу графіка - типова проблема raw-min/max масштабування.
+    // Якщо реальний max суттєво (>1.5x) перевищує 95-й процентиль -
+    // використовуємо процентиль як стелю шкали (той самий підхід, що
+    // й у Grafana для "outlier-resistant" осі Y), а викид малюємо
+    // "притиснутим" до верху графіка, не спотворюючи решту шкали.
+    // Числовий підпис max - і далі РЕАЛЬНЕ значення (не обрізане).
+    const sorted = [...pts].sort((a, b) => a - b);
+    const p95 = _percentile(sorted, 0.95);
+    const scaleMax = (p95 > 0 && trueMax > p95 * 1.5) ? p95 : trueMax;
+    const range = (scaleMax - min) || 1;
+
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     let started = false;
     s.data.forEach((v, i) => {
       if (v == null) { started = false; return; }
+      const clamped = Math.min(v, scaleMax);
       const x = (i / (s.data.length - 1)) * (w - 2 * pad) + pad;
-      const y = h - pad - ((v - min) / range) * chartH;
+      const y = h - pad - ((clamped - min) / range) * chartH;
       if (!started) { ctx.moveTo(x, y); started = true; }
       else { ctx.lineTo(x, y); }
     });
@@ -82,7 +104,7 @@ function drawLineChart(canvas, series, options = {}) {
     ctx.fillStyle = s.color;
     ctx.font = '10px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(`макс ${max.toFixed(1)}`, w - pad, labelY);
+    ctx.fillText(`макс ${trueMax.toFixed(1)}`, w - pad, labelY);
     labelY += 12;
   }
 }

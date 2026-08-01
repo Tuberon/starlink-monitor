@@ -249,6 +249,18 @@ if ! grep -q "^SystemMaxUse=" /etc/systemd/journald.conf 2>/dev/null; then
   systemctl restart systemd-journald
 fi
 
+# fstrim.timer - періодичний TRIM для flash-носіїв (та сама лінія, що
+# PRAGMA synchronous=NORMAL: зменшення зношення SD-картки). Стандартна
+# частина util-linux, майже напевно вже встановлена на Raspberry Pi
+# OS - лише enable+start, без встановлення пакету. Безпечно навіть
+# якщо конкретна SD-картка НЕ підтримує TRIM - fstrim у такому
+# випадку просто нічого не робить, не шкодить.
+if systemctl list-unit-files fstrim.timer &>/dev/null; then
+  systemctl enable --now fstrim.timer
+else
+  echo "==> fstrim.timer не знайдено (util-linux застарілий?) - пропускаю"
+fi
+
 if [[ "$MODE" == "update" ]]; then
   if [[ "$CHANGED_FILES" -gt 0 || "$REQ_CHANGED" -eq 1 || "$UNITS_UPDATED" -eq 1 ]]; then
     echo "==> Виявлено зміни — перезапускаю сервіси"

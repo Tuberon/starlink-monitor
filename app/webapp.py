@@ -320,11 +320,16 @@ def api_get_target_versions() -> ResponseReturnValue:
 
 @app.route("/api/target-versions", methods=["POST"])
 def api_set_target_versions() -> ResponseReturnValue:
-    """Приймає нову очікувану версію лише якщо вона НЕ старіша за вже
-    відому (попередній target, якщо був, і поточну встановлену версію
-    - береться максимум із двох як базова лінія). Захищає від
-    випадкового відкату (напр. описка чи забутий раніше введений
-    новіший target) - очікувані версії мають рухатись лише вперед."""
+    """Приймає нову очікувану версію (чи кілька через кому - для
+    різних апаратних ревізій, той самий формат, що telegram_chat_ids)
+    лише якщо КОЖЕН кандидат НЕ старіший за вже відому (попередній
+    target-список, якщо був, і поточну встановлену версію - береться
+    максимум з усіх як базова лінія). Захищає від випадкового відкату
+    (напр. описка чи забутий раніше введений новіший target) -
+    очікувані версії мають рухатись лише вперед. Якщо ХОЧ ОДИН
+    кандидат у списку старіший - відхиляється ВЕСЬ список для цього
+    поля (не часткове прийняття окремих кандидатів - простіша, чіткіша
+    семантика для користувача)."""
     payload = request.get_json(silent=True) or {}
     dish_target = payload.get("dish_target")
     router_target = payload.get("router_target")
@@ -336,27 +341,29 @@ def api_set_target_versions() -> ResponseReturnValue:
 
     if dish_target is not None:
         dish_target = dish_target.strip()
-        baseline_candidates = [v for v in (
-            db.get_setting("dish_target_version"),
-            latest.get("software_version") if latest else None,
-        ) if v]
+        candidates = db.parse_version_list(dish_target)
+        baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
+            [latest["software_version"]] if latest and latest.get("software_version") else []
+        )
         baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
-        if baseline and _is_older_version(dish_target, baseline):
-            rejected.append(f"тарілка: {dish_target} старіша за вже відому {baseline}")
-        elif dish_target:
+        older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
+        if older:
+            rejected.append(f"тарілка: {', '.join(older)} старіші за вже відому {baseline}")
+        elif candidates:
             db.set_setting("dish_target_version", dish_target)
             saved.append("тарілка")
 
     if router_target is not None:
         router_target = router_target.strip()
-        baseline_candidates = [v for v in (
-            db.get_setting("router_target_version"),
-            router_status.get("software_version") if router_status else None,
-        ) if v]
+        candidates = db.parse_version_list(router_target)
+        baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
+            [router_status["software_version"]] if router_status and router_status.get("software_version") else []
+        )
         baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
-        if baseline and _is_older_version(router_target, baseline):
-            rejected.append(f"роутер: {router_target} старіша за вже відому {baseline}")
-        elif router_target:
+        older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
+        if older:
+            rejected.append(f"роутер: {', '.join(older)} старіші за вже відому {baseline}")
+        elif candidates:
             db.set_setting("router_target_version", router_target)
             saved.append("роутер")
 

@@ -13,7 +13,8 @@
 | `requirements.txt` | Python-залежності (pip), встановлюються на Pi |
 | `requirements-dev.txt` | Залежності розробки (mypy) - НЕ встановлюються на Pi |
 | `mypy.ini` | Конфігурація статичної типізації (виключає `app/vendor/`) |
-| `.gitignore` | `__pycache__/`, `.mypy_cache/`, `*.db` — не мають потрапляти в архів |
+| `pytest.ini` | Мінімальна конфігурація pytest (`testpaths = tests`) |
+| `.gitignore` | `__pycache__/`, `.mypy_cache/`, `.pytest_cache/`, `*.db` — не мають потрапляти в архів |
 | `LICENSE` | Ліцензія |
 
 ## `app/` — Python-модулі
@@ -79,6 +80,15 @@
 | `fetch_starlink_grpc.sh` | Опційне оновлення vendored `starlink_grpc.py` до найновішої upstream-версії |
 | `wan_failover_check.sh` | Перевірка інтернету через wlan0, коригування route-metric |
 | `watchdog_healthcheck.sh` | Перевірка `/healthz`, force-restart при не-200 |
+
+## `tests/` — pytest
+
+| Файл | Опис |
+|---|---|
+| `conftest.py` | Спільні fixtures: `db_path` (ізольована тимчасова БД), `watchdog` (з mock-ованим `_notify`) |
+| `test_monitor.py` | Групування reboot-спаму, дедублікація target-версій, `_maybe_reboot()` |
+| `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
+| `test_db.py` | Downsampling метрик, безшовність графіка через межу cutoff |
 
 ## `docs/` — документація
 

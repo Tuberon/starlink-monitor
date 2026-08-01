@@ -600,6 +600,18 @@ def get_latest_speedtest_result() -> Optional[dict[str, Any]]:
         return dict(row) if row else None
 
 
+def parse_version_list(raw: Optional[str]) -> list[str]:
+    """Розбирає comma-separated список версій прошивки (той самий
+    формат, що telegram_chat_ids) - корисно, коли SpaceX випускає
+    РІЗНІ номери версій для різних апаратних ревізій під однією
+    умовною версією. Спільний helper для monitor.py (перевірка
+    досягнення) і webapp.py (валідація "лише новіші" для КОЖНОГО
+    кандидата окремо) - уникає дублювання парсингу в обох місцях."""
+    if not raw:
+        return []
+    return [v.strip() for v in raw.split(",") if v.strip()]
+
+
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     with get_conn() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
