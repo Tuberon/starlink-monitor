@@ -207,33 +207,40 @@ class Watchdog:
                 self._notify("✅ Оновлення ПЗ dish завершено (нова версія встановлена)")
         self.prev_update_state = state
 
-    def _log_alerts_change(self, status: DishStatus) -> None:
-        """Пише окрему подію для кожного попередження, яке з'явилось або зникло."""
-        current = set(status.active_alerts or [])
-        previous = self.prev_alerts
-
+    def _log_alerts_diff(
+        self, current: set[str], previous: Optional[set[str]], labels: dict[str, str],
+        event_kind: str, event_kind_resolved: str, new_text: str, resolved_text: str,
+        notify_text: str, muted: set[str],
+    ) -> None:
+        """Спільна логіка для _log_alerts_change/_log_router_alerts_change:
+        обидва порівнюють поточний і попередній набір активних alert-
+        прапорців, пишуть подію "з'явилось"/"знято" для кожної різниці і
+        (для нових, не заглушених) шлють Telegram - відрізняються лише
+        словник лейблів, тексти подій/сповіщень і набір MUTED_*."""
         # Перший виклик (previous is None): не генеруємо подій "з'явилось",
         # бо це вже поточний стан на момент старту сервісу, а не нова зміна.
-        if previous is not None:
-            appeared = current - previous
-            resolved = previous - current
-            for alert in sorted(appeared):
-                label = ALERT_LABELS.get(alert, alert)
-                db.insert_event(
-                    "dish_alert",
-                    f"Нове попередження dish: {label}",
-                    success=False,
-                )
-                if alert not in self.MUTED_DISH_ALERTS:
-                    self._notify(f"⚠️ Нове попередження dish: {label}")
-            for alert in sorted(resolved):
-                label = ALERT_LABELS.get(alert, alert)
-                db.insert_event(
-                    "dish_alert_resolved",
-                    f"Попередження знято: {label}",
-                    success=True,
-                )
+        if previous is None:
+            return
+        appeared = current - previous
+        resolved = previous - current
+        for alert in sorted(appeared):
+            label = labels.get(alert, alert)
+            db.insert_event(event_kind, f"{new_text}: {label}", success=False)
+            if alert not in muted:
+                self._notify(f"⚠️ {notify_text}: {label}")
+        for alert in sorted(resolved):
+            label = labels.get(alert, alert)
+            db.insert_event(event_kind_resolved, f"{resolved_text}: {label}", success=True)
 
+    def _log_alerts_change(self, status: DishStatus) -> None:
+        """Пише окрему подію для кожного попередження dish, яке з'явилось або зникло."""
+        current = set(status.active_alerts or [])
+        self._log_alerts_diff(
+            current, self.prev_alerts, ALERT_LABELS,
+            "dish_alert", "dish_alert_resolved",
+            "Нове попередження dish", "Попередження знято", "Нове попередження dish",
+            self.MUTED_DISH_ALERTS,
+        )
         self.prev_alerts = current
 
     def _notify_first_dish_connection(self, status: DishStatus) -> None:
@@ -330,28 +337,12 @@ class Watchdog:
         """Пише окрему подію для кожного попередження роутера, яке з'явилось або зникло.
         info.active_alerts тут уже профільтровано від IGNORED_ROUTER_ALERTS (poll_router)."""
         current = set(info.active_alerts or [])
-        previous = self.prev_router_alerts
-
-        if previous is not None:
-            appeared = current - previous
-            resolved = previous - current
-            for alert in sorted(appeared):
-                label = ROUTER_ALERT_LABELS.get(alert, alert)
-                db.insert_event(
-                    "router_alert",
-                    f"Нове попередження роутера: {label}",
-                    success=False,
-                )
-                if alert not in self.MUTED_ROUTER_ALERTS:
-                    self._notify(f"⚠️ Нове попередження роутера: {label}")
-            for alert in sorted(resolved):
-                label = ROUTER_ALERT_LABELS.get(alert, alert)
-                db.insert_event(
-                    "router_alert_resolved",
-                    f"Попередження роутера знято: {label}",
-                    success=True,
-                )
-
+        self._log_alerts_diff(
+            current, self.prev_router_alerts, ROUTER_ALERT_LABELS,
+            "router_alert", "router_alert_resolved",
+            "Нове попередження роутера", "Попередження роутера знято", "Нове попередження роутера",
+            self.MUTED_ROUTER_ALERTS,
+        )
         self.prev_router_alerts = current
 
     def _reboot_for_update_ready(self, component_label: str, reason: str) -> None:
