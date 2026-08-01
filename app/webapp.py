@@ -1,8 +1,10 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, історія, журнал подій, ручний reboot."""
 import logging
 import os
+import re
 import subprocess
 import time
+from typing import Any
 
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
@@ -283,6 +285,89 @@ def api_set_telegram_config() -> ResponseReturnValue:
     return jsonify({"success": True})
 
 
+def _version_key(v: str) -> tuple[tuple[int, int, int], tuple[Any, ...]]:
+    """Толерантний ключ порівняння версій прошивки Starlink (формат
+    зазвичай YYYY.MM.DD.mrXXXXX.N, не строгий semver). YYYY.MM.DD-
+    префікс домінує (дата - найнадійніший індикатор "новіше"); якщо
+    дата однакова чи відсутня в обох - посегментне порівняння
+    ('.'-розділені частини: числові сегменти як int, нечислові як
+    рядок, щоб не впасти на нетиповому форматі)."""
+    m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})", v)
+    date_part = (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
+    segments = tuple((0, int(seg)) if seg.isdigit() else (1, seg) for seg in v.split("."))
+    return date_part, segments
+
+
+def _is_older_version(candidate: str, baseline: str) -> bool:
+    return _version_key(candidate) < _version_key(baseline)
+
+
+@app.route("/api/target-versions")
+def api_get_target_versions() -> ResponseReturnValue:
+    """Поточна встановлена версія (dish_current/router_current) - для
+    pre-fill інпута на /settings при першому введенні (першочергово
+    показуємо вже відому версію, а не порожнє поле) і для порівняння
+    на фронтенді, чи target вже досягнуто."""
+    latest = db.get_latest_metric()
+    router = db.get_router_status()
+    return jsonify({
+        "dish_target": db.get_setting("dish_target_version"),
+        "router_target": db.get_setting("router_target_version"),
+        "dish_current": latest.get("software_version") if latest else None,
+        "router_current": router.get("software_version") if router else None,
+    })
+
+
+@app.route("/api/target-versions", methods=["POST"])
+def api_set_target_versions() -> ResponseReturnValue:
+    """Приймає нову очікувану версію лише якщо вона НЕ старіша за вже
+    відому (попередній target, якщо був, і поточну встановлену версію
+    - береться максимум із двох як базова лінія). Захищає від
+    випадкового відкату (напр. описка чи забутий раніше введений
+    новіший target) - очікувані версії мають рухатись лише вперед."""
+    payload = request.get_json(silent=True) or {}
+    dish_target = payload.get("dish_target")
+    router_target = payload.get("router_target")
+    latest = db.get_latest_metric()
+    router_status = db.get_router_status()
+
+    saved = []
+    rejected = []
+
+    if dish_target is not None:
+        dish_target = dish_target.strip()
+        baseline_candidates = [v for v in (
+            db.get_setting("dish_target_version"),
+            latest.get("software_version") if latest else None,
+        ) if v]
+        baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
+        if baseline and _is_older_version(dish_target, baseline):
+            rejected.append(f"тарілка: {dish_target} старіша за вже відому {baseline}")
+        elif dish_target:
+            db.set_setting("dish_target_version", dish_target)
+            saved.append("тарілка")
+
+    if router_target is not None:
+        router_target = router_target.strip()
+        baseline_candidates = [v for v in (
+            db.get_setting("router_target_version"),
+            router_status.get("software_version") if router_status else None,
+        ) if v]
+        baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
+        if baseline and _is_older_version(router_target, baseline):
+            rejected.append(f"роутер: {router_target} старіша за вже відому {baseline}")
+        elif router_target:
+            db.set_setting("router_target_version", router_target)
+            saved.append("роутер")
+
+    if saved:
+        db.insert_event("target_versions_updated", f"Очікувані версії прошивок оновлено: {', '.join(saved)}", success=True)
+
+    if rejected:
+        return jsonify({"success": bool(saved), "message": "Відхилено (старіша версія): " + "; ".join(rejected)})
+    return jsonify({"success": True})
+
+
 @app.route("/api/telegram-test", methods=["POST"])
 def api_telegram_test() -> ResponseReturnValue:
     ok, msg = telegram_notify.test_connection()
@@ -351,6 +436,8 @@ def api_settings_backup() -> ResponseReturnValue:
         "auto_reboot_enabled": db.get_auto_reboot_enabled(),
         "signature_phrases": telegram_notify.get_signature_phrases_text(),
         "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
+        "dish_target_version": db.get_setting("dish_target_version"),
+        "router_target_version": db.get_setting("router_target_version"),
         "env_params": env_params,
     }
     return jsonify(backup)
@@ -390,6 +477,14 @@ def api_settings_restore() -> ResponseReturnValue:
         if "signature_phrases_enabled" in payload:
             telegram_notify.set_signature_phrases_enabled(bool(payload["signature_phrases_enabled"]))
             restored.append("перемикач фраз")
+
+        if payload.get("dish_target_version"):
+            db.set_setting("dish_target_version", payload["dish_target_version"])
+            restored.append("очікувана версія тарілки")
+
+        if payload.get("router_target_version"):
+            db.set_setting("router_target_version", payload["router_target_version"])
+            restored.append("очікувана версія роутера")
 
         if payload.get("env_params"):
             ok, msg = config_editor.save_values(payload["env_params"])

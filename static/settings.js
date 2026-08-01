@@ -14,6 +14,46 @@ async function loadTelegramConfig() {
   }
 }
 
+async function loadTargetVersions() {
+  try {
+    const res = await fetch('/api/target-versions');
+    const data = await res.json();
+    const dishInput = el('dishTargetVersionInput');
+    const routerInput = el('routerTargetVersionInput');
+    // Першочергове введення - якщо target ще не задано, показуємо
+    // ПОТОЧНУ відому версію як стартове значення (не порожнє поле),
+    // щоб не змушувати вводити версію вручну з нуля.
+    dishInput.value = data.dish_target || data.dish_current || '';
+    routerInput.value = data.router_target || data.router_current || '';
+  } catch (e) {
+    console.error('target versions load failed', e);
+  }
+}
+
+async function handleTargetVersionsSave() {
+  const btn = el('targetVersionsSaveBtn');
+  const hint = el('targetVersionsHint');
+  const dishTarget = el('dishTargetVersionInput').value.trim();
+  const routerTarget = el('routerTargetVersionInput').value.trim();
+
+  btn.disabled = true;
+  hint.textContent = 'Зберігаю...';
+  try {
+    const res = await fetch('/api/target-versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dish_target: dishTarget, router_target: routerTarget }),
+    });
+    const data = await res.json();
+    hint.textContent = data.message || (data.success ? 'Збережено' : 'Помилка збереження');
+  } catch (e) {
+    hint.textContent = 'Помилка мережі при збереженні';
+    console.error('target versions save failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function updateTelegramUI(enabled) {
   const toggle = el('telegramEnabledToggle');
   const badge = el('telegramStatusBadge');
@@ -322,7 +362,9 @@ document.addEventListener('DOMContentLoaded', () => {
   el('settingsRestoreFile').addEventListener('change', handleSettingsRestoreFile);
   el('envConfigSaveBtn').addEventListener('click', handleEnvConfigSave);
   el('envConfigRestartBtn').addEventListener('click', handleEnvConfigRestart);
+  el('targetVersionsSaveBtn').addEventListener('click', handleTargetVersionsSave);
   loadTelegramConfig();
   loadSignaturePhrases();
   loadEnvConfig();
+  loadTargetVersions();
 });

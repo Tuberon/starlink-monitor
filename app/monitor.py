@@ -141,6 +141,9 @@ class Watchdog:
             real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
             if real_change:
                 self._notify(f"🔄 Прошивка тарілки оновлена: {old_version} → {status.software_version}")
+            self._check_target_version_reached(
+                "тарілки", status.software_version, "dish_target_version", "dish_target_notified"
+            )
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
@@ -260,6 +263,27 @@ class Watchdog:
         db.insert_event("dish_connected", f"Підключено Starlink Mini, ID: {status.dish_id}", success=True)
         self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
 
+    def _check_target_version_reached(
+        self, component_label: str, current_version: Optional[str], target_key: str, notified_key: str
+    ) -> None:
+        """Порівнює встановлену версію (current_version) з очікуваною
+        (target - введена користувачем на /settings, зберігається як
+        звичайний рядок у settings, не окрема таблиця). Якщо збігається
+        - надсилає сповіщення ОДИН раз для КОЖНОГО конкретного target-
+        значення: notified_key зберігає САМЕ ЗНАЧЕННЯ target, про яке
+        вже сповістили (не boolean-прапорець) - природно "скидається",
+        коли користувач вводить НОВИЙ target (порівняння з іншим
+        значенням), без потреби окремо очищати стан вручну."""
+        target = db.get_setting(target_key)
+        if not target or not current_version:
+            return
+        if current_version != target:
+            return
+        if db.get_setting(notified_key) == target:
+            return
+        self._notify(f"✅ Останнє оновлення {component_label} встановлено: версія {target}")
+        db.set_setting(notified_key, target)
+
     def poll_system_metrics(self) -> None:
         try:
             metrics = get_system_metrics()
@@ -296,6 +320,9 @@ class Watchdog:
                 )
                 if real_change:
                     self._notify(f"🔄 Прошивка роутера оновлена: {old_version} → {info.software_version}")
+            self._check_target_version_reached(
+                "роутера", info.software_version, "router_target_version", "router_target_notified"
+            )
             self._log_router_update_state_change(info)
             self._log_router_alerts_change(info)
             self._maybe_reboot_for_router_update(info)
