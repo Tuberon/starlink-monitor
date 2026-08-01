@@ -162,7 +162,15 @@ if [[ ! -d "$PROJECT_DIR/venv" ]]; then
   sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
 elif [[ "$REQ_CHANGED" -eq 1 ]]; then
   echo "==> requirements.txt змінився — оновлюю залежності"
-  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade -r "$PROJECT_DIR/requirements.txt"
+  # БЕЗ --upgrade: requirements.txt тепер має ЛИШЕ точні == піни (не
+  # >=), тому звичайний install ідемпотентний і торкається ЛИШЕ
+  # пакетів, чий точний pin реально відрізняється від встановленого.
+  # --upgrade тут раніше (баг, знайдений на реальному Pi) оновлював
+  # УСІ пакети у файлі до найновіших версій, що задовольняють >=,
+  # навіть ті, чий рядок не змінювався - одного разу так випадково
+  # оновився adafruit-blinka (8.x->9.2.0, hardware-критичний для
+  # TFT-дисплея), хоч ми explicitly домовились його не чіпати.
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
 else
   echo "==> venv вже існує, requirements.txt без змін — пропускаю pip install"
 fi

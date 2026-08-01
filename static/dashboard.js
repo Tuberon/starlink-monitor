@@ -25,16 +25,19 @@ function setValueClass(node, value, warnAt, critAt, higherIsBad = true) {
   }
 }
 
-// Людські назви enum-станів/alert-прапорців - завантажуються з
-// /api/labels (app/labels.py, спільне джерело істини з бекендом,
-// щоб не дублювати ті самі словники вручну в двох місцях) через
-// loadLabels() перед першим tick().
-let UPDATE_STATE_LABELS = {};
-let ALERT_LABELS = {};
-let ROUTER_UPDATE_STATE_LABELS = {};
-let ROUTER_ALERT_LABELS = {};
+const UPDATE_STATE_LABELS = {
+  'SOFTWARE_UPDATE_STATE_UNKNOWN': 'невідомо',
+  'IDLE': 'немає оновлень',
+  'FETCHING': 'завантаження',
+  'PRE_CHECK': 'перевірка перед встановленням',
+  'WRITING': 'встановлення',
+  'POST_CHECK': 'перевірка після встановлення',
+  'REBOOT_REQUIRED': 'очікує перезавантаження',
+  'DISABLED': 'вимкнено',
+  'FAULTED': 'помилка оновлення',
+};
 
-let ALERT_LABELS = {
+const ALERT_LABELS = {
   'motors_stuck': 'двигуни заклинило',
   'thermal_shutdown': 'аварійне вимкнення через перегрів',
   'thermal_throttle': 'обмеження через перегрів',
@@ -57,9 +60,7 @@ let ALERT_LABELS = {
   'no_ethernet_link': 'немає з\'єднання Ethernet',
 };
 
-let UPDATE_STATE_LABELS = {};
-
-ROUTER_UPDATE_STATE_LABELS = {
+const ROUTER_UPDATE_STATE_LABELS = {
   'NOT_RUN': 'немає оновлень',
   'GETTING_TARGET_VERSION': 'перевірка наявності оновлення',
   'DOWNLOADING_UPDATE_IMAGE': 'завантаження оновлення',
@@ -74,7 +75,7 @@ ROUTER_UPDATE_STATE_LABELS = {
   'FLASHING_FAILED': 'помилка встановлення оновлення',
 };
 
-ROUTER_ALERT_LABELS = {
+const ROUTER_ALERT_LABELS = {
   'thermal_throttle': 'обмеження через перегрів',
   'install_pending': 'очікує встановлення',
   'freshly_fused': 'щойно активовано',
@@ -97,20 +98,6 @@ ROUTER_ALERT_LABELS = {
   'offline_networks_disabled': 'офлайн-мережі вимкнено',
   'wired_mesh_not_using_wan_iface': 'дротовий mesh не використовує WAN',
 };
-
-async function loadLabels() {
-  try {
-    const res = await fetch('/api/labels');
-    const data = await res.json();
-    UPDATE_STATE_LABELS = data.update_state || {};
-    ALERT_LABELS = data.alert || {};
-    ROUTER_UPDATE_STATE_LABELS = data.router_update_state || {};
-    ROUTER_ALERT_LABELS = data.router_alert || {};
-  } catch (e) {
-    console.error('labels load failed', e);
-  }
-}
-
 
 const OFFLINE_CACHE_KEY = 'starlink_last_status_v1';
 
@@ -624,8 +611,7 @@ function tick() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadLabels();
+document.addEventListener('DOMContentLoaded', () => {
   el('rebootBtn').addEventListener('click', handleReboot);
   el('piRebootBtn').addEventListener('click', handlePiReboot);
   el('piShutdownBtn').addEventListener('click', handlePiShutdown);
@@ -635,7 +621,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('speedtestRunBtn').addEventListener('click', handleSpeedtestRun);
   loadConfigFlags();
   loadSpeedtestSummary();
-  await loadLabels();
   tick();
 
   // Вкладка згорнута/неактивна - опитування раз на 30с замість

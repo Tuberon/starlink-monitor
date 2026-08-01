@@ -7,7 +7,7 @@ import time
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, labels, system_metrics, telegram_notify
+from app import config, config_editor, db, system_metrics, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -151,19 +151,6 @@ def api_events() -> ResponseReturnValue:
 def api_system_status() -> ResponseReturnValue:
     latest = db.get_latest_system_metric()
     return jsonify({"latest": latest, "apt": system_metrics.get_apt_updates_info()})
-
-
-@app.route("/api/labels")
-def api_labels() -> ResponseReturnValue:
-    """Людські назви enum-станів/alert-прапорців (app/labels.py) - віддаються
-    фронтенду одним джерелом істини замість дублювання тих самих словників
-    вручну в dashboard.js."""
-    return jsonify({
-        "update_state": labels.UPDATE_STATE_LABELS,
-        "alert": labels.ALERT_LABELS,
-        "router_update_state": labels.ROUTER_UPDATE_STATE_LABELS,
-        "router_alert": labels.ROUTER_ALERT_LABELS,
-    })
 
 
 @app.route("/api/router-status")

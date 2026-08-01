@@ -19,7 +19,7 @@ from app.starlink_client import StarlinkClient
 
 logger = logging.getLogger("telegram_bot")
 
-API_BASE = telegram_notify.API_BASE
+API_BASE = "https://api.telegram.org/bot{token}/{method}"
 REQUEST_TIMEOUT_SEND = 10
 POLL_TIMEOUT_SEC = 30
 REQUEST_TIMEOUT_POLL = POLL_TIMEOUT_SEC + 5  # трохи більше за timeout long polling
