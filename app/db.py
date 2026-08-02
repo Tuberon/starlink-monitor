@@ -566,6 +566,39 @@ def get_all_known_devices() -> list[dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
+def merge_known_devices(devices: list[dict[str, Any]]) -> int:
+    """Відновлення known_devices з backup - НЕ перезаписує dish_id,
+    що вже є в цільовій БД (INSERT OR IGNORE), навіть якщо в backup
+    дані виглядають "новішими" за датою файлу: локальна БД реально
+    працюючого watchdog'а вважається авторитетнішою за статичний
+    backup-знімок з невідомо якого моменту в минулому - той самий
+    принцип обережності, що вже застосований до target-версій
+    (не перезаписувати потенційно свіжіший стан старішими даними).
+    Повертає кількість РЕАЛЬНО доданих (нових) dish_id."""
+    added = 0
+    with get_conn() as conn:
+        for d in devices:
+            if "dish_id" not in d:
+                continue
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO known_devices
+                   (dish_id, first_seen_ts, last_seen_ts, dish_hardware_version,
+                    dish_software_version, dish_software_updated_ts,
+                    router_hardware_version, router_software_version,
+                    router_software_updated_ts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    d["dish_id"], d.get("first_seen_ts"), d.get("last_seen_ts"),
+                    d.get("dish_hardware_version"), d.get("dish_software_version"),
+                    d.get("dish_software_updated_ts"), d.get("router_hardware_version"),
+                    d.get("router_software_version"), d.get("router_software_updated_ts"),
+                ),
+            )
+            if cursor.rowcount > 0:
+                added += 1
+    return added
+
+
 def insert_speedtest_result(data: dict[str, Any]) -> None:
     with get_conn() as conn:
         conn.execute(

@@ -211,13 +211,18 @@ notified`) зберігає ОБ'ЄДНАНИЙ рядок обох target од�
 
 `GET /api/settings-backup` віддає JSON (Telegram bot token, chat_ids,
 enabled, auto_reboot_enabled, вміст і перемикач signature_phrases,
-dish/router_target_version, `env_params` — лише перевизначені
-параметри app/config.py) —
+dish/router_target_version, історія відомих Starlink-пристроїв
+(`known_devices` — dish_id, версії ПЗ/апаратні, часові мітки),
+`env_params` — лише перевизначені параметри app/config.py) —
 завантажується браузером як файл. `POST /api/settings-restore`
 приймає той самий формат і застосовує лише відомі поля (env_params
 через `config_editor.save_values()`, застосовується після рестарту
-сервісів). Bot token у файлі — у відкритому вигляді, файл backup
-потрібно берегти як secret.
+сервісів). `known_devices` через `db.merge_known_devices()` — НЕ
+перезаписує dish_id, що вже є в цільовій БД (INSERT OR IGNORE):
+локальна БД реально працюючого watchdog'а вважається авторитетнішою
+за статичний backup-знімок з невідомо якого моменту в минулому.
+Bot token у файлі — у відкритому вигляді, файл backup потрібно
+берегти як secret.
 
 ## Фізична кнопка виключення (GPIO)
 

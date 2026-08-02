@@ -110,3 +110,39 @@ def test_prune_old_cleans_both_raw_and_downsampled(db_path):
     with db.get_conn() as conn:
         count = conn.execute("SELECT COUNT(*) as c FROM metrics_downsampled").fetchone()["c"]
     assert count == 1
+
+
+# ---- known_devices - історія відомих Starlink-пристроїв (backup/restore) ----
+
+def test_merge_known_devices_adds_new_on_empty_db(db_path):
+    devices = [
+        {"dish_id": "dish-AAA", "first_seen_ts": 1000.0, "last_seen_ts": 2000.0,
+         "dish_software_version": "v1.0"},
+        {"dish_id": "dish-BBB", "first_seen_ts": 1000.0, "last_seen_ts": 2000.0,
+         "dish_software_version": "v2.0"},
+    ]
+    added = db.merge_known_devices(devices)
+    assert added == 2
+    assert len(db.get_all_known_devices()) == 2
+
+
+def test_merge_known_devices_does_not_overwrite_existing(db_path):
+    """Найважливіший сценарій: dish_id, що вже є локально, НЕ
+    перезаписується даними з backup, навіть якщо локальний запис
+    об'єктивно новіший (backup - потенційно застарілий знімок)."""
+    db.upsert_known_device_dish("dish-AAA", "rev3", "v99.0-NEWER")
+
+    added = db.merge_known_devices([
+        {"dish_id": "dish-AAA", "first_seen_ts": 1000.0, "last_seen_ts": 2000.0,
+         "dish_software_version": "v1.0-OLD"},
+    ])
+
+    assert added == 0
+    current = db.get_known_device("dish-AAA")
+    assert current["dish_software_version"] == "v99.0-NEWER"
+
+
+def test_merge_known_devices_ignores_entries_without_dish_id(db_path):
+    added = db.merge_known_devices([{"first_seen_ts": 1000.0}])
+    assert added == 0
+    assert db.get_all_known_devices() == []

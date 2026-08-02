@@ -422,12 +422,13 @@ BACKUP_FORMAT_VERSION = 2
 @app.route("/api/settings-backup")
 def api_settings_backup() -> ResponseReturnValue:
     """Повертає всі налаштування (Telegram config, фрази підпису,
-    auto-reboot, перевизначені параметри app/config.py) одним JSON-файлом
-    для завантаження. Bot token включається у відкритому вигляді - файл
-    backup потрібно берегти як secret (не публікувати, не комітити в git).
-    env_params містить лише РЕАЛЬНО перевизначені параметри (overridden),
-    не всі значення за замовчуванням - інакше відновлення на іншому
-    пристрої/версії коду затерло б нові дефолти застарілими значеннями."""
+    auto-reboot, перевизначені параметри app/config.py, історія відомих
+    Starlink-пристроїв) одним JSON-файлом для завантаження. Bot token
+    включається у відкритому вигляді - файл backup потрібно берегти як
+    secret (не публікувати, не комітити в git). env_params містить лише
+    РЕАЛЬНО перевизначені параметри (overridden), не всі значення за
+    замовчуванням - інакше відновлення на іншому пристрої/версії коду
+    затерло б нові дефолти застарілими значеннями."""
     token, chat_ids, enabled = telegram_notify.get_telegram_config()
     env_params = {
         p["key"]: p["current"]
@@ -445,6 +446,7 @@ def api_settings_backup() -> ResponseReturnValue:
         "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
         "dish_target_version": db.get_setting("dish_target_version"),
         "router_target_version": db.get_setting("router_target_version"),
+        "known_devices": db.get_all_known_devices(),
         "env_params": env_params,
     }
     return jsonify(backup)
@@ -492,6 +494,10 @@ def api_settings_restore() -> ResponseReturnValue:
         if payload.get("router_target_version"):
             db.set_setting("router_target_version", payload["router_target_version"])
             restored.append("очікувана версія роутера")
+
+        if payload.get("known_devices"):
+            added = db.merge_known_devices(payload["known_devices"])
+            restored.append(f"історія пристроїв ({added} нових з {len(payload['known_devices'])})")
 
         if payload.get("env_params"):
             ok, msg = config_editor.save_values(payload["env_params"])

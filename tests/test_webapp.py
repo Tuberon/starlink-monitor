@@ -148,3 +148,25 @@ def test_target_versions_backup_includes_targets_not_notified_state(client):
     assert backup["dish_target_version"] == "2026.06.01"
     assert "dish_target_notified" not in backup
     assert "both_targets_notified" not in backup
+
+
+def test_backup_includes_known_devices(client):
+    db.upsert_known_device_dish("dish-AAA", "rev3", "v1.0")
+    backup = client.get("/api/settings-backup").get_json()
+    assert len(backup["known_devices"]) == 1
+    assert backup["known_devices"][0]["dish_id"] == "dish-AAA"
+
+
+def test_restore_known_devices_via_api(client):
+    payload = {
+        "format_version": 1,
+        "known_devices": [
+            {"dish_id": "dish-XYZ", "first_seen_ts": 1000.0, "last_seen_ts": 2000.0,
+             "dish_software_version": "v3.0"},
+        ],
+    }
+    resp = client.post("/api/settings-restore", json=payload)
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "1 нових з 1" in data["message"]
+    assert db.get_known_device("dish-XYZ") is not None
