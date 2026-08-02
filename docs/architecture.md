@@ -398,15 +398,10 @@ downsampling). bucket-розмір масштабується залежно в�
 **`throughputChart` на головній сторінці** (`/`, `static/dashboard.js`
 `refreshHistory()`) — той самий `drawLineChart()`, дані з
 `/api/history?limit=120` (raw, не downsampled — короткий recency-
-орієнтований графік, не потребує aggregation). Раніше — Chart.js
-через CDN (`cdnjs.cloudflare.com`), що прямо суперечило принципу
-"без CDN" з попереднього абзацу: якщо CDN недоступний (типовий
-offline-сценарій, який офлайн-fallback вище саме покращує), цей
-графік на головній не працював би взагалі. Замінено на власний
-canvas для послідовної офлайн-надійності по всьому дашборду.
-Легенда (кольорові мітки Downlink/Uplink) — проста текстова розмітка
-в HTML (`.chart-legend`), Chart.js мав вбудовану, наш `drawLineChart()`
-її не малює.
+орієнтований графік, не потребує aggregation), без CDN-залежності —
+консистентно з графіками на `/stats`. Легенда (кольорові мітки
+Downlink/Uplink) — проста текстова розмітка в HTML (`.chart-legend`),
+`drawLineChart()` її не малює.
 
 `downsample_old_metrics()` (щогодини, разом з `prune_old()`) агрегує
 raw-рядки старші за `DOWNSAMPLE_AFTER_DAYS` (дефолт 3) у
