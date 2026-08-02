@@ -142,7 +142,7 @@ class Watchdog:
             if real_change:
                 self._notify(f"🔄 Прошивка тарілки оновлена: {old_version} → {status.software_version}")
             self._check_target_version_reached(
-                "тарілки", status.software_version, "dish_target_version", "dish_target_notified"
+                "тарілки", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id
             )
             self._check_both_targets_reached()
             self._log_update_state_change(status)
@@ -275,7 +275,8 @@ class Watchdog:
         return current_version in db.parse_version_list(target_raw)
 
     def _check_target_version_reached(
-        self, component_label: str, current_version: Optional[str], target_key: str, notified_key: str
+        self, component_label: str, current_version: Optional[str], target_key: str,
+        notified_key: str, dish_id: Optional[str],
     ) -> None:
         """Порівнює встановлену версію (current_version) з очікуваними
         (target - введені користувачем на /settings через кому, той
@@ -283,14 +284,19 @@ class Watchdog:
         випускає РІЗНІ номери версій для різних апаратних ревізій під
         однією умовною версією, і користувач не певен, який саме
         рядок реально прийде). Матч спрацьовує на БУДЬ-ЯКУ з
-        перелічених версій. notified_key зберігає ПАРУ (яка саме
-        версія збіглась + повний список target) - природно
-        "скидається" і при зміні списку, і якщо raз matched версія
-        випадково повториться на іншому опитуванні."""
+        перелічених версій. notified_key зберігає ТРІЙКУ (dish_id +
+        яка саме версія збіглась + повний список target) - природно
+        "скидається" і при зміні списку, і якщо ТА САМА версія
+        випадково повториться на іншому опитуванні ТОГО САМОГО
+        пристрою, АЛЕ КРИТИЧНО - dish_id у ключі означає, що ІНШИЙ
+        фізичний Starlink (інший dish_id, напр. після заміни
+        обладнання) з тим самим збігом версія+target ЗАВЖДИ отримає
+        своє власне, свіже сповіщення, не заблоковане дедублікацією
+        попереднього пристрою."""
         target_raw = db.get_setting(target_key)
         if not self._version_in_target_list(current_version, target_raw):
             return
-        notified_value = f"{current_version}|{target_raw}"
+        notified_value = f"{dish_id}|{current_version}|{target_raw}"
         if db.get_setting(notified_key) == notified_value:
             return
         self._notify(f"✅ Останнє оновлення {component_label} встановлено: версія {current_version}")
@@ -308,7 +314,8 @@ class Watchdog:
         (компоненти опитуються незалежно, різними циклами).
 
         Дедублікація - той самий принцип, що в
-        _check_target_version_reached(): notified-ключ включає САМЕ
+        _check_target_version_reached(): notified-ключ включає dish_id
+        (різні фізичні Starlink НЕ ділять дедублікаційний стан), САМЕ
         ЗНАЧЕННЯ поточних версій обох компонентів і повні target-
         списки одночасно - природно "скидається", щойно користувач
         змінить БУДЬ-ЯКИЙ з двох target-списків (напр. додасть версію
@@ -328,7 +335,7 @@ class Watchdog:
                 not self._version_in_target_list(router_current, router_target):
             return
 
-        combo_key = f"{dish_current}|{dish_target}|{router_current}|{router_target}"
+        combo_key = f"{self.last_known_dish_id}|{dish_current}|{dish_target}|{router_current}|{router_target}"
         if db.get_setting("both_targets_notified") == combo_key:
             return
 
@@ -374,7 +381,7 @@ class Watchdog:
                 if real_change:
                     self._notify(f"🔄 Прошивка роутера оновлена: {old_version} → {info.software_version}")
             self._check_target_version_reached(
-                "роутера", info.software_version, "router_target_version", "router_target_notified"
+                "роутера", info.software_version, "router_target_version", "router_target_notified", self.last_known_dish_id
             )
             self._check_both_targets_reached()
             self._log_router_update_state_change(info)

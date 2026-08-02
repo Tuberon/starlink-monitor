@@ -64,10 +64,11 @@ function drawLineChart(canvas, series, options = {}) {
     ctx.stroke();
   }
 
-  let labelY = 12;
+  let labelY = 6;
+  const scaleInfo = [];  // {min, range, scaleMax} по кожній серії - потрібно і для hover-крапок (ті самі координати, що й для лінії)
   for (const s of series) {
     const pts = s.data.filter(v => v != null);
-    if (pts.length < 2) continue;
+    if (pts.length < 2) { scaleInfo.push(null); continue; }
     let min = Math.min(...pts);
     const trueMax = Math.max(...pts);
     if (options.beginAtZero) min = Math.min(min, 0);
@@ -84,6 +85,7 @@ function drawLineChart(canvas, series, options = {}) {
     const p95 = _percentile(sorted, 0.95);
     const scaleMax = (p95 > 0 && trueMax > p95 * 1.5) ? p95 : trueMax;
     const range = (scaleMax - min) || 1;
+    scaleInfo.push({ min, range, scaleMax });
 
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 1.5;
@@ -100,11 +102,94 @@ function drawLineChart(canvas, series, options = {}) {
     ctx.stroke();
 
     // Максимальне значення серії - без цього графік показує лише
-    // форму, без жодної конкретної величини.
+    // форму, без жодної конкретної величини. textBaseline='top' -
+    // без цього замовчування ('alphabetic') не враховує descenders
+    // українських літер (напр. "р", "ц"), через що підписи кількох
+    // серій в одному графіку могли візуально зливатись один з одним.
     ctx.fillStyle = s.color;
     ctx.font = '10px monospace';
     ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
     ctx.fillText(`макс ${trueMax.toFixed(1)}`, w - pad, labelY);
-    labelY += 12;
+    labelY += 14;
   }
+
+  // Hover: вертикальна guideline + крапка на кожній серії в точці
+  // наведення курсору. Координати - ТІ САМІ формули, що для лінії
+  // вище (той самий scaleInfo), інакше крапка могла б не збігтися
+  // з реальним положенням лінії на графіку.
+  const hoverIndex = options.hoverIndex;
+  if (hoverIndex != null && series[0] && series[0].data.length > 1) {
+    const hoverX = (hoverIndex / (series[0].data.length - 1)) * (w - 2 * pad) + pad;
+    ctx.strokeStyle = 'rgba(147,164,195,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hoverX, pad);
+    ctx.lineTo(hoverX, h - pad);
+    ctx.stroke();
+
+    series.forEach((s, si) => {
+      const info = scaleInfo[si];
+      const v = s.data[hoverIndex];
+      if (!info || v == null) return;
+      const clamped = Math.min(v, info.scaleMax);
+      const y = h - pad - ((clamped - info.min) / info.range) * chartH;
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(hoverX, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Зберігаємо стан рендерингу на самому canvas-елементі - hover-
+  // обробник (приєднується нижче, ОДИН раз на canvas) читає це при
+  // кожному русі миші, щоб перемалювати графік з guideline+крапками
+  // без повторного fetch чи перерахунку percentile-логіки з нуля.
+  canvas._chartState = { series, options, w, h, pad, chartH };
+  _attachChartHover(canvas);
+}
+
+function _attachChartHover(canvas) {
+  if (canvas._hoverAttached) return;
+  canvas._hoverAttached = true;
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'chart-tooltip';
+  canvas.parentElement.appendChild(tooltip);
+
+  canvas.addEventListener('mousemove', (e) => {
+    const state = canvas._chartState;
+    if (!state || !state.series[0] || state.series[0].data.length < 2) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const dataLen = state.series[0].data.length;
+    const frac = (mouseX - state.pad) / (state.w - 2 * state.pad);
+    const idx = Math.max(0, Math.min(dataLen - 1, Math.round(frac * (dataLen - 1))));
+
+    drawLineChart(canvas, state.series, { ...state.options, hoverIndex: idx });
+
+    const rows = state.series.map(s => {
+      const v = s.data[idx];
+      const val = v == null ? '—' : v.toFixed(1);
+      return `<div class="row"><span class="dot" style="background:${s.color}"></span>${val}</div>`;
+    }).join('');
+    const timeLabel = state.options.timestamps && state.options.timestamps[idx]
+      ? fmtTime(state.options.timestamps[idx]) : '';
+    tooltip.innerHTML = (timeLabel ? `<div class="row">${timeLabel}</div>` : '') + rows;
+    tooltip.style.display = 'block';
+
+    const tipX = Math.min(mouseX + 12, rect.width - 100);
+    tooltip.style.left = `${Math.max(0, tipX)}px`;
+    tooltip.style.top = '4px';
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    const state = canvas._chartState;
+    tooltip.style.display = 'none';
+    if (state) {
+      const { hoverIndex, ...rest } = state.options;
+      drawLineChart(canvas, state.series, rest);
+    }
+  });
 }

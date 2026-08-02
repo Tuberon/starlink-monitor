@@ -155,7 +155,7 @@ def test_maybe_reboot_failed_attempt_keeps_failure_count(watchdog):
 
 def test_target_version_no_target_set_is_silent(watchdog):
     watchdog._check_target_version_reached(
-        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert watchdog.sent == []
 
@@ -163,7 +163,7 @@ def test_target_version_no_target_set_is_silent(watchdog):
 def test_target_version_mismatch_is_silent(watchdog):
     db.set_setting("dish_target_version", "2026.04.01")
     watchdog._check_target_version_reached(
-        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert watchdog.sent == []
 
@@ -171,7 +171,7 @@ def test_target_version_mismatch_is_silent(watchdog):
 def test_target_version_match_sends_notification(watchdog):
     db.set_setting("dish_target_version", "2026.04.01")
     watchdog._check_target_version_reached(
-        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert len(watchdog.sent) == 1
     assert "2026.04.01" in watchdog.sent[0]
@@ -180,10 +180,10 @@ def test_target_version_match_sends_notification(watchdog):
 def test_target_version_repeat_match_does_not_spam(watchdog):
     db.set_setting("dish_target_version", "2026.04.01")
     watchdog._check_target_version_reached(
-        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1"
     )
     watchdog._check_target_version_reached(
-        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert len(watchdog.sent) == 1
 
@@ -193,11 +193,11 @@ def test_target_version_new_target_resets_dedup(watchdog):
     (порівняння значень, не boolean-прапорець)."""
     db.set_setting("dish_target_version", "2026.04.01")
     watchdog._check_target_version_reached(
-        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1"
     )
     db.set_setting("dish_target_version", "2026.05.01")
     watchdog._check_target_version_reached(
-        "тарілки", "2026.05.01", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.05.01", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert len(watchdog.sent) == 2
     assert "2026.05.01" in watchdog.sent[1]
@@ -208,7 +208,7 @@ def test_target_version_multiple_candidates_matches_any(watchdog):
     БУДЬ-ЯКУ з перелічених, не лише першу."""
     db.set_setting("dish_target_version", "2026.03.03.mr75126.1, 2026.03.03.mr75130.1")
     watchdog._check_target_version_reached(
-        "тарілки", "2026.03.03.mr75130.1", "dish_target_version", "dish_target_notified"
+        "тарілки", "2026.03.03.mr75130.1", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert len(watchdog.sent) == 1
     assert "2026.03.03.mr75130.1" in watchdog.sent[0]
@@ -217,9 +217,41 @@ def test_target_version_multiple_candidates_matches_any(watchdog):
 def test_target_version_multiple_candidates_none_matching_is_silent(watchdog):
     db.set_setting("dish_target_version", "v1, v2, v3")
     watchdog._check_target_version_reached(
-        "тарілки", "v4", "dish_target_version", "dish_target_notified"
+        "тарілки", "v4", "dish_target_version", "dish_target_notified", "dish1"
     )
     assert watchdog.sent == []
+
+
+def test_target_version_different_dish_id_gets_fresh_notification(watchdog):
+    """Найважливіший сценарій: якщо ФІЗИЧНО ІНШИЙ Starlink (інший
+    dish_id, напр. після заміни обладнання) збігається з тим самим
+    target-значенням, що вже notified для ПОПЕРЕДНЬОГО dish - НЕ
+    вважається дублікатом, отримує своє власне, свіже сповіщення."""
+    db.set_setting("dish_target_version", "2026.03.03")
+    watchdog._check_target_version_reached(
+        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-OLD"
+    )
+    assert len(watchdog.sent) == 1
+
+    # Той самий target, та сама версія, АЛЕ ІНШИЙ фізичний dish_id
+    watchdog._check_target_version_reached(
+        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-NEW"
+    )
+    assert len(watchdog.sent) == 2, "новий dish_id мав отримати власне сповіщення, не заблоковане дедублікацією попереднього"
+
+
+def test_target_version_same_dish_id_still_deduplicates(watchdog):
+    """Контрольний тест: дедублікація ВСЕ ЩЕ працює для ТОГО САМОГО
+    dish_id (фіча не зламала звичайну поведінку, лише додала
+    ізоляцію МІЖ різними фізичними пристроями)."""
+    db.set_setting("dish_target_version", "2026.03.03")
+    watchdog._check_target_version_reached(
+        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1"
+    )
+    watchdog._check_target_version_reached(
+        "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1"
+    )
+    assert len(watchdog.sent) == 1
 
 
 # ---- Комбінована перевірка (_check_both_targets_reached) ----
@@ -295,3 +327,22 @@ def test_both_targets_changing_one_target_resets_dedup(watchdog):
     watchdog._check_both_targets_reached()
     assert len(watchdog.sent) == 2
     assert "r2" in watchdog.sent[1]
+
+
+def test_both_targets_different_dish_id_gets_fresh_notification(watchdog):
+    """Той самий принцип, що для per-component перевірки: ІНШИЙ
+    фізичний Starlink (інший last_known_dish_id) з тим самим
+    збігом версій - НЕ вважається дублікатом попереднього."""
+    from app.starlink_client import DishStatus, RouterInfo
+    db.set_setting("dish_target_version", "v1")
+    db.set_setting("router_target_version", "r1")
+    db.insert_metric(DishStatus(timestamp=time.time(), online=True, uptime_s=100, software_version="v1").to_dict())
+    db.set_router_status(RouterInfo(timestamp=time.time(), online=True, software_version="r1").to_dict())
+
+    watchdog.last_known_dish_id = "dish-OLD"
+    watchdog._check_both_targets_reached()
+    assert len(watchdog.sent) == 1
+
+    watchdog.last_known_dish_id = "dish-NEW"
+    watchdog._check_both_targets_reached()
+    assert len(watchdog.sent) == 2, "новий фізичний Starlink мав отримати власне комбіноване сповіщення"

@@ -232,7 +232,24 @@
     border-radius:14px;
     padding:20px 22px;
     margin-bottom:20px;
+    position:relative;
   }
+  .chart-tooltip{
+    position:absolute;
+    pointer-events:none;
+    background: var(--sky-800);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:6px 10px;
+    font-family:var(--font-mono);
+    font-size:0.72rem;
+    color:var(--text-hi);
+    white-space:nowrap;
+    z-index:10;
+    display:none;
+  }
+  .chart-tooltip .row{display:flex; align-items:center; gap:6px;}
+  .chart-tooltip .dot{width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0;}
   .panel-head{
     display:flex; align-items:center; justify-content:space-between;
     margin-bottom:16px;
