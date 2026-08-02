@@ -341,38 +341,48 @@ def api_set_target_versions() -> ResponseReturnValue:
 
     if dish_target is not None:
         dish_target = dish_target.strip()
-        candidates = db.parse_version_list(dish_target)
-        baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
-            [latest["software_version"]] if latest and latest.get("software_version") else []
-        )
-        baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
-        older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
-        if older:
-            rejected.append(f"тарілка: {', '.join(older)} старіші за вже відому {baseline}")
-        elif candidates:
-            db.set_setting("dish_target_version", dish_target)
-            saved.append("тарілка")
+        if not dish_target:
+            db.set_setting("dish_target_version", "")
+            saved.append("тарілка (очищено)")
+        else:
+            candidates = db.parse_version_list(dish_target)
+            baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
+                [latest["software_version"]] if latest and latest.get("software_version") else []
+            )
+            baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
+            older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
+            if older:
+                rejected.append(f"тарілка: {', '.join(older)} старіші за вже відому {baseline}")
+            elif candidates:
+                db.set_setting("dish_target_version", dish_target)
+                saved.append("тарілка")
 
     if router_target is not None:
         router_target = router_target.strip()
-        candidates = db.parse_version_list(router_target)
-        baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
-            [router_status["software_version"]] if router_status and router_status.get("software_version") else []
-        )
-        baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
-        older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
-        if older:
-            rejected.append(f"роутер: {', '.join(older)} старіші за вже відому {baseline}")
-        elif candidates:
-            db.set_setting("router_target_version", router_target)
-            saved.append("роутер")
+        if not router_target:
+            db.set_setting("router_target_version", "")
+            saved.append("роутер (очищено)")
+        else:
+            candidates = db.parse_version_list(router_target)
+            baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
+                [router_status["software_version"]] if router_status and router_status.get("software_version") else []
+            )
+            baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
+            older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
+            if older:
+                rejected.append(f"роутер: {', '.join(older)} старіші за вже відому {baseline}")
+            elif candidates:
+                db.set_setting("router_target_version", router_target)
+                saved.append("роутер")
 
     if saved:
         db.insert_event("target_versions_updated", f"Очікувані версії прошивок оновлено: {', '.join(saved)}", success=True)
 
     if rejected:
         return jsonify({"success": bool(saved), "message": "Відхилено (старіша версія): " + "; ".join(rejected)})
-    return jsonify({"success": True})
+    if saved:
+        return jsonify({"success": True, "message": f"Збережено: {', '.join(saved)}"})
+    return jsonify({"success": True, "message": "Без змін"})
 
 
 @app.route("/api/telegram-test", methods=["POST"])

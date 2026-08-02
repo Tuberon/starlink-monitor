@@ -89,6 +89,7 @@
 | `test_monitor.py` | Групування reboot-спаму, дедублікація target-версій, `_maybe_reboot()` |
 | `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
 | `test_db.py` | Downsampling метрик, безшовність графіка через межу cutoff |
+| `test_display.py` | Виявлення зміни update_state (flash-підсвітка), auto-off логіка |
 
 ## `docs/` — документація
 

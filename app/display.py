@@ -144,6 +144,20 @@ def _should_auto_off(backlight_on: bool, last_activity_ts: float, now: float, ti
     return (now - last_activity_ts) >= timeout_sec
 
 
+def _update_state_changed(
+    prev_dish: Optional[str], prev_router: Optional[str],
+    dish: Optional[str], router: Optional[str],
+) -> bool:
+    """Чи змінився update_state dish/router ВІДНОСНО ПОПЕРЕДНЬОГО
+    опитування - чиста функція, легко тестується. prev_*=None означає
+    "ще не бачили жодного значення" (перший запуск сервісу) - НЕ
+    вважається зміною, інакше кожен старт сервісу спалахував би
+    підсвіткою навіть без реальної зміни стану."""
+    dish_changed = prev_dish is not None and dish != prev_dish
+    router_changed = prev_router is not None and router != prev_router
+    return dish_changed or router_changed
+
+
 def _load_font(size: int) -> Any:
     from PIL import ImageFont
     for path in FONT_PATHS:
@@ -300,6 +314,13 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     backlight_on = True
     last_activity_ts = time.time()
     last_redraw = 0.0
+    # Відстеження зміни update_state (dish/router) для flash-сповіщення
+    # підсвіткою. None на старті - перше зчитування лише ЗАПАМ'ЯТОВУЄ
+    # стан, не вважається "зміною" (інакше кожен запуск сервісу
+    # спалахував би підсвіткою, навіть якщо реальних змін не було).
+    prev_dish_state: Optional[str] = None
+    prev_router_state: Optional[str] = None
+    flash_until_ts: Optional[float] = None
 
     try:
         while True:
@@ -317,6 +338,7 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
                         _set_backlight(bl_pin, backlight_on)
                         if backlight_on:
                             last_activity_ts = now
+                        flash_until_ts = None  # ручна дія user - не форсувати вимкнення flash-таймером
                         logger.info("Підсвітка %s (коротке натискання GPIO%d)",
                                     "увімкнена" if backlight_on else "вимкнена", button_pin)
                     elif event == "long_press":
@@ -324,14 +346,46 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
                 except Exception as e:
                     logger.warning("Помилка читання кнопки: %s", e)
 
-            if _should_auto_off(backlight_on, last_activity_ts, now, config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC):
+            if flash_until_ts is None and _should_auto_off(
+                backlight_on, last_activity_ts, now, config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC
+            ):
                 backlight_on = False
                 _set_backlight(bl_pin, False)
                 logger.info("Підсвітка вимкнена автоматично (%dс після ввімкнення)",
                             config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC)
 
+            # Явне вимкнення ПІСЛЯ flash-періоду - окремо від звичайного
+            # auto-off (інший, зазвичай коротший, часовий проміжок).
+            if flash_until_ts is not None and now >= flash_until_ts:
+                backlight_on = False
+                _set_backlight(bl_pin, False)
+                flash_until_ts = None
+                logger.info("Підсвітка вимкнена після flash-сповіщення про зміну статусу оновлення")
+
             if now - last_redraw >= config.DISPLAY_REFRESH_SEC:
                 try:
+                    latest = db.get_latest_metric()
+                    router_status = db.get_router_status()
+                    dish_state = latest.get("update_state") if latest else None
+                    router_state = router_status.get("update_state") if router_status else None
+
+                    # Зміна ВІДНОСНО ПОПЕРЕДНЬОГО опитування (не з
+                    # моменту старту сервісу) - _update_state_changed()
+                    # сама обробляє "перше зчитування ще не зміна".
+                    state_changed = _update_state_changed(prev_dish_state, prev_router_state, dish_state, router_state)
+                    if state_changed and config.DISPLAY_UPDATE_FLASH_SEC > 0:
+                        backlight_on = True
+                        _set_backlight(bl_pin, True)
+                        last_activity_ts = now  # інакше _should_auto_off() (60с) міг би спрацювати РАНІШЕ за коротший flash-таймер
+                        flash_until_ts = now + config.DISPLAY_UPDATE_FLASH_SEC
+                        logger.info(
+                            "Статус оновлення змінився (dish: %s->%s, router: %s->%s) - "
+                            "підсвітка на %dс",
+                            prev_dish_state, dish_state, prev_router_state, router_state,
+                            config.DISPLAY_UPDATE_FLASH_SEC,
+                        )
+                    prev_dish_state, prev_router_state = dish_state, router_state
+
                     _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny)
                 except Exception:
                     logger.exception("Помилка оновлення дисплея")

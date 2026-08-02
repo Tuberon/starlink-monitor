@@ -115,6 +115,9 @@ DISPLAY_SPI_SPEED_HZ = int(os.environ.get("STARLINK_DISPLAY_SPI_SPEED_HZ", "4000
 # економія) - 0 вимикає фічу (підсвітка лишається доти, доки не
 # перемкнеш кнопкою вручну).
 DISPLAY_BACKLIGHT_AUTO_OFF_SEC = int(os.environ.get("STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC", "60"))
+# Коли update_state (dish чи router) змінюється - підсвітка вмикається
+# на цей час і потім явно вимикається (0 вимикає фічу повністю).
+DISPLAY_UPDATE_FLASH_SEC = int(os.environ.get("STARLINK_DISPLAY_UPDATE_FLASH_SEC", "5"))
 
 # Періодичний реальний speedtest (не лише пропускна здатність з телеметрії
 # dish, яка показує "заявлений" канал, не реальну користувацьку швидкість

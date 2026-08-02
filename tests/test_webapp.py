@@ -138,6 +138,32 @@ def test_target_versions_multiple_candidates_one_older_rejects_whole_list(client
     assert check["dish_target"] == "2026.03.03.mr75126.1"  # старий список не перезаписаний
 
 
+def test_target_versions_empty_string_clears_field(client):
+    """Порожній рядок, явно надісланий - команда ОЧИСТИТИ поле, не
+    'нічого не робити' (реальна прогалина: раніше порожній рядок
+    просто мовчки ігнорувався, старе значення лишалось назавжди без
+    жодного способу його скасувати)."""
+    client.post("/api/target-versions", json={"dish_target": "2026.03.03"})
+    resp = client.post("/api/target-versions", json={"dish_target": ""})
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "очищено" in data["message"]
+
+    check = client.get("/api/target-versions").get_json()
+    assert not check["dish_target"]
+
+
+def test_target_versions_response_always_has_explicit_message(client):
+    """API завжди повертає message, що описує РЕАЛЬНИЙ результат -
+    не лише коли є rejected (раніше success-без-rejected випадок
+    повертав голий {"success": true} без жодного пояснення)."""
+    resp1 = client.post("/api/target-versions", json={"dish_target": "2026.03.03"})
+    assert "message" in resp1.get_json()
+
+    resp2 = client.post("/api/target-versions", json={})
+    assert resp2.get_json()["message"] == "Без змін"
+
+
 def test_target_versions_backup_includes_targets_not_notified_state(client):
     """Target-версії (user-налаштування) включені в backup, internal
     dedup-стан (*_notified) - навмисно ні."""
