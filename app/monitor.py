@@ -9,7 +9,7 @@ import json
 import logging
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import psutil
 
@@ -23,6 +23,143 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("monitor")
+
+
+def version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
+    """Чи current_version входить у target_raw - список версій через
+    кому (db.parse_version_list). Module-level (не метод класу) - щоб
+    бути доступною і з Watchdog (фоновий цикл опитування), і напряму
+    з webapp.py (ручна кнопка "Перевірити оновлення" - окремий процес,
+    не має доступу до інстансу Watchdog з іншого сервісу)."""
+    if not current_version:
+        return False
+    return current_version in db.parse_version_list(target_raw)
+
+
+def check_target_version_reached(
+    component_label: str, current_version: Optional[str], target_key: str,
+    notified_key: str, dish_id: Optional[str], notify_fn: Callable[[str], None],
+) -> None:
+    """Порівнює встановлену версію (current_version) з очікуваними
+    (target - введені користувачем на /settings через кому, той самий
+    формат, що telegram_chat_ids - корисно, коли SpaceX випускає
+    РІЗНІ номери версій для різних апаратних ревізій під однією
+    умовною версією, і користувач не певен, який саме рядок реально
+    прийде). Матч спрацьовує на БУДЬ-ЯКУ з перелічених версій.
+    notified_key зберігає ТРІЙКУ (dish_id + яка саме версія збіглась +
+    повний список target) - природно "скидається" і при зміні списку,
+    і якщо ТА САМА версія випадково повториться на іншому опитуванні
+    ТОГО САМОГО пристрою, АЛЕ КРИТИЧНО - dish_id у ключі означає, що
+    ІНШИЙ фізичний Starlink (інший dish_id, напр. після заміни
+    обладнання) з тим самим збігом версія+target ЗАВЖДИ отримає своє
+    власне, свіже сповіщення, не заблоковане дедублікацією попереднього
+    пристрою. notify_fn - інʼєкція функції сповіщення (Watchdog передає
+    self._notify, webapp.py передає telegram_notify.send_message напряму
+    - module-level функція сама не залежить від того, ЯК саме сповіщати)."""
+    target_raw = db.get_setting(target_key)
+    if not version_in_target_list(current_version, target_raw):
+        return
+    notified_value = f"{dish_id}|{current_version}|{target_raw}"
+    if db.get_setting(notified_key) == notified_value:
+        return
+    notify_fn(f"✅ Останнє оновлення {component_label} встановлено: версія {current_version}")
+    db.set_setting(notified_key, notified_value)
+
+
+def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Callable[[str], None]) -> None:
+    """Окремо від per-component сповіщень вище (ті корисні самі по собі
+    - dish оновився, вже цікаво знати, навіть якщо router ще ні) - це
+    додаткове, комбіноване підтвердження: коли ОБИДВІ (тарілка й
+    роутер) очікувані версії одночасно збігаються зі встановленими,
+    надсилає одне повідомлення про завершення ВСІЄЇ процедури
+    оновлення. Викликається з обох poll_once() (dish) і poll_router()
+    (router) - або один, або інший цикл опитування може стати тим,
+    що робить умову істинною одночасно для обох (компоненти
+    опитуються незалежно, різними циклами), а також з api_check_updates()
+    (webapp.py) - ручна кнопка теж має отримувати повний спектр
+    перевірок, не лише читання статусу.
+
+    Дедублікація - той самий принцип, що в check_target_version_reached():
+    notified-ключ включає dish_id (різні фізичні Starlink НЕ ділять
+    дедублікаційний стан), САМЕ ЗНАЧЕННЯ поточних версій обох
+    компонентів і повні target-списки одночасно - природно
+    "скидається", щойно користувач змінить БУДЬ-ЯКИЙ з двох
+    target-списків (напр. додасть версію для іншої апаратної
+    ревізії), без потреби окремо очищати стан."""
+    dish_target = db.get_setting("dish_target_version")
+    router_target = db.get_setting("router_target_version")
+    if not dish_target or not router_target:
+        return
+
+    latest = db.get_latest_metric()
+    router_status = db.get_router_status()
+    dish_current = latest.get("software_version") if latest else None
+    router_current = router_status.get("software_version") if router_status else None
+
+    if not version_in_target_list(dish_current, dish_target) or \
+            not version_in_target_list(router_current, router_target):
+        return
+
+    combo_key = f"{last_known_dish_id}|{dish_current}|{dish_target}|{router_current}|{router_target}"
+    if db.get_setting("both_targets_notified") == combo_key:
+        return
+
+    notify_fn(f"🎉 Процедуру оновлення завершено: тарілка {dish_current}, роутер {router_current}")
+    db.set_setting("both_targets_notified", combo_key)
+
+
+def _format_firmware_change_message(component_label: str, old_version: str, new_version: str) -> str:
+    """Формує повідомлення про зміну прошивки з ПРАВИЛЬНИМ дієсловом
+    залежно від напрямку - без цього "🔄 оновлена" вводило б в оману,
+    коли реальна зміна versions - це ВІДКАТ (SpaceX інколи відкочує
+    проблемні білди глобально; ручний reboot, як з'ясувалось на
+    реальному запиті користувача, може "спіймати" момент, коли
+    команда відкату вже чекала). db.is_older_version() (толерантний
+    компаратор, вже перевірений на реалістичних версіях) визначає
+    напрямок - слово й emoji підбираються відповідно, дані (X → Y)
+    завжди ті самі, чесно показують РЕАЛЬНИЙ факт, лише словесне
+    формулювання змінюється."""
+    if db.is_older_version(new_version, old_version):
+        return f"⏪ Прошивка {component_label} відкочена (можливо, SpaceX-side): {old_version} → {new_version}"
+    return f"🔄 Прошивка {component_label} оновлена: {old_version} → {new_version}"
+
+
+def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None]) -> None:
+    """Записує/оновлює відому версію dish у known_devices, сповіщає
+    при РЕАЛЬНІЙ зміні версії ("🔄 оновлена" чи "⏪ відкочена" - залежно
+    від напрямку, див. _format_firmware_change_message), і перевіряє
+    target-версію. Module-level - той самий принцип, що решта функцій
+    вище: спільна логіка для watchdog-циклу (poll_once) і ручної
+    кнопки "Перевірити оновлення" (webapp.py api_check_updates) - без
+    цього ручна перевірка мовчки НЕ надсилала жодного сповіщення,
+    навіть коли версія якраз збігалась із target (знайдено на
+    реальному запиті користувача - "перевір процедуру перевірки
+    оновлень на помилки")."""
+    if not status.online:
+        return
+    real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
+    if real_change and old_version:
+        notify_fn(_format_firmware_change_message("тарілки", old_version, status.software_version))
+    check_target_version_reached(
+        "тарілки", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id, notify_fn
+    )
+    check_both_targets_reached(status.dish_id, notify_fn)
+
+
+def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn: Callable[[str], None]) -> None:
+    """Аналогічно до upsert_dish_and_notify(), для router. dish_id -
+    router прив'язується до dish_id того самого фізичного Mini
+    (router не має власного окремого ідентифікатора)."""
+    if not info.online:
+        return
+    if dish_id:
+        real_change, old_version = db.upsert_known_device_router(dish_id, info.hardware_version, info.software_version)
+        if real_change and old_version:
+            notify_fn(_format_firmware_change_message("роутера", old_version, info.software_version))
+    check_target_version_reached(
+        "роутера", info.software_version, "router_target_version", "router_target_notified", dish_id, notify_fn
+    )
+    check_both_targets_reached(dish_id, notify_fn)
 
 
 class Watchdog:
@@ -138,13 +275,7 @@ class Watchdog:
             self._notify_first_dish_connection(status)
             if status.dish_id:
                 self.last_known_dish_id = status.dish_id
-            real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
-            if real_change:
-                self._notify(f"🔄 Прошивка тарілки оновлена: {old_version} → {status.software_version}")
-            self._check_target_version_reached(
-                "тарілки", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id
-            )
-            self._check_both_targets_reached()
+            upsert_dish_and_notify(status, self._notify)
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
@@ -266,83 +397,16 @@ class Watchdog:
 
     @staticmethod
     def _version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
-        """Чи current_version входить у target_raw - список версій
-        через кому (db.parse_version_list). Спільний helper для
-        _check_target_version_reached() і _check_both_targets_reached()
-        - не дублювати парсинг двічі."""
-        if not current_version:
-            return False
-        return current_version in db.parse_version_list(target_raw)
+        return version_in_target_list(current_version, target_raw)
 
     def _check_target_version_reached(
         self, component_label: str, current_version: Optional[str], target_key: str,
         notified_key: str, dish_id: Optional[str],
     ) -> None:
-        """Порівнює встановлену версію (current_version) з очікуваними
-        (target - введені користувачем на /settings через кому, той
-        самий формат, що telegram_chat_ids - корисно, коли SpaceX
-        випускає РІЗНІ номери версій для різних апаратних ревізій під
-        однією умовною версією, і користувач не певен, який саме
-        рядок реально прийде). Матч спрацьовує на БУДЬ-ЯКУ з
-        перелічених версій. notified_key зберігає ТРІЙКУ (dish_id +
-        яка саме версія збіглась + повний список target) - природно
-        "скидається" і при зміні списку, і якщо ТА САМА версія
-        випадково повториться на іншому опитуванні ТОГО САМОГО
-        пристрою, АЛЕ КРИТИЧНО - dish_id у ключі означає, що ІНШИЙ
-        фізичний Starlink (інший dish_id, напр. після заміни
-        обладнання) з тим самим збігом версія+target ЗАВЖДИ отримає
-        своє власне, свіже сповіщення, не заблоковане дедублікацією
-        попереднього пристрою."""
-        target_raw = db.get_setting(target_key)
-        if not self._version_in_target_list(current_version, target_raw):
-            return
-        notified_value = f"{dish_id}|{current_version}|{target_raw}"
-        if db.get_setting(notified_key) == notified_value:
-            return
-        self._notify(f"✅ Останнє оновлення {component_label} встановлено: версія {current_version}")
-        db.set_setting(notified_key, notified_value)
+        check_target_version_reached(component_label, current_version, target_key, notified_key, dish_id, self._notify)
 
     def _check_both_targets_reached(self) -> None:
-        """Окремо від per-component сповіщень вище (ті корисні самі по
-        собі - dish оновився, вже цікаво знати, навіть якщо router ще
-        ні) - це додаткове, комбіноване підтвердження: коли ОБИДВІ
-        (тарілка й роутер) очікувані версії одночасно збігаються зі
-        встановленими, надсилає одне повідомлення про завершення ВСІЄЇ
-        процедури оновлення. Викликається з обох poll_once() (dish) і
-        poll_router() (router) - або один, або інший цикл опитування
-        може стати тим, що робить умову істинною одночасно для обох
-        (компоненти опитуються незалежно, різними циклами).
-
-        Дедублікація - той самий принцип, що в
-        _check_target_version_reached(): notified-ключ включає dish_id
-        (різні фізичні Starlink НЕ ділять дедублікаційний стан), САМЕ
-        ЗНАЧЕННЯ поточних версій обох компонентів і повні target-
-        списки одночасно - природно "скидається", щойно користувач
-        змінить БУДЬ-ЯКИЙ з двох target-списків (напр. додасть версію
-        для іншої апаратної ревізії), без потреби окремо очищати
-        стан."""
-        dish_target = db.get_setting("dish_target_version")
-        router_target = db.get_setting("router_target_version")
-        if not dish_target or not router_target:
-            return
-
-        latest = db.get_latest_metric()
-        router_status = db.get_router_status()
-        dish_current = latest.get("software_version") if latest else None
-        router_current = router_status.get("software_version") if router_status else None
-
-        if not self._version_in_target_list(dish_current, dish_target) or \
-                not self._version_in_target_list(router_current, router_target):
-            return
-
-        combo_key = f"{self.last_known_dish_id}|{dish_current}|{dish_target}|{router_current}|{router_target}"
-        if db.get_setting("both_targets_notified") == combo_key:
-            return
-
-        self._notify(
-            f"🎉 Процедуру оновлення завершено: тарілка {dish_current}, роутер {router_current}"
-        )
-        db.set_setting("both_targets_notified", combo_key)
+        check_both_targets_reached(self.last_known_dish_id, self._notify)
 
     def poll_system_metrics(self) -> None:
         try:
@@ -374,16 +438,7 @@ class Watchdog:
             if not info.online:
                 logger.debug("Роутер недоступний: %s", info.error)
                 return
-            if self.last_known_dish_id:
-                real_change, old_version = db.upsert_known_device_router(
-                    self.last_known_dish_id, info.hardware_version, info.software_version
-                )
-                if real_change:
-                    self._notify(f"🔄 Прошивка роутера оновлена: {old_version} → {info.software_version}")
-            self._check_target_version_reached(
-                "роутера", info.software_version, "router_target_version", "router_target_notified", self.last_known_dish_id
-            )
-            self._check_both_targets_reached()
+            upsert_router_and_notify(info, self.last_known_dish_id, self._notify)
             self._log_router_update_state_change(info)
             self._log_router_alerts_change(info)
             self._maybe_reboot_for_router_update(info)

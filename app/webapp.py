@@ -1,15 +1,14 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, історія, журнал подій, ручний reboot."""
 import logging
 import os
-import re
 import subprocess
 import time
-from typing import Any
+from typing import Any, Optional
 
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, system_metrics, telegram_notify
+from app import config, config_editor, db, monitor, system_metrics, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -186,12 +185,34 @@ def api_check_updates() -> ResponseReturnValue:
     Натомість цей ендпоінт негайно опитує dish і router (замість очікування
     наступного фонового циклу опитування) і одразу показує актуальний
     поточний стан оновлення - це те, що реально доступно через локальний API.
+
+    Викликає ту саму логіку сповіщень (target-версії, "🔄 прошивка
+    оновлена"), що фоновий watchdog-цикл (monitor.upsert_dish_and_notify/
+    upsert_router_and_notify) - знайдена й виправлена реальна прогалина:
+    раніше ручна перевірка лише записувала статус у БД, БЕЗ жодного
+    сповіщення, навіть коли версія якраз збігалась із target у момент
+    натискання кнопки.
     """
     dish_status = client.get_status()
     db.insert_metric(dish_status.to_dict())
 
     router_info = client.get_router_info()
     db.set_router_status(router_info.to_dict())
+
+    def notify(text: str) -> None:
+        telegram_notify.send_message(text)
+
+    # dish_id для router - якщо dish зараз online, беремо ЙОГО (найсвіжіше
+    # джерело правди); інакше падаємо на останній відомий з known_devices
+    # (dish міг бути offline саме в момент цієї ручної перевірки, поки
+    # router усе ще відповідає - той самий фізичний Mini).
+    dish_id_for_router: Optional[str] = dish_status.dish_id
+    if not dish_id_for_router:
+        known = db.get_all_known_devices()
+        dish_id_for_router = known[0]["dish_id"] if known else None
+
+    monitor.upsert_dish_and_notify(dish_status, notify)
+    monitor.upsert_router_and_notify(router_info, dish_id_for_router, notify)
 
     db.insert_event(
         "manual_update_check",
@@ -285,21 +306,8 @@ def api_set_telegram_config() -> ResponseReturnValue:
     return jsonify({"success": True})
 
 
-def _version_key(v: str) -> tuple[tuple[int, int, int], tuple[Any, ...]]:
-    """Толерантний ключ порівняння версій прошивки Starlink (формат
-    зазвичай YYYY.MM.DD.mrXXXXX.N, не строгий semver). YYYY.MM.DD-
-    префікс домінує (дата - найнадійніший індикатор "новіше"); якщо
-    дата однакова чи відсутня в обох - посегментне порівняння
-    ('.'-розділені частини: числові сегменти як int, нечислові як
-    рядок, щоб не впасти на нетиповому форматі)."""
-    m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})", v)
-    date_part = (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
-    segments = tuple((0, int(seg)) if seg.isdigit() else (1, seg) for seg in v.split("."))
-    return date_part, segments
-
-
 def _is_older_version(candidate: str, baseline: str) -> bool:
-    return _version_key(candidate) < _version_key(baseline)
+    return db.is_older_version(candidate, baseline)
 
 
 @app.route("/api/target-versions")
@@ -349,7 +357,7 @@ def api_set_target_versions() -> ResponseReturnValue:
             baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
                 [latest["software_version"]] if latest and latest.get("software_version") else []
             )
-            baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
+            baseline = max(baseline_candidates, key=db.version_key) if baseline_candidates else None
             older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
             if older:
                 rejected.append(f"тарілка: {', '.join(older)} старіші за вже відому {baseline}")
@@ -367,7 +375,7 @@ def api_set_target_versions() -> ResponseReturnValue:
             baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
                 [router_status["software_version"]] if router_status and router_status.get("software_version") else []
             )
-            baseline = max(baseline_candidates, key=_version_key) if baseline_candidates else None
+            baseline = max(baseline_candidates, key=db.version_key) if baseline_candidates else None
             older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
             if older:
                 rejected.append(f"роутер: {', '.join(older)} старіші за вже відому {baseline}")

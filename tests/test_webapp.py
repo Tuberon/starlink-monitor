@@ -176,6 +176,60 @@ def test_target_versions_backup_includes_targets_not_notified_state(client):
     assert "both_targets_notified" not in backup
 
 
+# ---- /api/check-updates - ручна кнопка має ту саму логіку сповіщень, що фоновий watchdog ----
+
+def test_manual_check_updates_sends_target_version_notification(client, monkeypatch):
+    """Найважливіший регресійний тест: раніше ручна перевірка ЛИШЕ
+    записувала статус у БД, БЕЗ жодного сповіщення, навіть коли версія
+    якраз збігалась із target у момент натискання кнопки."""
+    from app.starlink_client import DishStatus, RouterInfo
+    from app import webapp as webapp_module
+
+    db.set_setting("dish_target_version", "2026.03.03.mr75126.1")
+
+    dish_status = DishStatus(
+        timestamp=time.time(), online=True, uptime_s=100,
+        software_version="2026.03.03.mr75126.1", dish_id="dish1", hardware_version="rev3",
+    )
+    router_status = RouterInfo(timestamp=time.time(), online=True, software_version="2025.10.03")
+
+    sent = []
+    monkeypatch.setattr("app.telegram_notify.send_message", lambda t: sent.append(t))
+    monkeypatch.setattr(webapp_module.client, "get_status", lambda: dish_status)
+    monkeypatch.setattr(webapp_module.client, "get_router_info", lambda: router_status)
+
+    resp = client.post("/api/check-updates")
+    assert resp.status_code == 200
+
+    assert len(sent) == 1
+    assert "2026.03.03.mr75126.1" in sent[0]
+
+
+def test_manual_check_updates_upserts_known_devices(client, monkeypatch):
+    """Ручна перевірка тепер теж оновлює known_devices (раніше -
+    жодного запису взагалі, /id у Telegram-боті показував би
+    застарілі чи відсутні дані)."""
+    from app.starlink_client import DishStatus, RouterInfo
+    from app import webapp as webapp_module
+
+    dish_status = DishStatus(
+        timestamp=time.time(), online=True, uptime_s=100,
+        software_version="v1", dish_id="dish-manual", hardware_version="rev3",
+    )
+    router_status = RouterInfo(timestamp=time.time(), online=True, software_version="r1")
+
+    monkeypatch.setattr("app.telegram_notify.send_message", lambda t: None)
+    monkeypatch.setattr(webapp_module.client, "get_status", lambda: dish_status)
+    monkeypatch.setattr(webapp_module.client, "get_router_info", lambda: router_status)
+
+    client.post("/api/check-updates")
+
+    known = db.get_known_device("dish-manual")
+    assert known is not None
+    assert known["dish_software_version"] == "v1"
+    assert known["router_software_version"] == "r1"
+
+
 def test_backup_includes_known_devices(client):
     db.upsert_known_device_dish("dish-AAA", "rev3", "v1.0")
     backup = client.get("/api/settings-backup").get_json()

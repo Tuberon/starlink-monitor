@@ -1,6 +1,7 @@
 """SQLite шар для історії метрик Starlink та журналу подій (reboot, оновлення)."""
 import json
 import os
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -643,6 +644,26 @@ def parse_version_list(raw: Optional[str]) -> list[str]:
     if not raw:
         return []
     return [v.strip() for v in raw.split(",") if v.strip()]
+
+
+def version_key(v: str) -> tuple[tuple[int, int, int], tuple[Any, ...]]:
+    """Толерантний ключ порівняння версій прошивки Starlink (формат
+    зазвичай YYYY.MM.DD.mrXXXXX.N, не строгий semver). YYYY.MM.DD-
+    префікс домінує (дата - найнадійніший індикатор "новіше"); якщо
+    дата однакова чи відсутня в обох - посегментне порівняння
+    ('.'-розділені частини: числові сегменти як int, нечислові як
+    рядок, щоб не впасти на нетиповому форматі). Спільний, публічний
+    (не webapp.py-приватний) - потрібен і для валідації target-версій
+    (webapp.py), і для розрізнення "🔄 оновлено" vs "⏪ відкочено" у
+    сповіщеннях про зміну прошивки (monitor.py)."""
+    m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})", v)
+    date_part = (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
+    segments = tuple((0, int(seg)) if seg.isdigit() else (1, seg) for seg in v.split("."))
+    return date_part, segments
+
+
+def is_older_version(candidate: str, baseline: str) -> bool:
+    return version_key(candidate) < version_key(baseline)
 
 
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:

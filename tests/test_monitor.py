@@ -8,7 +8,7 @@ target-версії (порівняння зі збереженим значен
 import time
 from unittest.mock import patch
 
-from app import config, db
+from app import config, db, monitor
 
 
 # ---- Групування спаму reboot-сповіщень (_notify_reboot) ----
@@ -346,3 +346,55 @@ def test_both_targets_different_dish_id_gets_fresh_notification(watchdog):
     watchdog.last_known_dish_id = "dish-NEW"
     watchdog._check_both_targets_reached()
     assert len(watchdog.sent) == 2, "новий фізичний Starlink мав отримати власне комбіноване сповіщення"
+
+
+# ---- Розрізнення напрямку зміни прошивки (upsert_dish_and_notify/upsert_router_and_notify) ----
+
+def test_firmware_forward_change_says_updated(db_path):
+    """Звичайний, найчастіший випадок - версія рухається вперед."""
+    from app.starlink_client import DishStatus
+    sent = []
+    db.upsert_known_device_dish("dish1", "rev3", "2026.05.13.mr80201")
+    status = DishStatus(
+        timestamp=time.time(), online=True, uptime_s=100,
+        dish_id="dish1", hardware_version="rev3", software_version="2026.07.16.mr82459.1",
+    )
+    monitor.upsert_dish_and_notify(status, lambda t: sent.append(t))
+    assert len(sent) == 1
+    assert "🔄" in sent[0] and "оновлена" in sent[0]
+    assert "відкочена" not in sent[0]
+
+
+def test_firmware_backward_change_says_rolled_back(db_path):
+    """Реальний сценарій, знайдений користувачем на практиці: SpaceX
+    інколи відкочує прошивку - без розрізнення напрямку повідомлення
+    "🔄 оновлена: НОВІША → СТАРІША" вводило б в оману."""
+    from app.starlink_client import DishStatus
+    sent = []
+    db.upsert_known_device_dish("dish1", "rev3", "2026.07.16.mr82459.1")
+    status = DishStatus(
+        timestamp=time.time(), online=True, uptime_s=100,
+        dish_id="dish1", hardware_version="rev3", software_version="2026.05.13.mr80201",
+    )
+    monitor.upsert_dish_and_notify(status, lambda t: sent.append(t))
+    assert len(sent) >= 1
+    msg = sent[0]
+    assert "⏪" in msg and "відкочена" in msg
+    assert "оновлена" not in msg
+    assert "2026.07.16.mr82459.1" in msg and "2026.05.13.mr80201" in msg
+
+
+def test_firmware_router_backward_change_exact_user_scenario(db_path):
+    """Точний сценарій із реального повідомлення користувача: router
+    2026.07.23.mr82306 -> 2025.10.03.mr61821."""
+    from app.starlink_client import RouterInfo
+    sent = []
+    db.upsert_known_device_router("dish1", "rev2", "2026.07.23.mr82306")
+    info = RouterInfo(
+        timestamp=time.time(), online=True,
+        hardware_version="rev2", software_version="2025.10.03.mr61821",
+    )
+    monitor.upsert_router_and_notify(info, "dish1", lambda t: sent.append(t))
+    msg = sent[0]
+    assert "⏪" in msg and "відкочена" in msg
+    assert "2026.07.23.mr82306 → 2025.10.03.mr61821" in msg
