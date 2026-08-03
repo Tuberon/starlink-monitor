@@ -151,6 +151,39 @@ def test_maybe_reboot_failed_attempt_keeps_failure_count(watchdog):
     assert watchdog.consecutive_failures == config.MAX_CONSECUTIVE_FAILURES
 
 
+# ---- Вимкнення сповіщення "Dish знову online" (STARLINK_NOTIFY_DISH_RECOVERY) ----
+
+def test_dish_recovery_notification_sent_by_default(watchdog):
+    from app.starlink_client import DishStatus
+    config.NOTIFY_DISH_RECOVERY = True
+    watchdog.consecutive_failures = 3
+    watchdog.first_failure_ts = time.time() - 10
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="dish1",
+                         hardware_version="rev3", software_version="v1")
+    watchdog.client.get_status = lambda: status
+    watchdog.poll_once()
+    recovery_msgs = [s for s in watchdog.sent if "знову online" in s]
+    assert len(recovery_msgs) == 1
+
+
+def test_dish_recovery_notification_disabled_via_config(watchdog):
+    """Основний сценарій запиту користувача: NOTIFY_DISH_RECOVERY=False
+    повністю вимикає це сповіщення, незалежно від muted/unmuted гілки."""
+    from app.starlink_client import DishStatus
+    config.NOTIFY_DISH_RECOVERY = False
+    try:
+        watchdog.consecutive_failures = 3
+        watchdog.first_failure_ts = time.time() - 10
+        status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="dish1",
+                             hardware_version="rev3", software_version="v1")
+        watchdog.client.get_status = lambda: status
+        watchdog.poll_once()
+        recovery_msgs = [s for s in watchdog.sent if "знову online" in s]
+        assert recovery_msgs == []
+    finally:
+        config.NOTIFY_DISH_RECOVERY = True  # не "протікати" в інші тести
+
+
 # ---- Дедублікація сповіщень про target-версію (_check_target_version_reached) ----
 
 def test_target_version_no_target_set_is_silent(watchdog):
@@ -398,3 +431,42 @@ def test_firmware_router_backward_change_exact_user_scenario(db_path):
     msg = sent[0]
     assert "⏪" in msg and "відкочена" in msg
     assert "2026.07.23.mr82306 → 2025.10.03.mr61821" in msg
+
+
+def test_firmware_rollback_notification_disabled_via_config(db_path):
+    """Запит користувача: не надсилати "Прошивка роутера відкочена".
+    NOTIFY_FIRMWARE_ROLLBACK=False повністю пригнічує "⏪"-сповіщення,
+    незалежно від dish/router (спільна _format_firmware_change_
+    message())."""
+    from app.starlink_client import RouterInfo
+    config.NOTIFY_FIRMWARE_ROLLBACK = False
+    try:
+        db.upsert_known_device_router("dish1", "rev2", "2026.07.23.mr82306")
+        sent = []
+        info = RouterInfo(
+            timestamp=time.time(), online=True,
+            hardware_version="rev2", software_version="2025.10.03.mr61821",
+        )
+        monitor.upsert_router_and_notify(info, "dish1", lambda t: sent.append(t))
+        assert sent == []
+    finally:
+        config.NOTIFY_FIRMWARE_ROLLBACK = True  # не "протікати" в інші тести
+
+
+def test_firmware_forward_notification_unaffected_by_rollback_toggle(db_path):
+    """Контрольний тест: NOTIFY_FIRMWARE_ROLLBACK=False НЕ зачіпає
+    звичайні forward-оновлення ("🔄 оновлена") - лише "⏪ відкочена"."""
+    from app.starlink_client import DishStatus
+    config.NOTIFY_FIRMWARE_ROLLBACK = False
+    try:
+        db.upsert_known_device_dish("dish1", "rev3", "v1.0")
+        sent = []
+        status = DishStatus(
+            timestamp=time.time(), online=True, uptime_s=100,
+            dish_id="dish1", hardware_version="rev3", software_version="v2.0",
+        )
+        monitor.upsert_dish_and_notify(status, lambda t: sent.append(t))
+        assert len(sent) == 1
+        assert "🔄" in sent[0] and "оновлена" in sent[0]
+    finally:
+        config.NOTIFY_FIRMWARE_ROLLBACK = True

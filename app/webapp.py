@@ -310,6 +310,40 @@ def _is_older_version(candidate: str, baseline: str) -> bool:
     return db.is_older_version(candidate, baseline)
 
 
+def _find_older_candidates(candidates: list[str], baseline_candidates: list[str]) -> list[tuple[str, str]]:
+    """Channel-aware перевірка "старіші за вже відому" - порівнює
+    кожного кандидата ЛИШЕ проти baseline ТОГО САМОГО build-каналу
+    (mr/cr/тощо, db.version_channel()), не глобально. Різні апаратні
+    ревізії Starlink можуть отримувати оновлення з незалежних build-
+    каналів одночасно, з різними датами - порівнювати їх напряму дає
+    хибні "старіша версія" відхилення (знайдено на реальному запиті
+    користувача: 2026.07.06.cr81950... хибно відхилявся як "старіший"
+    за 2026.07.19.mr82648 - різні канали, порівнювати нема сенсу).
+
+    ВАЖЛИВИЙ EDGE CASE (знайдено власним тестом одразу після першої
+    реалізації): якщо candidate НЕ МАЄ явного каналу (напр. проста
+    дата "2020.01.01" без mr/cr-суфікса) - це НЕ "свій окремий канал,
+    непорівнюваний з рештою", а звичайний, universal формат без
+    channel-специфіки - порівнюється з УСІМА baseline незалежно від
+    того, чи вони мають явний канал (fallback на стару, глобальну
+    поведінку). Channel-isolation застосовується ЛИШЕ коли candidate
+    сам має явний, конкретний канал (тоді порівнюємо тільки з baseline
+    ТОГО САМОГО каналу, а не з usiм loosely)."""
+    older = []
+    for c in candidates:
+        c_channel = db.version_channel(c)
+        if c_channel is None:
+            relevant_baseline = baseline_candidates
+        else:
+            relevant_baseline = [b for b in baseline_candidates if db.version_channel(b) == c_channel]
+        if not relevant_baseline:
+            continue
+        channel_baseline = max(relevant_baseline, key=db.version_key)
+        if db.is_older_version(c, channel_baseline):
+            older.append((c, channel_baseline))
+    return older
+
+
 @app.route("/api/target-versions")
 def api_get_target_versions() -> ResponseReturnValue:
     """Поточна встановлена версія (dish_current/router_current) - для
@@ -357,10 +391,10 @@ def api_set_target_versions() -> ResponseReturnValue:
             baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
                 [latest["software_version"]] if latest and latest.get("software_version") else []
             )
-            baseline = max(baseline_candidates, key=db.version_key) if baseline_candidates else None
-            older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
+            older = _find_older_candidates(candidates, baseline_candidates)
             if older:
-                rejected.append(f"тарілка: {', '.join(older)} старіші за вже відому {baseline}")
+                pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
+                rejected.append(f"тарілка: {pairs} старіші за вже відому версію того самого build-каналу")
             elif candidates:
                 db.set_setting("dish_target_version", dish_target)
                 saved.append("тарілка")
@@ -375,10 +409,10 @@ def api_set_target_versions() -> ResponseReturnValue:
             baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
                 [router_status["software_version"]] if router_status and router_status.get("software_version") else []
             )
-            baseline = max(baseline_candidates, key=db.version_key) if baseline_candidates else None
-            older = [c for c in candidates if baseline and _is_older_version(c, baseline)]
+            older = _find_older_candidates(candidates, baseline_candidates)
             if older:
-                rejected.append(f"роутер: {', '.join(older)} старіші за вже відому {baseline}")
+                pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
+                rejected.append(f"роутер: {pairs} старіші за вже відому версію того самого build-каналу")
             elif candidates:
                 db.set_setting("router_target_version", router_target)
                 saved.append("роутер")

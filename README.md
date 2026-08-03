@@ -151,7 +151,10 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
 **Особливості поведінки сповіщень:**
 - Тиша при недоступності dish довше `STARLINK_NOTIFICATIONS_MUTE_AFTER`
   (15 хв) — Telegram-звіти про auto-reboot призупиняються (журнал і
-  далі пишеться), відновлення завжди повідомляється з тривалістю простою
+  далі пишеться), відновлення повідомляється з тривалістю простою
+- `STARLINK_NOTIFY_DISH_RECOVERY=0` вимикає "✅ Dish знову online..."
+  повністю (журнал подій і далі пишеться незалежно) — корисно, якщо
+  часті короткі flap-відновлення не інформативні особисто для вас
 - Групування частих reboot (флап коротких циклів, не одна тривала
   відмова — `STARLINK_REBOOT_SPAM_THRESHOLD` (3) за
   `STARLINK_REBOOT_SPAM_WINDOW_SEC` (30 хв)): одне попередження про
@@ -340,6 +343,8 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
+| `STARLINK_NOTIFY_DISH_RECOVERY` | `1` | сповіщати "Dish знову online" (0=вимк.) |
+| `STARLINK_NOTIFY_FIRMWARE_ROLLBACK` | `1` | сповіщати про відкат прошивки, "⏪ відкочена" (0=вимк.) |
 | `STARLINK_REBOOT_SPAM_THRESHOLD` | `3` | група reboot-сповіщень: поріг кількості за вікно |
 | `STARLINK_REBOOT_SPAM_WINDOW_SEC` | `1800` | група reboot-сповіщень: вікно часу, сек |
 | `STARLINK_MAX_LOGGED_FAILURES` | `15` | макс. послідовних невдач опитування, що пишуться в журнал/БД |

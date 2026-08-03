@@ -19,6 +19,18 @@ OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0
 # (подія й далі пишеться в журнал дашборду). Відновлення зв'язку
 # завжди повідомляється, незалежно від тривалості мовчання.
 NOTIFICATIONS_MUTE_AFTER_SEC = int(os.environ.get("STARLINK_NOTIFICATIONS_MUTE_AFTER", "900"))
+# Сповіщення "✅ Dish знову online (після N невдалих спроб)" - за
+# бажанням користувача можна вимкнути (0), якщо ці короткі, часті
+# flap-відновлення не інформативні особисто для нього. Журнал подій
+# і далі пишеться незалежно від цього параметра.
+NOTIFY_DISH_RECOVERY = os.environ.get("STARLINK_NOTIFY_DISH_RECOVERY", "1") == "1"
+# "⏪ Прошивка X відкочена (можливо, SpaceX-side)" - за бажанням
+# користувача можна вимкнути окремо від звичайного "🔄 оновлена"
+# (SpaceX-side rollback - не помилка нашого моніторингу, лише
+# інформаційне сповіщення про факт, який іноді не інформативний
+# особисто для користувача). Спільний для dish і router (обидва йдуть
+# через ту саму _format_firmware_change_message()).
+NOTIFY_FIRMWARE_ROLLBACK = os.environ.get("STARLINK_NOTIFY_FIRMWARE_ROLLBACK", "1") == "1"
 # Групування спаму reboot-сповіщень - на відміну від MUTE_AFTER (одна
 # ТРИВАЛА відмова), це про ЧАСТОТУ: REBOOT_SPAM_THRESHOLD+ окремих
 # reboot-сповіщень за REBOOT_SPAM_WINDOW_SEC (флап коротких циклів,

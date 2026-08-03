@@ -279,3 +279,47 @@ def test_apt_check_logs_event(client, monkeypatch):
     events = db.get_recent_events(limit=5)
     apt_events = [e for e in events if e["kind"] == "apt_check"]
     assert len(apt_events) == 1
+
+
+# ---- version_channel / channel-aware валідація - різні апаратні ревізії Starlink ----
+
+def test_version_channel_extracts_letter_prefix():
+    from app.db import version_channel
+    assert version_channel("2026.07.06.cr81950.49600") == "cr"
+    assert version_channel("2026.07.19.mr82648") == "mr"
+    assert version_channel("2020.01.01") is None
+    assert version_channel("") is None
+
+
+def test_target_versions_different_build_channels_not_compared(client):
+    """Точний сценарій, знайдений користувачем на практиці: 'mr' і 'cr'
+    build-канали можуть відповідати РІЗНИМ апаратним ревізіям з
+    незалежними датами випуску одночасно - порівнювати дату напряму
+    між каналами дає хибне відхилення "старіша версія"."""
+    _insert_dish_version("2026.07.19.mr82648")
+    resp = client.post("/api/target-versions", json={"dish_target": "2026.07.06.cr81950.49600"})
+    data = resp.get_json()
+    assert data["success"] is True, f"різні build-канали (mr/cr) не мають блокувати одне одного: {data}"
+
+
+def test_target_versions_same_channel_still_rejects_older(client):
+    """Контрольний тест: У МЕЖАХ ТОГО САМОГО каналу (mr) захист від
+    відкату все ще коректно працює - фіча не послабила звичайну
+    валідацію, лише додала ізоляцію МІЖ різними каналами."""
+    _insert_dish_version("2026.07.19.mr82648")
+    resp = client.post("/api/target-versions", json={"dish_target": "2026.03.03.mr70000"})
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "mr70000" in data["message"]
+
+
+def test_target_versions_candidate_without_channel_compares_globally(client):
+    """Edge case, знайдений власним тестом одразу після першої
+    реалізації channel-aware логіки: candidate БЕЗ явного каналу
+    (проста дата, без mr/cr-суфікса) - це НЕ "свій окремий канал",
+    порівнюється з УСІМА baseline звичайно (fallback), а не хибно
+    приймається як "непорівнюваний з рештою"."""
+    _insert_dish_version("2026.07.19.mr82648")
+    resp = client.post("/api/target-versions", json={"dish_target": "2020.01.01"})
+    data = resp.get_json()
+    assert data["success"] is False, "версія без каналу (2020.01.01) мала порівнятись глобально й відхилитись"

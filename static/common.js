@@ -39,6 +39,13 @@ function _percentile(sortedArr, p) {
   return sortedArr[lower] + (sortedArr[upper] - sortedArr[lower]) * (idx - lower);
 }
 
+function _hexToRgba(hex, alpha) {
+  const m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!m) return `rgba(11,18,32,${alpha})`;  // fallback - темна тема за замовчуванням
+  const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function drawLineChart(canvas, series, options = {}) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -65,6 +72,12 @@ function drawLineChart(canvas, series, options = {}) {
   }
 
   let labelY = 6;
+  // Реальний колір фону панелі з CSS-змінної (не хардкоджений) -
+  // --sky-900 має РІЗНІ значення для темної/світлої теми
+  // ([data-theme="light"] у style.css), хардкоджений темний колір
+  // виглядав би неправильно (темний прямокутник на світлому фоні
+  // панелі) при перемкнутій світлій темі.
+  const panelBg = getComputedStyle(document.documentElement).getPropertyValue('--sky-900').trim() || '#0b1220';
   const scaleInfo = [];  // {min, range, scaleMax} по кожній серії - потрібно і для hover-крапок (ті самі координати, що й для лінії)
   for (const s of series) {
     const pts = s.data.filter(v => v != null);
@@ -106,11 +119,20 @@ function drawLineChart(canvas, series, options = {}) {
     // без цього замовчування ('alphabetic') не враховує descenders
     // українських літер (напр. "р", "ц"), через що підписи кількох
     // серій в одному графіку могли візуально зливатись один з одним.
-    ctx.fillStyle = s.color;
+    const label = `макс ${trueMax.toFixed(1)}`;
     ctx.font = '10px monospace';
+    const labelWidth = ctx.measureText(label).width;
+    // Напівпрозорий темний фон під підписом - без цього яскрава лінія
+    // графіка могла проходити прямо крізь текст, роблячи його
+    // нечитабельним, коли дані саме в цій точці близькі до максимуму
+    // (лінія природно йде вгору до того самого top-right кута, де
+    // розміщені підписи) - знайдено на реальному скріншоті.
+    ctx.fillStyle = _hexToRgba(panelBg, 0.8);
+    ctx.fillRect(w - pad - labelWidth - 4, labelY - 2, labelWidth + 6, 12);
+    ctx.fillStyle = s.color;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
-    ctx.fillText(`макс ${trueMax.toFixed(1)}`, w - pad, labelY);
+    ctx.fillText(label, w - pad, labelY);
     labelY += 14;
   }
 

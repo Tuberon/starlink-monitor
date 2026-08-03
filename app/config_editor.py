@@ -26,6 +26,8 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_MAX_FAILURES", "type": "int", "default": "6", "label": "Невдалих опитувань перед watchdog-reboot"},
     {"key": "STARLINK_MIN_REBOOT_INTERVAL", "type": "int", "default": "180", "label": "Мін. інтервал між авто-ребутами, сек"},
     {"key": "STARLINK_NOTIFICATIONS_MUTE_AFTER", "type": "int", "default": "900", "label": "Приглушити Telegram після недоступності dish, сек"},
+    {"key": "STARLINK_NOTIFY_DISH_RECOVERY", "type": "bool", "default": "1", "label": "Сповіщати 'Dish знову online' (0/1)"},
+    {"key": "STARLINK_NOTIFY_FIRMWARE_ROLLBACK", "type": "bool", "default": "1", "label": "Сповіщати про відкат прошивки (0/1)"},
     {"key": "STARLINK_REBOOT_SPAM_THRESHOLD", "type": "int", "default": "3", "label": "Група reboot-сповіщень: поріг кількості за вікно"},
     {"key": "STARLINK_REBOOT_SPAM_WINDOW_SEC", "type": "int", "default": "1800", "label": "Група reboot-сповіщень: вікно часу, сек"},
     {"key": "STARLINK_MAX_LOGGED_FAILURES", "type": "int", "default": "15", "label": "Макс. послідовних невдач у журналі перед припиненням запису"},

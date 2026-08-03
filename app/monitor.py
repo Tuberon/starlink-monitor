@@ -108,7 +108,7 @@ def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Cal
     db.set_setting("both_targets_notified", combo_key)
 
 
-def _format_firmware_change_message(component_label: str, old_version: str, new_version: str) -> str:
+def _format_firmware_change_message(component_label: str, old_version: str, new_version: str) -> Optional[str]:
     """Формує повідомлення про зміну прошивки з ПРАВИЛЬНИМ дієсловом
     залежно від напрямку - без цього "🔄 оновлена" вводило б в оману,
     коли реальна зміна versions - це ВІДКАТ (SpaceX інколи відкочує
@@ -118,8 +118,12 @@ def _format_firmware_change_message(component_label: str, old_version: str, new_
     компаратор, вже перевірений на реалістичних версіях) визначає
     напрямок - слово й emoji підбираються відповідно, дані (X → Y)
     завжди ті самі, чесно показують РЕАЛЬНИЙ факт, лише словесне
-    формулювання змінюється."""
+    формулювання змінюється. Повертає None, якщо це rollback і
+    NOTIFY_FIRMWARE_ROLLBACK=0 (окремий від звичайного "оновлена"
+    перемикач - той теж лишається завжди активним)."""
     if db.is_older_version(new_version, old_version):
+        if not config.NOTIFY_FIRMWARE_ROLLBACK:
+            return None
         return f"⏪ Прошивка {component_label} відкочена (можливо, SpaceX-side): {old_version} → {new_version}"
     return f"🔄 Прошивка {component_label} оновлена: {old_version} → {new_version}"
 
@@ -139,7 +143,9 @@ def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None])
         return
     real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
     if real_change and old_version:
-        notify_fn(_format_firmware_change_message("тарілки", old_version, status.software_version))
+        msg = _format_firmware_change_message("тарілки", old_version, status.software_version)
+        if msg:
+            notify_fn(msg)
     check_target_version_reached(
         "тарілки", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id, notify_fn
     )
@@ -155,7 +161,9 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
     if dish_id:
         real_change, old_version = db.upsert_known_device_router(dish_id, info.hardware_version, info.software_version)
         if real_change and old_version:
-            notify_fn(_format_firmware_change_message("роутера", old_version, info.software_version))
+            msg = _format_firmware_change_message("роутера", old_version, info.software_version)
+            if msg:
+                notify_fn(msg)
     check_target_version_reached(
         "роутера", info.software_version, "router_target_version", "router_target_notified", dish_id, notify_fn
     )
@@ -265,11 +273,12 @@ class Watchdog:
             if self.consecutive_failures > 0:
                 downtime_sec = time.time() - self.first_failure_ts if self.first_failure_ts else 0
                 logger.info("Dish знову online після %d невдалих спроб", self.consecutive_failures)
-                if downtime_sec >= config.NOTIFICATIONS_MUTE_AFTER_SEC:
-                    downtime_min = round(downtime_sec / 60)
-                    self._notify(f"✅ Dish знову online (WiFi Starlink була відсутня ~{downtime_min} хв, сповіщення відновлено)")
-                else:
-                    self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
+                if config.NOTIFY_DISH_RECOVERY:
+                    if downtime_sec >= config.NOTIFICATIONS_MUTE_AFTER_SEC:
+                        downtime_min = round(downtime_sec / 60)
+                        self._notify(f"✅ Dish знову online (WiFi Starlink була відсутня ~{downtime_min} хв, сповіщення відновлено)")
+                    else:
+                        self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
             self.consecutive_failures = 0
             self.first_failure_ts = None
             self._notify_first_dish_connection(status)
