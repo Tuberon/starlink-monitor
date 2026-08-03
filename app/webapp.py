@@ -557,9 +557,9 @@ def api_restart_after_env_change() -> ResponseReturnValue:
     return jsonify({"success": ok1 and ok2, "message": f"monitor: {msg1}; webui: {msg2}"})
 
 
-def _run_system_command(cmd: list[str]) -> tuple[bool, str]:
+def _run_system_command(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "unknown error").strip()
             return False, err[:500]
@@ -599,6 +599,20 @@ def api_system_shutdown() -> ResponseReturnValue:
         "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "вимкнути",
     )
     return jsonify({"success": ok, "message": msg})
+
+
+@app.route("/api/apt-check", methods=["POST"])
+def api_apt_check() -> ResponseReturnValue:
+    """Примусово запускає `sudo apt update` (оновлює локальний кеш
+    пакетів з репозиторіїв - без цього get_apt_updates_info() лише
+    читає кеш, оновлюваний системним apt-daily.timer раз/добу, тому
+    число на дашборді могло б бути застарілим до доби). timeout=30 -
+    apt update робить мережеві запити до репозиторіїв, довше за
+    швидкі reboot/shutdown-команди (типовий дефолт 10с замалий)."""
+    ok, msg = _run_system_command(["sudo", "/usr/bin/apt-get", "update"], timeout=30)
+    db.insert_event("apt_check", f"Ручна перевірка оновлень пакетів: {msg}", success=ok)
+    info = system_metrics.get_apt_updates_info(force=True)
+    return jsonify({"success": ok, "message": msg, "updates_count": info.get("updates_count")})
 
 
 def main() -> None:

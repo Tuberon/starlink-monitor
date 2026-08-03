@@ -250,3 +250,32 @@ def test_restore_known_devices_via_api(client):
     assert data["success"] is True
     assert "1 нових з 1" in data["message"]
     assert db.get_known_device("dish-XYZ") is not None
+
+
+# ---- /api/apt-check - ручна перевірка оновлень системних пакетів ----
+
+def test_apt_check_success_returns_updates_count(client, monkeypatch):
+    monkeypatch.setattr("app.webapp._run_system_command", lambda cmd, timeout=10: (True, "виконано"))
+    resp = client.post("/api/apt-check")
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "updates_count" in data
+
+
+def test_apt_check_failure_reports_message(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.webapp._run_system_command",
+        lambda cmd, timeout=10: (False, "Temporary failure resolving repo"),
+    )
+    resp = client.post("/api/apt-check")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "Temporary failure" in data["message"]
+
+
+def test_apt_check_logs_event(client, monkeypatch):
+    monkeypatch.setattr("app.webapp._run_system_command", lambda cmd, timeout=10: (True, "виконано"))
+    client.post("/api/apt-check")
+    events = db.get_recent_events(limit=5)
+    apt_events = [e for e in events if e["kind"] == "apt_check"]
+    assert len(apt_events) == 1

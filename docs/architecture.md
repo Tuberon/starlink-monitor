@@ -270,6 +270,30 @@ dish/router_target_version, історія відомих Starlink-пристр�
 Bot token у файлі — у відкритому вигляді, файл backup потрібно
 берегти як secret.
 
+## Керування Raspberry Pi (веб)
+
+`_execute_pi_power_action()` (`app/webapp.py`) — спільна логіка для
+`/api/system-reboot`/`/api/system-shutdown`: виконати команду через
+`_run_system_command()` (обмежений sudo, `/etc/sudoers.d/starlink-
+monitor` — навмисно вузько, конкретні команди, не blanket `ALL=(ALL)
+NOPASSWD: ALL`), записати подію в журнал, надіслати Telegram-
+сповіщення про результат.
+
+**Перевірка оновлень системних пакетів** — два незалежні шляхи:
+- **Пасивний** (`system_metrics.get_apt_updates_info()`) — читає
+  ЛИШЕ локальний кеш (`apt list --upgradable`, без мережевого
+  запиту), покладається на системний `apt-daily.timer` для свіжості
+  кешу (раз/добу). Кешується в пам'яті процесу webui на годину
+  (`_APT_CHECK_INTERVAL_SEC`) — не навантажує Pi Zero 2 W субпроцесом
+  на кожен запит дашборду.
+- **Активний** (кнопка "📦 Перевірити оновлення пакетів",
+  `/api/apt-check`) — примусовий `sudo /usr/bin/apt-get update`
+  (timeout 30с, довше за швидкі reboot/shutdown-команди — мережевий
+  запит до репозиторіїв), потім `get_apt_updates_info(force=True)`
+  обходить internal-кеш для СВІЖОГО числа одразу після оновлення.
+  Оновлює той самий `#sAptUpdates` елемент, що пасивний шлях —
+  без чекання на наступний цикл опитування системних метрик.
+
 ## Фізична кнопка виключення (GPIO)
 
 Окремий процес (`app/shutdown_button.py`, сервіс

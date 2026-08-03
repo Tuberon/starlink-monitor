@@ -27,13 +27,16 @@ _APT_CHECK_INTERVAL_SEC = 3600
 _apt_cache: dict[str, Optional[float]] = {"updates_count": None, "last_apt_update_ts": None, "checked_ts": None}
 
 
-def get_apt_updates_info() -> dict[str, Any]:
+def get_apt_updates_info(force: bool = False) -> dict[str, Any]:
     """Кількість доступних оновлень пакетів (apt) і час останньої
     системної перевірки (mtime apt-daily.timer's stamp-файлу). Ніколи
     не кидає виняток - при будь-якій помилці count/last_apt_update_ts
-    лишаються None (фронтенд показує "—")."""
+    лишаються None (фронтенд показує "—"). force=True обходить
+    internal-кеш - потрібно для кнопки "Перевірити оновлення пакетів"
+    на дашборді (після примусового sudo apt update користувач очікує
+    СВІЖЕ число, не те, що досі кешоване до година наперед)."""
     now = time.time()
-    if _apt_cache["checked_ts"] is not None and now - _apt_cache["checked_ts"] < _APT_CHECK_INTERVAL_SEC:
+    if not force and _apt_cache["checked_ts"] is not None and now - _apt_cache["checked_ts"] < _APT_CHECK_INTERVAL_SEC:
         return dict(_apt_cache)
 
     count = None

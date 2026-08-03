@@ -195,13 +195,15 @@ chmod 600 /etc/starlink-monitor/env
 
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
-# необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi.
+# необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi,
+# і ручної перевірки оновлень системних пакетів (кнопка на дашборді).
 # Це навмисно вузько — НЕ blanket "ALL=(ALL) NOPASSWD: ALL".
 cat > /etc/sudoers.d/starlink-monitor <<EOF
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-monitor.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-webui.service
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl reboot
 $RUN_USER ALL=(root) NOPASSWD: /bin/systemctl poweroff
+$RUN_USER ALL=(root) NOPASSWD: /usr/bin/apt-get update
 EOF
 chmod 0440 /etc/sudoers.d/starlink-monitor
 visudo -c -f /etc/sudoers.d/starlink-monitor
