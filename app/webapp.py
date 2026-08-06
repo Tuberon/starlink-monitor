@@ -310,7 +310,9 @@ def _is_older_version(candidate: str, baseline: str) -> bool:
     return db.is_older_version(candidate, baseline)
 
 
-def _find_older_candidates(candidates: list[str], baseline_candidates: list[str]) -> list[tuple[str, str]]:
+def _find_older_candidates(
+    candidates: list[str], baseline_candidates: list[str], current_installed: Optional[str] = None,
+) -> list[tuple[str, str]]:
     """Channel-aware перевірка "старіші за вже відому" - порівнює
     кожного кандидата ЛИШЕ проти baseline ТОГО САМОГО build-каналу
     (mr/cr/тощо, db.version_channel()), не глобально. Різні апаратні
@@ -328,9 +330,24 @@ def _find_older_candidates(candidates: list[str], baseline_candidates: list[str]
     того, чи вони мають явний канал (fallback на стару, глобальну
     поведінку). Channel-isolation застосовується ЛИШЕ коли candidate
     сам має явний, конкретний канал (тоді порівнюємо тільки з baseline
-    ТОГО САМОГО каналу, а не з usiм loosely)."""
+    ТОГО САМОГО каналу, а не з usiм loosely).
+
+    current_installed - ДРУГИЙ реальний сценарій, знайдений на
+    практиці: якщо dish/router РЕАЛЬНО відкотився (SpaceX-side
+    rollback, вже підтверджений раніше), поточна встановлена версія
+    могла стати СТАРІШОЮ за раніше введений target (напр. target=
+    07-24 введений заздалегідь, dish відкотився на 07-19) - user хоче
+    узгодити target із ФАКТИЧНОЮ реальністю (07-19), АЛЕ стара логіка
+    блокувала це, бо порівнювала проти "найновішого з усього"
+    (включно зі старим target), не розрізняючи "випадкова описка"
+    від "свідоме узгодження з поточним станом". Candidate, що ТОЧНО
+    збігається з фактично встановленою версією ЗАВЖДИ дозволяється,
+    незалежно від того, що там був старіший попередній target -
+    узгодження target із реальністю НІКОЛИ не є "випадковим відкатом"."""
     older = []
     for c in candidates:
+        if current_installed and c == current_installed:
+            continue
         c_channel = db.version_channel(c)
         if c_channel is None:
             relevant_baseline = baseline_candidates
@@ -366,12 +383,17 @@ def api_set_target_versions() -> ResponseReturnValue:
     різних апаратних ревізій, той самий формат, що telegram_chat_ids)
     лише якщо КОЖЕН кандидат НЕ старіший за вже відому (попередній
     target-список, якщо був, і поточну встановлену версію - береться
-    максимум з усіх як базова лінія). Захищає від випадкового відкату
-    (напр. описка чи забутий раніше введений новіший target) -
-    очікувані версії мають рухатись лише вперед. Якщо ХОЧ ОДИН
-    кандидат у списку старіший - відхиляється ВЕСЬ список для цього
-    поля (не часткове прийняття окремих кандидатів - простіша, чіткіша
-    семантика для користувача)."""
+    максимум з усіх як базова лінія), АБО ТОЧНО збігається з фактично
+    встановленою версією зараз (виняток - узгодження з реальністю
+    ніколи не вважається "випадковим відкатом", навіть якщо старіший
+    попередній target усе ще збережений; знайдено на реальному
+    сценарії: dish відкотився SpaceX-side ПІСЛЯ введення target для
+    новішої версії). Захищає від випадкового відкату (напр. описка чи
+    забутий раніше введений новіший target) - очікувані версії мають
+    рухатись лише вперед. Якщо ХОЧ ОДИН кандидат у списку старіший -
+    відхиляється ВЕСЬ список для цього поля (не часткове прийняття
+    окремих кандидатів - простіша, чіткіша семантика для
+    користувача)."""
     payload = request.get_json(silent=True) or {}
     dish_target = payload.get("dish_target")
     router_target = payload.get("router_target")
@@ -388,10 +410,11 @@ def api_set_target_versions() -> ResponseReturnValue:
             saved.append("тарілка (очищено)")
         else:
             candidates = db.parse_version_list(dish_target)
+            current_installed = latest["software_version"] if latest and latest.get("software_version") else None
             baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
-                [latest["software_version"]] if latest and latest.get("software_version") else []
+                [current_installed] if current_installed else []
             )
-            older = _find_older_candidates(candidates, baseline_candidates)
+            older = _find_older_candidates(candidates, baseline_candidates, current_installed)
             if older:
                 pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
                 rejected.append(f"тарілка: {pairs} старіші за вже відому версію того самого build-каналу")
@@ -406,10 +429,11 @@ def api_set_target_versions() -> ResponseReturnValue:
             saved.append("роутер (очищено)")
         else:
             candidates = db.parse_version_list(router_target)
+            current_installed = router_status["software_version"] if router_status and router_status.get("software_version") else None
             baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
-                [router_status["software_version"]] if router_status and router_status.get("software_version") else []
+                [current_installed] if current_installed else []
             )
-            older = _find_older_candidates(candidates, baseline_candidates)
+            older = _find_older_candidates(candidates, baseline_candidates, current_installed)
             if older:
                 pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
                 rejected.append(f"роутер: {pairs} старіші за вже відому версію того самого build-каналу")

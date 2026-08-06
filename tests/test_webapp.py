@@ -323,3 +323,34 @@ def test_target_versions_candidate_without_channel_compares_globally(client):
     resp = client.post("/api/target-versions", json={"dish_target": "2020.01.01"})
     data = resp.get_json()
     assert data["success"] is False, "версія без каналу (2020.01.01) мала порівнятись глобально й відхилитись"
+
+
+def test_target_versions_matching_current_installed_always_accepted_after_rollback(client):
+    """Точний сценарій із реального повідомлення користувача: target
+    раніше введений як 07-24, ПОТІМ dish РЕАЛЬНО відкотився (SpaceX-
+    side rollback, вже підтверджений раніше) на 07-19 - user хоче
+    узгодити target із ФАКТИЧНОЮ реальністю. Candidate, що ТОЧНО
+    збігається з поточною встановленою версією, завжди приймається,
+    незалежно від старішого попереднього target."""
+    _insert_dish_version("2026.07.24.mr83021")
+    client.post("/api/target-versions", json={"dish_target": "2026.07.24.mr83021"})
+
+    _insert_dish_version("2026.07.19.mr82648")  # реальний rollback
+    resp = client.post("/api/target-versions", json={"dish_target": "2026.07.19.mr82648"})
+    data = resp.get_json()
+    assert data["success"] is True, f"узгодження з фактично встановленою версією мало прийнятись: {data}"
+
+    check = client.get("/api/target-versions").get_json()
+    assert check["dish_target"] == "2026.07.19.mr82648"
+
+
+def test_target_versions_real_typo_still_rejected_after_rollback_fix(client):
+    """Контрольний тест: фікс "завжди дозволяти поточну версію" НЕ
+    послабив захист від СПРАВЖНІХ описок (candidate, що НЕ збігається
+    ні з поточною версією, ні є новішим за попередній target)."""
+    _insert_dish_version("2026.07.24.mr83021")
+    client.post("/api/target-versions", json={"dish_target": "2026.07.24.mr83021"})
+
+    resp = client.post("/api/target-versions", json={"dish_target": "2026.01.01.mr50000"})
+    data = resp.get_json()
+    assert data["success"] is False, "справжня описка (не поточна версія, не новіша) мала відхилитись"
