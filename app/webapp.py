@@ -306,10 +306,6 @@ def api_set_telegram_config() -> ResponseReturnValue:
     return jsonify({"success": True})
 
 
-def _is_older_version(candidate: str, baseline: str) -> bool:
-    return db.is_older_version(candidate, baseline)
-
-
 def _find_older_candidates(
     candidates: list[str], baseline_candidates: list[str], current_installed: Optional[str] = None,
 ) -> list[tuple[str, str]]:
@@ -377,6 +373,34 @@ def api_get_target_versions() -> ResponseReturnValue:
     })
 
 
+def _validate_and_save_target(
+    target_raw: str, target_key: str, current_installed: Optional[str], component_label: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """Валідує й зберігає одне target-поле (dish або router - обидва
+    йшли через ІДЕНТИЧНУ логіку, дублювання накопичилось природно
+    через кілька послідовних правок обох блоків паралельно - знайдено
+    аудитом дублювання). Повертає (saved_label, rejected_message) -
+    рівно ОДНЕ з двох не-None, залежно від результату (порожній рядок
+    → очищено; валідні кандидати → збережено; є старіші → відхилено)."""
+    target_raw = target_raw.strip()
+    if not target_raw:
+        db.set_setting(target_key, "")
+        return f"{component_label} (очищено)", None
+
+    candidates = db.parse_version_list(target_raw)
+    baseline_candidates = db.parse_version_list(db.get_setting(target_key)) + (
+        [current_installed] if current_installed else []
+    )
+    older = _find_older_candidates(candidates, baseline_candidates, current_installed)
+    if older:
+        pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
+        return None, f"{component_label}: {pairs} старіші за вже відому версію того самого build-каналу"
+    if candidates:
+        db.set_setting(target_key, target_raw)
+        return component_label, None
+    return None, None
+
+
 @app.route("/api/target-versions", methods=["POST"])
 def api_set_target_versions() -> ResponseReturnValue:
     """Приймає нову очікувану версію (чи кілька через кому - для
@@ -404,42 +428,20 @@ def api_set_target_versions() -> ResponseReturnValue:
     rejected = []
 
     if dish_target is not None:
-        dish_target = dish_target.strip()
-        if not dish_target:
-            db.set_setting("dish_target_version", "")
-            saved.append("тарілка (очищено)")
-        else:
-            candidates = db.parse_version_list(dish_target)
-            current_installed = latest["software_version"] if latest and latest.get("software_version") else None
-            baseline_candidates = db.parse_version_list(db.get_setting("dish_target_version")) + (
-                [current_installed] if current_installed else []
-            )
-            older = _find_older_candidates(candidates, baseline_candidates, current_installed)
-            if older:
-                pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
-                rejected.append(f"тарілка: {pairs} старіші за вже відому версію того самого build-каналу")
-            elif candidates:
-                db.set_setting("dish_target_version", dish_target)
-                saved.append("тарілка")
+        current_installed = latest["software_version"] if latest and latest.get("software_version") else None
+        saved_label, rejected_msg = _validate_and_save_target(dish_target, "dish_target_version", current_installed, "тарілка")
+        if saved_label:
+            saved.append(saved_label)
+        if rejected_msg:
+            rejected.append(rejected_msg)
 
     if router_target is not None:
-        router_target = router_target.strip()
-        if not router_target:
-            db.set_setting("router_target_version", "")
-            saved.append("роутер (очищено)")
-        else:
-            candidates = db.parse_version_list(router_target)
-            current_installed = router_status["software_version"] if router_status and router_status.get("software_version") else None
-            baseline_candidates = db.parse_version_list(db.get_setting("router_target_version")) + (
-                [current_installed] if current_installed else []
-            )
-            older = _find_older_candidates(candidates, baseline_candidates, current_installed)
-            if older:
-                pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
-                rejected.append(f"роутер: {pairs} старіші за вже відому версію того самого build-каналу")
-            elif candidates:
-                db.set_setting("router_target_version", router_target)
-                saved.append("роутер")
+        current_installed = router_status["software_version"] if router_status and router_status.get("software_version") else None
+        saved_label, rejected_msg = _validate_and_save_target(router_target, "router_target_version", current_installed, "роутер")
+        if saved_label:
+            saved.append(saved_label)
+        if rejected_msg:
+            rejected.append(rejected_msg)
 
     if saved:
         db.insert_event("target_versions_updated", f"Очікувані версії прошивок оновлено: {', '.join(saved)}", success=True)

@@ -1,44 +1,43 @@
 """
-Тести для app/webapp.py - компаратор версій прошивки Starlink
-(_version_key/_is_older_version, толерантний до формату, не строгий
-semver) та валідація /api/target-versions ("лише новіші").
+Тести для app/db.py (компаратор версій прошивки Starlink) та
+app/webapp.py (валідація /api/target-versions - "лише новіші").
 """
 import time
 
 import pytest
 
 from app import db
-from app.webapp import _is_older_version, app as flask_app
+from app.webapp import app as flask_app
 
 
-# ---- Компаратор версій (_is_older_version) ----
+# ---- Компаратор версій (db.version_key/db.is_older_version) ----
 
 @pytest.mark.parametrize("older,newer", [
     ("2026.03.03.mr75126.1", "2026.03.15.mr80000.1"),  # різні дати
     ("2025.10.03.mr61821", "2026.03.03.mr75126.1"),  # різний рік
 ])
 def test_is_older_version_true_cases(older, newer):
-    assert _is_older_version(older, newer) is True
-    assert _is_older_version(newer, older) is False
+    assert db.is_older_version(older, newer) is True
+    assert db.is_older_version(newer, older) is False
 
 
 def test_is_older_version_identical_versions_not_older():
     v = "2026.03.03.mr75126.1"
-    assert _is_older_version(v, v) is False
+    assert db.is_older_version(v, v) is False
 
 
 def test_is_older_version_same_date_lower_build_number():
     """Той самий день, менший mr-номер - вважається старішою."""
-    assert _is_older_version("2026.03.03.mr75126.1", "2026.03.03.mr80000.1") is True
-    assert _is_older_version("2026.03.03.mr80000.1", "2026.03.03.mr75126.1") is False
+    assert db.is_older_version("2026.03.03.mr75126.1", "2026.03.03.mr80000.1") is True
+    assert db.is_older_version("2026.03.03.mr80000.1", "2026.03.03.mr75126.1") is False
 
 
 def test_is_older_version_nonstandard_format_does_not_crash():
     """Формат без YYYY.MM.DD-префіксу - fallback на посегментне
     порівняння, не падає з винятком."""
-    assert _is_older_version("v1.0", "v2.0") is True
-    assert _is_older_version("", "2026.03.03") is True
-    assert _is_older_version("unknown", "unknown") is False
+    assert db.is_older_version("v1.0", "v2.0") is True
+    assert db.is_older_version("", "2026.03.03") is True
+    assert db.is_older_version("unknown", "unknown") is False
 
 
 # ---- API /api/target-versions - валідація "лише новіші" ----

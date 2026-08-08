@@ -172,9 +172,14 @@ WAL journal_mode — паралельне читання (webui) і запис (
 "✅ Останнє оновлення тарілки/роутера встановлено: версія X".
 `db.parse_version_list()` — спільний helper (не дублюється в
 `monitor.py`/`webapp.py`), розбирає comma-separated рядок.
-`Watchdog._version_in_target_list()` — обгортка над ним для перевірки
-входження. `Watchdog._check_target_version_reached()` (`app/monitor.
-py`) — порівнює `current_version` з `settings["dish_target_version"]`.
+`monitor.version_in_target_list()` — перевірка входження.
+`monitor.check_target_version_reached()` (module-level функція, НЕ
+метод класу `Watchdog` — колишні `Watchdog._version_in_target_list()`/
+`_check_target_version_reached()` thin-wrapper методи видалені як
+мертвий код: жоден production-виклик не використовував їх напряму
+після рефакторингу на спільні функції для watchdog-циклу й ручної
+кнопки, лише застарілі тести — тести оновлено на прямі виклики) —
+порівнює `current_version` з `settings["dish_target_version"]`.
 Дедублікація без окремого boolean-прапорця: `dish_target_notified`
 зберігає ТРІЙКУ (`dish_id` + яка саме версія збіглась + повний
 target-список) — природно "скидається", коли користувач змінює
@@ -248,10 +253,9 @@ User хоче узгодити target із ФАКТИЧНОЮ реальніст
 без жодного способу скасувати раніше введений target). Відповідь API
 завжди містить `message` з описом реального результату (збережено/
 відхилено/очищено/без змін) — не лише коли є відхилені кандидати.
-з поясненням у `message` (не "усе або нічого" для обох компонентів
-одночасно).
 
-`Watchdog._check_both_targets_reached()` — окреме, комбіноване
+`monitor.check_both_targets_reached()` (module-level, не метод класу
+— той самий рефакторинг, що вище) — окреме, комбіноване
 підтвердження "🎉 Процедуру оновлення завершено", коли ОБИДВІ
 (тарілка й роутер) очікувані версії одночасно збігаються зі
 встановленими (на додачу до per-component "✅", не замість них — той

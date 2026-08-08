@@ -404,19 +404,6 @@ class Watchdog:
         db.insert_event("dish_connected", f"Підключено Starlink Mini, ID: {status.dish_id}", success=True)
         self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
 
-    @staticmethod
-    def _version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
-        return version_in_target_list(current_version, target_raw)
-
-    def _check_target_version_reached(
-        self, component_label: str, current_version: Optional[str], target_key: str,
-        notified_key: str, dish_id: Optional[str],
-    ) -> None:
-        check_target_version_reached(component_label, current_version, target_key, notified_key, dish_id, self._notify)
-
-    def _check_both_targets_reached(self) -> None:
-        check_both_targets_reached(self.last_known_dish_id, self._notify)
-
     def poll_system_metrics(self) -> None:
         try:
             metrics = get_system_metrics()
