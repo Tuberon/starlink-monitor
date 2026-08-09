@@ -25,7 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("shutdown_button")
 
-POLL_INTERVAL_SEC = 0.1  # як часто перевіряти стан піна під час очікування
 
 
 def watch_button() -> None:
@@ -70,7 +69,7 @@ def watch_button() -> None:
             if tracker.poll(value) == "long_press":
                 _trigger_shutdown(pin)
 
-            time.sleep(POLL_INTERVAL_SEC)
+            time.sleep(config.SHUTDOWN_BUTTON_POLL_INTERVAL_SEC)
     finally:
         try:
             release()

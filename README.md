@@ -26,7 +26,7 @@
    WiFi-клієнти, останні 5 подій журналу, ручний reboot/перевірка
    оновлень, реальний speedtest поруч із заявленою швидкістю dish.
    Сторінка `/stats` — повний журнал подій і повна історія speedtest.
-6. Telegram: сповіщення + команди `/status /reboot /id /help`.
+6. Telegram: сповіщення + команди `/status /checkupdates /reboot /id /help`.
 7. Reboot/shutdown Pi з веб-інтерфейсу або фізичної GPIO-кнопки,
    ручна перевірка оновлень системних пакетів (apt), backup/restore
    всіх налаштувань одним файлом, `/healthz` для зовнішнього
@@ -130,7 +130,12 @@ STARLINK_DISPLAY_OFFSET_LEFT=35
 > веб-інтерфейсі завжди замаскований.
 
 **Команди** (лише для chat_id зі списку):
-- `/status` — стан оновлення ПЗ dish/роутера, кількість попереджень
+- `/status` — швидкий, легкий погляд: online-статус, версія ПЗ,
+  активні попередження (без запису в БД чи перевірки target-версій)
+- `/checkupdates` — повна ручна перевірка: примусово опитати dish/
+  router негайно (не чекаючи наступного фонового циклу), записати
+  в БД, перевірити target-версії й зафіксувати зміни прошивки — та
+  сама логіка, що кнопка "Перевірити оновлення" на дашборді
 - `/reboot` — підтвердження через inline-кнопки, діє 2 хвилини
 - `/id` — список підключених тарілок; `/id <ID або частина>` — версії
   ПЗ dish/router конкретної тарілки і час останнього оновлення
@@ -143,6 +148,14 @@ Long polling (без webhook) у потоці `starlink-monitor.service`.
 вимикається перемикачем "Додавати фразу підпису" там же.
 
 **Особливості поведінки сповіщень:**
+- `STARLINK_NOTIFY_PI_STARTUP=0` вимикає сповіщення при запуску сервісу
+  після реального перезавантаження Pi (не спрацьовує на звичайний
+  `systemctl restart` під час оновлення коду)
+- `STARLINK_SCHEDULED_REBOOT_ENABLED=1` — плановий reboot Starlink
+  Mini (dish+router разом, той самий фізичний пристрій) по таймеру,
+  незалежно від реальних збоїв опитування; інтервал —
+  `STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS` (типово 24г). Вимкнено
+  за замовчуванням (opt-in)
 - Тиша при недоступності dish довше `STARLINK_NOTIFICATIONS_MUTE_AFTER`
   (15 хв) — auto-reboot звіти призупиняються (журнал і далі пишеться),
   відновлення повідомляється з тривалістю простою
@@ -329,6 +342,16 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
 | `STARLINK_NOTIFY_DISH_RECOVERY` | `1` | сповіщати "Dish знову online" (0=вимк.) |
 | `STARLINK_NOTIFY_FIRMWARE_ROLLBACK` | `1` | сповіщати про відкат прошивки, "⏪ відкочена" (0=вимк.) |
+| `STARLINK_NOTIFY_PI_STARTUP` | `1` | сповіщати про запуск Pi після перезавантаження (0=вимк.) |
+| `STARLINK_SCHEDULED_REBOOT_ENABLED` | `0` | плановий reboot Starlink Mini по таймеру (1=увімк.) |
+| `STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS` | `24` | інтервал планового reboot, годин |
+| `STARLINK_SHUTDOWN_BUTTON_POLL_INTERVAL_SEC` | `0.1` | опитування GPIO кнопки виключення, сек |
+| `STARLINK_DISPLAY_BUTTON_POLL_INTERVAL_SEC` | `0.1` | опитування GPIO кнопки дисплея, сек |
+| `STARLINK_TELEGRAM_SEND_TIMEOUT_SEC` | `10` | Telegram-бот: timeout надсилання, сек |
+| `STARLINK_TELEGRAM_POLL_TIMEOUT_SEC` | `30` | Telegram-бот: timeout long-polling, сек |
+| `STARLINK_TELEGRAM_CONFIRM_TTL_SEC` | `120` | Telegram-бот: TTL підтвердження команд, сек |
+| `STARLINK_TELEGRAM_NOTIFY_TIMEOUT_SEC` | `10` | Telegram-сповіщення: timeout запиту, сек |
+| `STARLINK_TELEGRAM_ID_LIST_MAX_ITEMS` | `40` | /id: макс. тарілок у списку без аргументу |
 | `STARLINK_REBOOT_SPAM_THRESHOLD` | `3` | група reboot-сповіщень: поріг кількості за вікно |
 | `STARLINK_REBOOT_SPAM_WINDOW_SEC` | `1800` | група reboot-сповіщень: вікно часу, сек |
 | `STARLINK_MAX_LOGGED_FAILURES` | `15` | макс. послідовних невдач опитування, що пишуться в журнал/БД |

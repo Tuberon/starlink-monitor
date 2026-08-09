@@ -12,12 +12,11 @@ from typing import Any, Optional
 import requests
 from requests.adapters import HTTPAdapter
 
-from app import db
+from app import config, db
 
 logger = logging.getLogger("telegram_notify")
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
-REQUEST_TIMEOUT = 10
 SIGNATURE_PHRASES_PATH = os.path.join(os.path.dirname(__file__), "signature_phrases.txt")
 
 # DNS-сервери для ручного резолвінгу через eth0.
@@ -288,7 +287,7 @@ def send_message(text: str) -> tuple[bool, str]:
                 "post",
                 url,
                 json={"chat_id": chat_id, "text": full_text, "parse_mode": "HTML"},
-                timeout=REQUEST_TIMEOUT,
+                timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
             )
             data = resp.json()
             if resp.status_code == 200 and data.get("ok"):
@@ -317,7 +316,7 @@ def test_connection() -> tuple[bool, str]:
         resp = _request_with_eth0_fallback(
             "get",
             API_BASE.format(token=token, method="getMe"),
-            timeout=REQUEST_TIMEOUT,
+            timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
         )
         data = resp.json()
         if resp.status_code == 200 and data.get("ok"):

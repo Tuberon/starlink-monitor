@@ -33,6 +33,37 @@ NOTIFY_DISH_RECOVERY = os.environ.get("STARLINK_NOTIFY_DISH_RECOVERY", "1") == "
 # особисто для користувача). Спільний для dish і router (обидва йдуть
 # через ту саму _format_firmware_change_message()).
 NOTIFY_FIRMWARE_ROLLBACK = os.environ.get("STARLINK_NOTIFY_FIRMWARE_ROLLBACK", "1") == "1"
+# "🟢 Dish Watch запущено (Raspberry Pi перезавантажено)" - лише при
+# РЕАЛЬНОМУ завантаженні Pi (питання psutil.boot_time(), не при
+# кожному sudo systemctl restart starlink-monitor.service під час
+# оновлення коду - інакше сповіщало б набагато частіше, ніж "Pi
+# увімкнувся/перезавантажився").
+NOTIFY_PI_STARTUP = os.environ.get("STARLINK_NOTIFY_PI_STARTUP", "1") == "1"
+# Плановий reboot Starlink Mini (dish+router - той самий фізичний
+# пристрій, окремої router-reboot команди немає, reboot_dish()
+# перезавантажує весь Mini) незалежно від того, чи є реальні збої
+# опитування - деякі користувачі практикують періодичний reboot для
+# профілактики. Вимкнено за замовчуванням (opt-in) - потенційно
+# розриває з'єднання на кілька хвилин, свідомий вибір користувача.
+SCHEDULED_REBOOT_ENABLED = os.environ.get("STARLINK_SCHEDULED_REBOOT_ENABLED", "0") == "1"
+SCHEDULED_REBOOT_INTERVAL_HOURS = float(os.environ.get("STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS", "24"))
+
+# Технічні timeout/TTL для Telegram-бота (app/telegram_bot.py, обробка
+# вхідних команд) - раніше hardcoded module-level константи, винесено
+# для консистентності з рештою "усе через env" паттерну проєкту.
+TELEGRAM_SEND_TIMEOUT_SEC = float(os.environ.get("STARLINK_TELEGRAM_SEND_TIMEOUT_SEC", "10"))
+TELEGRAM_POLL_TIMEOUT_SEC = float(os.environ.get("STARLINK_TELEGRAM_POLL_TIMEOUT_SEC", "30"))
+TELEGRAM_CONFIRM_TTL_SEC = float(os.environ.get("STARLINK_TELEGRAM_CONFIRM_TTL_SEC", "120"))
+# Технічний timeout для app/telegram_notify.py (надсилання сповіщень,
+# окремий модуль від telegram_bot.py) - той самий дефолт, що
+# TELEGRAM_SEND_TIMEOUT_SEC вище, АЛЕ незалежний параметр (різні
+# модулі, різні сервіси - не хочу штучно об'єднувати).
+TELEGRAM_NOTIFY_TIMEOUT_SEC = float(os.environ.get("STARLINK_TELEGRAM_NOTIFY_TIMEOUT_SEC", "10"))
+# Максимум записів у списку /id без аргументів (Telegram обмежує
+# повідомлення 4096 символами - без цього ліміту довгий список
+# known_devices міг би бути повністю відхилений API, виглядаючи
+# як "команда не відповідає взагалі").
+TELEGRAM_ID_LIST_MAX_ITEMS = int(os.environ.get("STARLINK_TELEGRAM_ID_LIST_MAX_ITEMS", "40"))
 # Групування спаму reboot-сповіщень - на відміну від MUTE_AFTER (одна
 # ТРИВАЛА відмова), це про ЧАСТОТУ: REBOOT_SPAM_THRESHOLD+ окремих
 # reboot-сповіщень за REBOOT_SPAM_WINDOW_SEC (флап коротких циклів,
@@ -68,6 +99,11 @@ WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 # GPIO BCM pin для фізичної кнопки виключення; 0 = вимкнено, 27 = дефолт
 SHUTDOWN_BUTTON_GPIO_PIN = int(os.environ.get("STARLINK_SHUTDOWN_BUTTON_PIN", "27"))
 SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "3"))
+# Як часто перевіряти стан GPIO-піна кнопки виключення - окремий від
+# DISPLAY_BUTTON_POLL_INTERVAL_SEC нижче, бо це РІЗНІ сервіси
+# (shutdown_button.py, окремий від display.py), навіть якщо дефолт
+# однаковий (0.1с).
+SHUTDOWN_BUTTON_POLL_INTERVAL_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_POLL_INTERVAL_SEC", "0.1"))
 
 # Фізичний TFT-дисплей (ST7789, SPI) - показує live-статус dish прямо
 # на екрані, без потреби відкривати веб-дашборд. Вимкнено за
@@ -132,6 +168,10 @@ DISPLAY_BACKLIGHT_AUTO_OFF_SEC = int(os.environ.get("STARLINK_DISPLAY_BACKLIGHT_
 # Коли update_state (dish чи router) змінюється - підсвітка вмикається
 # на цей час і потім явно вимикається (0 вимикає фічу повністю).
 DISPLAY_UPDATE_FLASH_SEC = int(os.environ.get("STARLINK_DISPLAY_UPDATE_FLASH_SEC", "5"))
+# Як часто перевіряти стан GPIO-піна кнопки в display.py - окремий
+# від SHUTDOWN_BUTTON_POLL_INTERVAL_SEC вище (та сама роль, інший
+# сервіс/файл - shutdown_button.py, не display.py).
+DISPLAY_BUTTON_POLL_INTERVAL_SEC = float(os.environ.get("STARLINK_DISPLAY_BUTTON_POLL_INTERVAL_SEC", "0.1"))
 
 # Періодичний реальний speedtest (не лише пропускна здатність з телеметрії
 # dish, яка показує "заявлений" канал, не реальну користувацьку швидкість

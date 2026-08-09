@@ -43,7 +43,6 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
-BUTTON_POLL_INTERVAL_SEC = 0.1  # як часто перевіряти кнопку
 
 # Компактні переклади update_state спеціально для вузького TFT-екрана
 # - НЕ ті самі, що в static/dashboard.js: там розраховано на широкий
@@ -391,7 +390,7 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
                     logger.exception("Помилка оновлення дисплея")
                 last_redraw = now
 
-            time.sleep(BUTTON_POLL_INTERVAL_SEC)
+            time.sleep(config.DISPLAY_BUTTON_POLL_INTERVAL_SEC)
     finally:
         if button_release:
             try:

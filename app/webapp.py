@@ -172,54 +172,12 @@ def api_reboot_dish() -> ResponseReturnValue:
 
 @app.route("/api/check-updates", methods=["POST"])
 def api_check_updates() -> ResponseReturnValue:
-    """
-    Ручна перевірка стану оновлень. ВАЖЛИВО: локальний gRPC API dish/router
-    не має команди "примусово перевірити оновлення в хмарі SpaceX" — це
-    підтверджено прямими викликами (software_update повертає
-    "FailedPrecondition: Sideload update stream not open" на dish і
-    "Unimplemented" на роутері - цей запит призначений для sideload
-    завантаження файлу прошивки вручну, не для перевірки в хмарі).
-    Кнопка "Перевірити оновлення" в офіційному застосунку працює через
-    хмарний бекенд SpaceX, недоступний з локальної мережі.
-
-    Натомість цей ендпоінт негайно опитує dish і router (замість очікування
-    наступного фонового циклу опитування) і одразу показує актуальний
-    поточний стан оновлення - це те, що реально доступно через локальний API.
-
-    Викликає ту саму логіку сповіщень (target-версії, "🔄 прошивка
-    оновлена"), що фоновий watchdog-цикл (monitor.upsert_dish_and_notify/
-    upsert_router_and_notify) - знайдена й виправлена реальна прогалина:
-    раніше ручна перевірка лише записувала статус у БД, БЕЗ жодного
-    сповіщення, навіть коли версія якраз збігалась із target у момент
-    натискання кнопки.
-    """
-    dish_status = client.get_status()
-    db.insert_metric(dish_status.to_dict())
-
-    router_info = client.get_router_info()
-    db.set_router_status(router_info.to_dict())
-
+    """Ручна перевірка стану оновлень - див. monitor.check_updates_now()
+    для повної логіки (спільна з /checkupdates у telegram_bot.py)."""
     def notify(text: str) -> None:
         telegram_notify.send_message(text)
 
-    # dish_id для router - якщо dish зараз online, беремо ЙОГО (найсвіжіше
-    # джерело правди); інакше падаємо на останній відомий з known_devices
-    # (dish міг бути offline саме в момент цієї ручної перевірки, поки
-    # router усе ще відповідає - той самий фізичний Mini).
-    dish_id_for_router: Optional[str] = dish_status.dish_id
-    if not dish_id_for_router:
-        known = db.get_all_known_devices()
-        dish_id_for_router = known[0]["dish_id"] if known else None
-
-    monitor.upsert_dish_and_notify(dish_status, notify)
-    monitor.upsert_router_and_notify(router_info, dish_id_for_router, notify)
-
-    db.insert_event(
-        "manual_update_check",
-        f"Ручна перевірка: dish={dish_status.update_state or 'н/д'}, "
-        f"router={router_info.update_state or 'н/д'}",
-        success=dish_status.online or router_info.online,
-    )
+    dish_status, router_info = monitor.check_updates_now(client, notify)
 
     return jsonify({
         "success": True,

@@ -13,23 +13,26 @@ from typing import Any, Optional
 
 import requests
 
-from app import db, telegram_notify
+from app import config, db, monitor, telegram_notify
 from app.labels import ROUTER_UPDATE_STATE_LABELS, UPDATE_STATE_LABELS
 from app.starlink_client import StarlinkClient
 
 logger = logging.getLogger("telegram_bot")
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
-REQUEST_TIMEOUT_SEND = 10
-POLL_TIMEOUT_SEC = 30
-REQUEST_TIMEOUT_POLL = POLL_TIMEOUT_SEC + 5  # трохи більше за timeout long polling
 
 # Скільки секунд діє запит підтвердження /reboot, перш ніж вважати його
 # застарілим (захист від випадкового підтвердження старого запиту)
-CONFIRM_TTL_SEC = 120
-
-
 def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Optional[dict[str, Any]]:
+    """Викликає Telegram Bot API, повертає розпарсений JSON або None
+    при мережевій помилці. ВАЖЛИВО: Telegram API повертає ВАЛІДНИЙ
+    JSON навіть для відхилених запитів (напр. `{"ok": false,
+    "description": "message is too long"}` при перевищенні ліміту
+    4096 символів, чи невалідному HTML-форматуванні) - без явної
+    перевірки `ok`-поля такі помилки мовчки ігнорувались, виглядаючи
+    як "команда взагалі не відповідає" (реальний баг, знайдений на
+    запиті користувача: /id без аргументів міг перевищити ліміт при
+    великій кількості відомих тарілок)."""
     try:
         resp = telegram_notify._request_with_eth0_fallback(
             "post",
@@ -37,7 +40,13 @@ def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Op
             json=params,
             timeout=http_timeout,
         )
-        return resp.json()
+        data = resp.json()
+        if not data.get("ok"):
+            logger.warning(
+                "Telegram API %s відхилив запит: %s (chat_id=%s)",
+                method, data.get("description", "невідома причина"), params.get("chat_id", "?"),
+            )
+        return data
     except requests.RequestException as e:
         logger.warning("Telegram API виклик %s провалився: %s", method, e)
         return None
@@ -89,9 +98,9 @@ class TelegramBot:
         data = _api_call(
             "getUpdates",
             token,
-            REQUEST_TIMEOUT_POLL,
+            (config.TELEGRAM_POLL_TIMEOUT_SEC + 5),
             offset=self._last_update_id + 1,
-            timeout=POLL_TIMEOUT_SEC,
+            timeout=config.TELEGRAM_POLL_TIMEOUT_SEC,
         )
         if not data or not data.get("ok"):
             time.sleep(3)
@@ -152,6 +161,8 @@ class TelegramBot:
         command = text.split()[0].lower().split("@")[0]  # прибрати /cmd@botname
         if command == "/status":
             self._cmd_status(token, chat_id)
+        elif command == "/checkupdates":
+            self._cmd_check_updates(token, chat_id)
         elif command == "/reboot":
             self._cmd_reboot_request(token, chat_id)
         elif command == "/id":
@@ -168,14 +179,14 @@ class TelegramBot:
         callback_id = callback.get("id")
 
         if chat_id not in allowed_chat_ids:
-            _api_call("answerCallbackQuery", token, REQUEST_TIMEOUT_SEND, callback_query_id=callback_id,
+            _api_call("answerCallbackQuery", token, config.TELEGRAM_SEND_TIMEOUT_SEC, callback_query_id=callback_id,
                       text="Не авторизовано")
             return
 
         if data == "reboot_confirm":
             requested_at = self._pending_reboot_confirm.pop(chat_id, None)
-            _api_call("answerCallbackQuery", token, REQUEST_TIMEOUT_SEND, callback_query_id=callback_id)
-            if requested_at is None or (time.time() - requested_at) > CONFIRM_TTL_SEC:
+            _api_call("answerCallbackQuery", token, config.TELEGRAM_SEND_TIMEOUT_SEC, callback_query_id=callback_id)
+            if requested_at is None or (time.time() - requested_at) > config.TELEGRAM_CONFIRM_TTL_SEC:
                 self._send(token, chat_id, "\u231b Запит на reboot застарів. Надішліть /reboot ще раз.")
                 return
             self._send(token, chat_id, "\U0001f501 Виконую reboot Starlink Mini...")
@@ -187,7 +198,7 @@ class TelegramBot:
                 self._send(token, chat_id, f"\u274c Не вдалося виконати reboot: {msg}")
         elif data == "reboot_cancel":
             self._pending_reboot_confirm.pop(chat_id, None)
-            _api_call("answerCallbackQuery", token, REQUEST_TIMEOUT_SEND, callback_query_id=callback_id)
+            _api_call("answerCallbackQuery", token, config.TELEGRAM_SEND_TIMEOUT_SEC, callback_query_id=callback_id)
             self._send(token, chat_id, "Скасовано.")
 
     def _cmd_status(self, token: str, chat_id: str) -> None:
@@ -224,6 +235,42 @@ class TelegramBot:
 
         self._send(token, chat_id, "\n".join(lines))
 
+    def _cmd_check_updates(self, token: str, chat_id: str) -> None:
+        """Ручна перевірка стану оновлень - той самий monitor.check_
+        updates_now(), що веб-кнопка "Перевірити оновлення" (webapp.py
+        /api/check-updates) - не дублює логіку, лише інше форматування
+        відповіді (HTML-текст у Telegram замість JSON)."""
+        def notify(text: str) -> None:
+            telegram_notify.send_message(text)
+
+        dish, router = monitor.check_updates_now(self.client, notify)
+
+        lines = ["<b>Перевірка оновлень</b>", ""]
+
+        if dish.online:
+            dish_label = UPDATE_STATE_LABELS.get(dish.update_state, dish.update_state or "н/д")
+            lines.append(f"\U0001f4e1 <b>Тарілка</b>: ПЗ {dish.software_version or '?'}")
+            lines.append(
+                f"   Оновлення: {dish_label}"
+                + (f" ({dish.update_progress_pct:.0f}%)" if dish.update_progress_pct else "")
+            )
+        else:
+            lines.append(f"\U0001f4e1 <b>Тарілка</b>: offline ({dish.error or 'немає відповіді'})")
+
+        lines.append("")
+
+        if router.online:
+            router_label = ROUTER_UPDATE_STATE_LABELS.get(router.update_state, router.update_state or "н/д")
+            lines.append(f"\U0001f4f6 <b>Роутер</b>: ПЗ {router.software_version or '?'}")
+            lines.append(
+                f"   Оновлення: {router_label}"
+                + (f" ({router.update_progress_pct:.0f}%)" if router.update_progress_pct else "")
+            )
+        else:
+            lines.append(f"\U0001f4f6 <b>Роутер</b>: offline ({router.error or 'немає відповіді'})")
+
+        self._send(token, chat_id, "\n".join(lines))
+
     def _cmd_reboot_request(self, token: str, chat_id: str) -> None:
         self._pending_reboot_confirm[chat_id] = time.time()
         text = telegram_notify.append_signature(
@@ -232,7 +279,7 @@ class TelegramBot:
         _api_call(
             "sendMessage",
             token,
-            REQUEST_TIMEOUT_SEND,
+            config.TELEGRAM_SEND_TIMEOUT_SEC,
             chat_id=chat_id,
             text=text,
             reply_markup={
@@ -247,6 +294,8 @@ class TelegramBot:
         text = (
             "<b>Starlink Monitor — команди</b>\n\n"
             "/status — поточний стан оновлення ПЗ тарілки й роутера, активні попередження\n"
+            "/checkupdates — примусово опитати dish/router зараз (не чекаючи наступного циклу), "
+            "перевірити target-версії й зафіксувати відомі зміни прошивки\n"
             "/reboot — перезавантажити Starlink Mini (з підтвердженням)\n"
             "/id — список усіх колись підключених тарілок (ID, версії ПЗ)\n"
             "/id &lt;ID або частина ID&gt; — деталі конкретної тарілки: версії ПЗ dish/router "
@@ -261,10 +310,22 @@ class TelegramBot:
             if not devices:
                 self._send(token, chat_id, "Ще жодної тарілки не підключено.")
                 return
+            # Telegram обмежує повідомлення 4096 символами - без цього
+            # захисту довгий список (десятки відомих тарілок за час
+            # роботи) міг би бути ВІДХИЛЕНИЙ Telegram API цілком, і
+            # відповідь мовчки не приходила б (реальний баг, знайдений
+            # на запиті користувача - виправлено разом із явною
+            # перевіркою "ok"-поля в _api_call() вище). get_all_known_
+            # devices() уже сортує за last_seen_ts DESC - найновіші
+            # (найактуальніші) показуються першими.
+            shown = devices[:config.TELEGRAM_ID_LIST_MAX_ITEMS]
             lines = [f"<b>Відомі тарілки ({len(devices)})</b>", ""]
-            for d in devices:
+            for d in shown:
                 last_seen = self._fmt_ago(d["last_seen_ts"])
                 lines.append(f"<code>{d['dish_id']}</code> — востаннє в мережі {last_seen}")
+            if len(devices) > len(shown):
+                lines.append("")
+                lines.append(f"…і ще {len(devices) - len(shown)}. Уточніть /id &lt;ID або частина ID&gt;.")
             lines.append("")
             lines.append("Деталі: /id &lt;ID або частина ID&gt;")
             self._send(token, chat_id, "\n".join(lines))
@@ -320,4 +381,4 @@ class TelegramBot:
 
     def _send(self, token: str, chat_id: str, text: str) -> None:
         full_text = telegram_notify.append_signature(text)
-        _api_call("sendMessage", token, REQUEST_TIMEOUT_SEND, chat_id=chat_id, text=full_text, parse_mode="HTML")
+        _api_call("sendMessage", token, config.TELEGRAM_SEND_TIMEOUT_SEC, chat_id=chat_id, text=full_text, parse_mode="HTML")

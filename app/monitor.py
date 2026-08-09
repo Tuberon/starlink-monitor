@@ -25,6 +25,27 @@ logging.basicConfig(
 logger = logging.getLogger("monitor")
 
 
+def pi_just_booted(threshold_sec: float = 120.0) -> bool:
+    """Чи Pi РЕАЛЬНО щойно завантажився (не просто service-restart,
+    напр. `sudo systemctl restart starlink-monitor.service` під час
+    оновлення коду через update.sh) - порівнює system uptime
+    (`psutil.boot_time()`, уже використовується в system_metrics.py)
+    з порогом. Чиста функція (легко тестується без реального psutil-
+    виклику через мокування)."""
+    return time.time() - psutil.boot_time() < threshold_sec
+
+
+def should_scheduled_reboot(last_scheduled_reboot_ts: float, now: float, interval_hours: float) -> bool:
+    """Чи час для планового reboot Starlink Mini (незалежно від
+    реальних збоїв опитування - деякі користувачі практикують
+    періодичний reboot для профілактики). Чиста функція, легко
+    тестується. interval_hours<=0 - фіча вимкнена (завжди False,
+    той самий паттерн, що _should_auto_off() у display.py)."""
+    if interval_hours <= 0:
+        return False
+    return (now - last_scheduled_reboot_ts) >= interval_hours * 3600
+
+
 def version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
     """Чи current_version входить у target_raw - список версій через
     кому (db.parse_version_list). Module-level (не метод класу) - щоб
@@ -170,11 +191,62 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
     check_both_targets_reached(dish_id, notify_fn)
 
 
+def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) -> tuple[DishStatus, RouterInfo]:
+    """Ручна перевірка стану оновлень - негайно опитує dish і router
+    (замість очікування наступного фонового циклу), записує в БД,
+    викликає ту саму логіку сповіщень (target-версії, "🔄 прошивка
+    оновлена"/"⏪ відкочена"), що фоновий watchdog-цикл. Спільна для
+    /api/check-updates (webapp.py) і /checkupdates (telegram_bot.py)
+    - уникає дублювання ІДЕНТИЧНОЇ логіки в обох місцях (той самий
+    клас прогалини, що вже кілька разів знаходився в цьому проєкті:
+    дублювання накопичується непомітно при паралельних правках).
+
+    ВАЖЛИВО: локальний gRPC API dish/router не має команди "примусово
+    перевірити оновлення в хмарі SpaceX" (підтверджено прямими
+    викликами - software_update повертає помилку, призначений для
+    sideload завантаження прошивки вручну, не перевірки в хмарі).
+    Натомість повертає актуальний поточний стан - це те, що реально
+    доступно через локальний API."""
+    dish_status = client.get_status()
+    db.insert_metric(dish_status.to_dict())
+
+    router_info = client.get_router_info()
+    db.set_router_status(router_info.to_dict())
+
+    # dish_id для router - якщо dish зараз online, беремо ЙОГО
+    # (найсвіжіше джерело правди); інакше падаємо на останній відомий
+    # з known_devices (dish міг бути offline саме в момент цієї
+    # ручної перевірки, поки router усе ще відповідає - той самий
+    # фізичний Mini).
+    dish_id_for_router: Optional[str] = dish_status.dish_id
+    if not dish_id_for_router:
+        known = db.get_all_known_devices()
+        dish_id_for_router = known[0]["dish_id"] if known else None
+
+    upsert_dish_and_notify(dish_status, notify_fn)
+    upsert_router_and_notify(router_info, dish_id_for_router, notify_fn)
+
+    db.insert_event(
+        "manual_update_check",
+        f"Ручна перевірка: dish={dish_status.update_state or 'н/д'}, "
+        f"router={router_info.update_state or 'н/д'}",
+        success=dish_status.online or router_info.online,
+    )
+    return dish_status, router_info
+
+
 class Watchdog:
     def __init__(self) -> None:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
         self.last_reboot_ts = 0.0
+        # На відміну від last_reboot_ts (0.0 - "дозволити reboot
+        # одразу", свідомо для auto-reboot-при-невдачах), тут
+        # ІНІЦІАЛІЗУЄМО поточним часом - інакше "now - 0.0" завжди
+        # величезне число, спричиняючи НЕГАЙНИЙ плановий reboot при
+        # КОЖНОМУ старті сервісу (небажано - таймер має "стартувати"
+        # з моменту запуску, не миттєво спрацьовувати).
+        self.last_scheduled_reboot_ts = time.time()
         # Час першої невдалої спроби в поточному безперервному ланцюжку
         # відмов - None, поки dish online. Використовується, щоб приглушити
         # Telegram-сповіщення про auto-reboot при тривалій (>15 хв, за
@@ -288,6 +360,7 @@ class Watchdog:
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
+            self._maybe_scheduled_reboot()
         else:
             if self.first_failure_ts is None:
                 self.first_failure_ts = time.time()
@@ -550,6 +623,42 @@ class Watchdog:
         reason = status.update_state if status.update_state == "REBOOT_REQUIRED" else "install_pending"
         self._reboot_for_update_ready("dish", reason)
 
+    def _maybe_scheduled_reboot(self) -> None:
+        """Плановий reboot Starlink Mini по таймеру, незалежно від
+        реальних збоїв опитування (деякі користувачі практикують
+        періодичний reboot для профілактики). reboot_dish() -
+        єдина доступна reboot-команда (окремої router-reboot немає),
+        перезавантажує ВЕСЬ фізичний Mini (dish+router - той самий
+        пристрій, той самий hardware/живлення). Поважає MIN_REBOOT_
+        INTERVAL_SEC через last_reboot_ts (спільний з auto-reboot-
+        при-невдачах) - якщо reboot ВЖЕ стався нещодавно з ІНШОЇ
+        причини, плановий природно "відкладеться", не подвоюється."""
+        if not config.SCHEDULED_REBOOT_ENABLED:
+            return
+        now = time.time()
+        if not should_scheduled_reboot(self.last_scheduled_reboot_ts, now, config.SCHEDULED_REBOOT_INTERVAL_HOURS):
+            return
+        if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
+            logger.info(
+                "Плановий reboot відкладено - reboot вже був %.0f с тому (мін. інтервал %d с)",
+                now - self.last_reboot_ts, config.MIN_REBOOT_INTERVAL_SEC,
+            )
+            return
+
+        # Оновлюємо ТАЙМЕР безумовно (до самої спроби) - інакше
+        # провал команди спричинив би повторні спроби щоцикл
+        # опитування (~10с), не чекаючи наступного повного інтервалу.
+        self.last_scheduled_reboot_ts = now
+        logger.info("Ініціюю плановий reboot Starlink Mini (інтервал %.0fг)", config.SCHEDULED_REBOOT_INTERVAL_HOURS)
+        ok, msg = self.client.reboot_dish()
+        if ok:
+            self.last_reboot_ts = now
+            db.insert_event("scheduled_reboot", f"Плановий reboot Starlink Mini (кожні {config.SCHEDULED_REBOOT_INTERVAL_HOURS:.0f}г)", success=True)
+            self._notify(f"⏰ Плановий reboot Starlink Mini виконано (кожні {config.SCHEDULED_REBOOT_INTERVAL_HOURS:.0f}г)")
+        else:
+            logger.warning("Плановий reboot провалився: %s", msg)
+            db.insert_event("scheduled_reboot", f"Плановий reboot провалився: {msg}", success=False)
+
     def _maybe_reboot(self) -> None:
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
             return
@@ -599,6 +708,9 @@ class Watchdog:
     def run_forever(self) -> None:
         db.init_db()
         logger.info("Starlink watchdog запущено. Опитування кожні %d с.", config.POLL_INTERVAL_SEC)
+
+        if config.NOTIFY_PI_STARTUP and pi_just_booted():
+            self._notify("🟢 Dish Watch запущено (Raspberry Pi перезавантажено)")
 
         from app.telegram_bot import TelegramBot
         telegram_bot = TelegramBot()

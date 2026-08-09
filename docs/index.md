@@ -90,6 +90,8 @@
 | `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
 | `test_db.py` | Downsampling метрик, безшовність графіка через межу cutoff |
 | `test_display.py` | Виявлення зміни update_state (flash-підсвітка), auto-off логіка |
+| `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити (не лише існують) |
+| `test_telegram_bot.py` | /checkupdates команда - диспетчеризація, known_devices, target-версії |
 
 ## `docs/` — документація
 
