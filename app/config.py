@@ -10,6 +10,11 @@ DISH_HTTP_TIMEOUT = float(os.environ.get("STARLINK_DISH_TIMEOUT", "5"))
 ROUTER_ADDR = os.environ.get("STARLINK_ROUTER_ADDR", "192.168.1.1:9000")
 
 POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
+# Роутерний компонент опитується РІДШЕ за dish (окремий, довший
+# інтервал) - версія прошивки роутера змінюється нечасто, зайве
+# навантаження на WiFi-канал при опитуванні так само часто, як dish,
+# непотрібне.
+ROUTER_POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_ROUTER_POLL_INTERVAL_SEC", "35"))
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 6*10s = 60s недоступності
 MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "180"))  # захист від reboot-loop
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))

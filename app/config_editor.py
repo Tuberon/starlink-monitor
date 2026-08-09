@@ -23,6 +23,7 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_DISH_ADDR", "type": "str", "default": "192.168.100.1:9200", "label": "Адреса тарілки (dish)"},
     {"key": "STARLINK_ROUTER_ADDR", "type": "str", "default": "192.168.1.1:9000", "label": "Адреса роутера"},
     {"key": "STARLINK_POLL_INTERVAL", "type": "int", "default": "10", "label": "Інтервал опитування dish, сек"},
+    {"key": "STARLINK_ROUTER_POLL_INTERVAL_SEC", "type": "int", "default": "35", "label": "Інтервал опитування router, сек"},
     {"key": "STARLINK_MAX_FAILURES", "type": "int", "default": "6", "label": "Невдалих опитувань перед watchdog-reboot"},
     {"key": "STARLINK_MIN_REBOOT_INTERVAL", "type": "int", "default": "180", "label": "Мін. інтервал між авто-ребутами, сек"},
     {"key": "STARLINK_NOTIFICATIONS_MUTE_AFTER", "type": "int", "default": "900", "label": "Приглушити Telegram після недоступності dish, сек"},

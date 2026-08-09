@@ -1,5 +1,6 @@
 """
-Фоновий watchdog: опитує dish (POLL_INTERVAL_SEC) і router (~60с),
+Фоновий watchdog: опитує dish (POLL_INTERVAL_SEC) і router
+(ROUTER_POLL_INTERVAL_SEC),
 пише в БД, авто-reboot Mini при 3 умовах (watchdog failures,
 update-ready dish, update-ready router) - див. docs/architecture.md.
 Логує зміни стану/попереджень в events, дублює ключові події в
@@ -737,10 +738,11 @@ class Watchdog:
 
             self.poll_system_metrics()
 
-            # Роутерний компонент опитуємо рідше (раз на ~60с), бо його
+            # Роутерний компонент опитуємо рідше, ніж dish (окремий,
+            # довший інтервал, STARLINK_ROUTER_POLL_INTERVAL_SEC) - його
             # версія прошивки змінюється нечасто, і зайве навантаження
             # на WiFi-канал непотрібне при опитуванні dish кожні 10с.
-            if time.time() - last_router_poll > 60:
+            if time.time() - last_router_poll > config.ROUTER_POLL_INTERVAL_SEC:
                 self.poll_router()
                 last_router_poll = time.time()
 
