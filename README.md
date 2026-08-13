@@ -335,6 +335,7 @@ Telegram-налаштування видаляє лише після окрем�
 | Змінна | За замовчуванням | Опис |
 |---|---|---|
 | `STARLINK_DISH_ADDR` | `192.168.100.1:9200` | адреса тарілки |
+| `STARLINK_DISH_TIMEOUT` | `5` | timeout запиту до dish, сек |
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_ROUTER_POLL_INTERVAL_SEC` | `35` | інтервал опитування router, сек |

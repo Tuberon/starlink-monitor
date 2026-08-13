@@ -21,6 +21,7 @@ ENV_FILE_PATH = "/etc/starlink-monitor/env"
 
 EDITABLE_PARAMS = [
     {"key": "STARLINK_DISH_ADDR", "type": "str", "default": "192.168.100.1:9200", "label": "Адреса тарілки (dish)"},
+    {"key": "STARLINK_DISH_TIMEOUT", "type": "float", "default": "5", "label": "Timeout запиту до dish, сек"},
     {"key": "STARLINK_ROUTER_ADDR", "type": "str", "default": "192.168.1.1:9000", "label": "Адреса роутера"},
     {"key": "STARLINK_POLL_INTERVAL", "type": "int", "default": "10", "label": "Інтервал опитування dish, сек"},
     {"key": "STARLINK_ROUTER_POLL_INTERVAL_SEC", "type": "int", "default": "35", "label": "Інтервал опитування router, сек"},
