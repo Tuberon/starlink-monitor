@@ -216,6 +216,14 @@ auto-reboot, фразами підпису, очікуваними версія�
 - **Watchdog для watchdog-а** — `starlink-monitor-healthcheck.timer`
   (раз/хв) опитує `/healthz`; якщо `starlink-monitor.service` завис
   (не crash, `Restart=always` цього не бачить) — примусовий restart.
+- **Менше записів на SD-картку** — dish-метрики (кожні 10с) пишуться
+  не окремою транзакцією щоразу, а batch-INSERT раз на
+  `STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC` (типово 30с); CPU/
+  температура/пам'ять — раз на `STARLINK_SYSTEM_METRICS_INTERVAL_SEC`
+  (типово 60с), не з тією ж частотою, що критичні Starlink-дані.
+  Graceful shutdown (`SIGTERM`) примусово записує буфер перед
+  завершенням — звичайний `update.sh`/`systemctl restart` не втрачає
+  дані, лише справжнє раптове вимкнення живлення.
 - **VACUUM/ANALYZE SQLite** — раз на добу, автоматично.
 - **Ротація журналу systemd** — `install.sh` обмежує `SystemMaxUse=200M`,
   щоб журнал не з'їв SD-картку за тривалий час роботи.
