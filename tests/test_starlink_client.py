@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from app import starlink_client
-from app.starlink_client import DishStatus, StarlinkClient
+from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 
 
 def make_resp(**overrides):
@@ -264,6 +264,25 @@ def test_channel_closed_even_on_exception():
     assert closed == [True], "канал МАЄ закриватись навіть при винятку"
 
 
+def test_channel_close_failure_is_logged_not_swallowed_silently(caplog):
+    """Якщо саме close() провалюється (рідкісний edge-case) - НЕ має
+    перекривати основний результат (online лишається залежним ЛИШЕ
+    від успіху get_status()), АЛЕ й не має бути повністю тихим -
+    debug-слід потрібен для діагностики, якщо це колись реально
+    станеться на практиці."""
+    fake_context = SimpleNamespace(close=lambda: (_ for _ in ()).throw(RuntimeError("канал уже закритий")))
+    fake_grpc = SimpleNamespace(
+        ChannelContext=lambda target: fake_context,
+        get_status=lambda ctx: SimpleNamespace(),
+    )
+    with caplog.at_level("DEBUG"):
+        with patch.object(starlink_client, "starlink_grpc", fake_grpc):
+            s = StarlinkClient().get_status()
+
+    assert s.online is True, "помилка close() не мала вплинути на результат get_status()"
+    assert "закрити gRPC-канал" in caplog.text
+
+
 # ---- to_dict(): серіалізація для БД ----
 
 def test_to_dict_serializes_alerts_as_json(client_with_resp):
@@ -274,3 +293,237 @@ def test_to_dict_serializes_alerts_as_json(client_with_resp):
     d = s.to_dict()
     assert isinstance(d["active_alerts"], str)
     assert "motors_stuck" in d["active_alerts"]
+
+
+# =====================================================================
+# get_router_info() - ІНШИЙ шлях, ніж get_status(): subprocess.run
+# ["grpcurl", ...] + json.loads() з camelCase-ключами (grpcurl JSON-
+# вивід), не protobuf-об'єкт через getattr. Симетрична функція, той
+# самий клас ризику (парсинг сирої відповіді), АЛЕ інший механізм
+# mock'ування - тому окремий блок тестів, не перевикористання
+# client_with_resp fixture вище.
+# =====================================================================
+
+def make_router_payload(**overrides):
+    """Мінімальна реалістична grpcurl JSON-відповідь для router
+    (camelCase-ключі - так реально віддає grpcurl, на відміну від
+    protobuf-об'єкта для dish)."""
+    base = {
+        "wifiGetStatus": {
+            "deviceInfo": {
+                "softwareVersion": "2025.10.03.mr61821",
+                "hardwareVersion": "rev2",
+                "bootcount": 3,
+            },
+            "softwareUpdateStats": {"state": 4, "softwareDownloadProgress": 0.0},
+            "alerts": {},
+            "clients": [],
+        }
+    }
+    if overrides:
+        base["wifiGetStatus"].update(overrides)
+    return base
+
+
+def run_router_info(returncode=0, stdout="", stderr="", raise_exc=None, grpcurl_found=True) -> RouterInfo:
+    """Mock subprocess.run - точка входу get_router_info() у зовнішній
+    світ, аналогічно до того, як client_with_resp mock'ує starlink_grpc
+    для dish."""
+    def fake_which(name):
+        return "/usr/bin/grpcurl" if grpcurl_found else None
+
+    def fake_run(*args, **kwargs):
+        if raise_exc:
+            raise raise_exc
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+    with patch("shutil.which", side_effect=fake_which), patch("subprocess.run", side_effect=fake_run):
+        return StarlinkClient().get_router_info()
+
+
+# ---- Базовий парсинг і конвертація camelCase ----
+
+def test_router_parses_full_valid_response():
+    import json
+    r = run_router_info(stdout=json.dumps(make_router_payload()))
+    assert r.online is True
+    assert r.error == ""
+    assert r.software_version == "2025.10.03.mr61821"
+    assert r.hardware_version == "rev2"
+    assert r.bootcount == 3
+
+
+def test_router_missing_grpcurl_returns_offline():
+    r = run_router_info(grpcurl_found=False)
+    assert r.online is False
+    assert "grpcurl" in r.error
+
+
+def test_router_nonzero_returncode_returns_offline_with_stderr():
+    r = run_router_info(returncode=1, stderr="connection refused")
+    assert r.online is False
+    assert "connection refused" in r.error
+
+
+def test_router_timeout_returns_offline():
+    import subprocess as sp
+    r = run_router_info(raise_exc=sp.TimeoutExpired(cmd="grpcurl", timeout=5))
+    assert r.online is False
+    assert r.error == "timeout"
+
+
+def test_router_invalid_json_returns_offline_not_crash():
+    """grpcurl міг би віддати щось нечисленне (обірваний вивід при
+    мережевому збої) - JSONDecodeError МАЄ ловитись, не поширюватись."""
+    r = run_router_info(stdout="це не json{{{")
+    assert r.online is False
+    assert "parse error" in r.error
+
+
+def test_router_empty_device_info_returns_offline():
+    import json
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["deviceInfo"] = {}
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.online is False
+    assert "empty deviceInfo" in r.error
+
+
+def test_router_generic_exception_returns_offline_not_raises():
+    r = run_router_info(raise_exc=PermissionError("немає прав"))
+    assert r.online is False
+    assert "немає прав" in r.error
+
+
+# ---- enum-мапінг update_state (той самий клас ризику, що для dish) ----
+
+@pytest.mark.parametrize("raw,expected", [
+    (0, "NOT_RUN"),
+    (2, "DOWNLOADING_UPDATE_IMAGE"),
+    (4, "NO_UPDATE_REQUIRED"),
+    (5, "REBOOT_PENDING"),
+])
+def test_router_maps_int_state_to_name(raw, expected):
+    import json
+    payload = make_router_payload(softwareUpdateStats={"state": raw, "softwareDownloadProgress": 0.0})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_state == expected
+
+
+def test_router_state_as_string_digit_is_converted():
+    """grpcurl інколи віддає enum як РЯДОК із цифрою ('4'), не число -
+    код явно перевіряє .isdigit() саме для цього випадку."""
+    import json
+    payload = make_router_payload(softwareUpdateStats={"state": "2", "softwareDownloadProgress": 0.0})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_state == "DOWNLOADING_UPDATE_IMAGE"
+
+
+def test_router_unknown_state_int_falls_back_to_string():
+    import json
+    payload = make_router_payload(softwareUpdateStats={"state": 999, "softwareDownloadProgress": 0.0})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_state == "999"
+
+
+def test_router_update_progress_converted_to_percent():
+    import json
+    payload = make_router_payload(softwareUpdateStats={"state": 2, "softwareDownloadProgress": 0.357})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_progress_pct == 35.7
+
+
+def test_router_missing_software_update_stats_gives_defaults():
+    import json
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["softwareUpdateStats"] = {}
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_state == ""
+    assert r.update_progress_pct == 0.0
+
+
+# ---- alerts: snake_case -> camelCase конвертація (специфічно для router) ----
+
+def test_router_snake_to_camel_conversion_matches_real_json_keys():
+    """thermal_throttle (наш snake_case) МАЄ мапитись на thermalThrottle
+    (реальний camelCase-ключ grpcurl) - помилка конвертації тихо
+    'загубила' б попередження, не помітно без цього тесту."""
+    import json
+    payload = make_router_payload(alerts={"thermalThrottle": True, "installPending": False})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert "thermal_throttle" in r.active_alerts
+
+
+def test_router_install_pending_extracted_separately():
+    import json
+    payload = make_router_payload(alerts={"installPending": True})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_install_pending is True
+
+
+def test_router_no_alerts_key_gives_empty_list():
+    import json
+    payload = make_router_payload()
+    del payload["wifiGetStatus"]["alerts"]
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.active_alerts == []
+    assert r.update_install_pending is False
+
+
+# ---- clients: список підключених WiFi-пристроїв ----
+
+def test_router_parses_connected_clients():
+    import json
+    payload = make_router_payload(clients=[
+        {"name": "телефон", "macAddress": "AA:BB:CC:DD:EE:FF", "ipAddress": "192.168.1.10",
+         "iface": "wlan0", "signalStrength": -55, "role": "STA", "associatedTimeS": 3600},
+    ])
+    r = run_router_info(stdout=json.dumps(payload))
+    assert len(r.clients) == 1
+    assert r.clients[0]["name"] == "телефон"
+    assert r.clients[0]["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert r.clients[0]["signal"] == -55
+
+
+def test_router_client_without_name_falls_back_to_mac():
+    """Деякі клієнти не мають hostname (напр. IoT-пристрої) - MAC
+    як fallback, не порожній рядок чи None (список у UI мав би чим
+    ідентифікувати пристрій)."""
+    import json
+    payload = make_router_payload(clients=[{"macAddress": "11:22:33:44:55:66"}])
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.clients[0]["name"] == "11:22:33:44:55:66"
+
+
+def test_router_no_clients_gives_empty_list():
+    import json
+    payload = make_router_payload()
+    del payload["wifiGetStatus"]["clients"]
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.clients == []
+
+
+def test_router_state_as_non_digit_string_passed_through():
+    """На відміну від dish (де non-digit рядок теж лишається як є),
+    тут МАЄ спрацювати саме гілка `elif raw_state:` (не .isdigit()
+    шлях) - майбутня версія протоколу могла б віддавати текстовий
+    стан напряму."""
+    import json
+    payload = make_router_payload(softwareUpdateStats={"state": "SOME_FUTURE_STATE", "softwareDownloadProgress": 0.0})
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.update_state == "SOME_FUTURE_STATE"
+
+
+def test_router_to_dict_serializes_clients_and_alerts_as_json():
+    """RouterInfo.to_dict() (окремо від DishStatus.to_dict(), вже
+    перевіреного вище) - clients теж список, теж потребує JSON-
+    серіалізації для SQLite."""
+    import json
+    payload = make_router_payload(
+        alerts={"thermalThrottle": True},
+        clients=[{"macAddress": "AA:BB:CC:DD:EE:FF"}],
+    )
+    r = run_router_info(stdout=json.dumps(payload))
+    d = r.to_dict()
+    assert isinstance(d["active_alerts"], str) and "thermal_throttle" in d["active_alerts"]
+    assert isinstance(d["clients"], str) and "AA:BB:CC:DD:EE:FF" in d["clients"]

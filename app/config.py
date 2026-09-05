@@ -15,6 +15,23 @@ POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
 # навантаження на WiFi-канал при опитуванні так само часто, як dish,
 # непотрібне.
 ROUTER_POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_ROUTER_POLL_INTERVAL_SEC", "35"))
+# CPU/температура/пам'ять Pi змінюються повільно (на відміну від
+# ping/throughput dish, де кожна секунда важлива) - записувати їх із
+# тією самою частотою, що критичні Starlink-метрики (10с), лише
+# зайве навантаження на SD-картку без практичної користі. Окремий,
+# довший інтервал - зменшує кількість записів у system_metrics у
+# рази, не зачіпаючи основний Starlink-моніторинг взагалі.
+SYSTEM_METRICS_INTERVAL_SEC = int(os.environ.get("STARLINK_SYSTEM_METRICS_INTERVAL_SEC", "60"))
+# Замість запису КОЖНОГО dish-зчитування (10с) окремою транзакцією -
+# накопичуємо кілька в пам'яті, пишемо разом одним batch-INSERT.
+# Зменшує кількість фізичних write-транзакцій на SD-картку в рази
+# (при 30с - у ~3 рази), БЕЗ втрати жодної точки даних - усі
+# зчитування все одно потрапляють у БД, лише трохи пізніше.
+# Компроміс: при РАПТОВОМУ вимкненні живлення (не при звичайному
+# systemctl restart/update.sh - для цього є graceful shutdown через
+# SIGTERM, який flush-ить буфер негайно) можна втратити останні
+# кілька зчитувань, що ще не потрапили в БД.
+DISH_METRICS_BATCH_INTERVAL_SEC = int(os.environ.get("STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC", "30"))
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 6*10s = 60s недоступності
 MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "180"))  # захист від reboot-loop
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))

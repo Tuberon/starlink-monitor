@@ -93,7 +93,7 @@
 | `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити (не лише існують) |
 | `test_telegram_bot.py` | /checkupdates команда - диспетчеризація, known_devices, target-версії |
 | `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |
-| `test_starlink_client.py` | Парсинг gRPC-відповіді dish: enum-мапінг, getattr-fallback'и, конвертація одиниць, закриття каналу |
+| `test_starlink_client.py` | Парсинг gRPC-відповіді dish (enum-мапінг, getattr-fallback'и, конвертація одиниць) і router (subprocess+JSON шлях, snake→camelCase, clients) |
 
 ## `docs/` — документація
 

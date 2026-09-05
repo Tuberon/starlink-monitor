@@ -182,38 +182,58 @@ def _migrate_table_columns(conn: sqlite3.Connection, table: str, new_columns: di
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
 
 
+def _metric_row_params(status_dict: dict[str, Any]) -> tuple[Any, ...]:
+    """Формує tuple параметрів для INSERT у metrics - спільний helper
+    для insert_metric() (один рядок) і insert_metrics_batch() (кілька
+    рядків через executemany), щоб не дублювати той самий список
+    status_dict.get(...) двічі."""
+    return (
+        status_dict["timestamp"],
+        int(status_dict["online"]),
+        status_dict.get("state", ""),
+        status_dict.get("uptime_s", 0),
+        status_dict.get("downlink_mbps", 0),
+        status_dict.get("uplink_mbps", 0),
+        status_dict.get("ping_latency_ms", 0),
+        status_dict.get("ping_drop_ratio", 0),
+        status_dict.get("obstruction_fraction", 0),
+        int(status_dict.get("currently_obstructed", False)),
+        status_dict.get("software_version", ""),
+        status_dict.get("hardware_version", ""),
+        status_dict.get("dish_id", ""),
+        status_dict.get("error", ""),
+        status_dict.get("update_state", ""),
+        status_dict.get("update_progress_pct", 0),
+        int(status_dict.get("update_requires_reboot", False)),
+        int(status_dict.get("update_install_pending", False)),
+        status_dict.get("active_alerts", "[]"),
+    )
+
+
+_INSERT_METRIC_SQL = """INSERT INTO metrics
+   (ts, online, state, uptime_s, downlink_mbps, uplink_mbps,
+    ping_latency_ms, ping_drop_ratio, obstruction_fraction,
+    currently_obstructed, software_version, hardware_version, dish_id, error,
+    update_state, update_progress_pct, update_requires_reboot,
+    update_install_pending, active_alerts)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+
+
 def insert_metric(status_dict: dict[str, Any]) -> None:
     with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO metrics
-               (ts, online, state, uptime_s, downlink_mbps, uplink_mbps,
-                ping_latency_ms, ping_drop_ratio, obstruction_fraction,
-                currently_obstructed, software_version, hardware_version, dish_id, error,
-                update_state, update_progress_pct, update_requires_reboot,
-                update_install_pending, active_alerts)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                status_dict["timestamp"],
-                int(status_dict["online"]),
-                status_dict.get("state", ""),
-                status_dict.get("uptime_s", 0),
-                status_dict.get("downlink_mbps", 0),
-                status_dict.get("uplink_mbps", 0),
-                status_dict.get("ping_latency_ms", 0),
-                status_dict.get("ping_drop_ratio", 0),
-                status_dict.get("obstruction_fraction", 0),
-                int(status_dict.get("currently_obstructed", False)),
-                status_dict.get("software_version", ""),
-                status_dict.get("hardware_version", ""),
-                status_dict.get("dish_id", ""),
-                status_dict.get("error", ""),
-                status_dict.get("update_state", ""),
-                status_dict.get("update_progress_pct", 0),
-                int(status_dict.get("update_requires_reboot", False)),
-                int(status_dict.get("update_install_pending", False)),
-                status_dict.get("active_alerts", "[]"),
-            ),
-        )
+        conn.execute(_INSERT_METRIC_SQL, _metric_row_params(status_dict))
+
+
+def insert_metrics_batch(status_dicts: list[dict[str, Any]]) -> None:
+    """Записує КІЛЬКА dish-зчитувань ОДНІЄЮ транзакцією (SD-card-wear
+    reduction - замість окремого write-транзакції на кожні 10с,
+    накопичені в пам'яті зчитування пишуться разом раз на
+    DISH_METRICS_BATCH_INTERVAL_SEC). Порожній список - тихо нічого
+    не робить (не відкриває з'єднання даремно)."""
+    if not status_dicts:
+        return
+    with get_conn() as conn:
+        conn.executemany(_INSERT_METRIC_SQL, [_metric_row_params(d) for d in status_dicts])
 
 
 def _json_field(raw: Any) -> list[Any]:

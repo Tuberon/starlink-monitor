@@ -67,16 +67,23 @@ ROUTER_UPDATE_STATE_LABELS = {
     "FLASHING": "встановлення",
     "NO_UPDATE_REQUIRED": "непотрібне",
     "REBOOT_PENDING": "рестарт",
-    "GETTING_TARGET_VERSION_FAILED": "помилка",
-    "GETTING_TARGET_VERSION_EXHAUSTED": "помилка",
-    "NO_VALID_ARTIFACT": "помилка",
-    "ILLEGAL_ARTIFACT": "помилка",
     # DOWNLOADING_UPDATE_IMAGE_FAILED свідомо відсутній - той самий
     # стан приховується і на веб-дашборді (static/dashboard.js) як
     # частина нормального циклу перевірки, не справжня помилка.
+    # GETTING_TARGET_VERSION_FAILED теж свідомо відсутній з тієї
+    # самої причини (та сама група "тимчасова хмарна помилка перевірки
+    # оновлення на боці SpaceX, не проблема моніторингу") - той самий
+    # підхід поширено на аналогічний стан.
+    "GETTING_TARGET_VERSION_EXHAUSTED": "помилка",
+    "NO_VALID_ARTIFACT": "помилка",
+    "ILLEGAL_ARTIFACT": "помилка",
     "DOWNLOADING_UPDATE_IMAGE_EXHAUSTED": "помилка",
     "FLASHING_FAILED": "помилка",
 }
+# Стани, повністю приховані з дисплея (не лише текст мітки, а й сам
+# рядок update_state) - "тимчасова хмарна помилка перевірки/
+# завантаження оновлення на боці SpaceX", не проблема моніторингу.
+HIDDEN_ROUTER_STATES = ("DOWNLOADING_UPDATE_IMAGE_FAILED", "GETTING_TARGET_VERSION_FAILED")
 
 
 def _fmt_uptime(uptime_s: Optional[float]) -> str:
@@ -116,7 +123,7 @@ def _status_lines(latest_metric: Optional[dict[str, Any]], router_status: Option
     router_update_state = router_status.get("update_state") if router_status else None
     # Той самий стан приховується і на веб-дашборді - частина
     # нормального циклу перевірки роутера, не справжня помилка.
-    if router_status is not None and router_update_state and router_update_state != "DOWNLOADING_UPDATE_IMAGE_FAILED":
+    if router_status is not None and router_update_state and router_update_state not in HIDDEN_ROUTER_STATES:
         pct = router_status.get("update_progress_pct") or 0
         label = ROUTER_UPDATE_STATE_LABELS.get(router_update_state, router_update_state)
         lines.append({
@@ -395,8 +402,12 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
         if button_release:
             try:
                 button_release()
-            except Exception:
-                pass
+            except Exception as e:
+                # Не перекриваємо оригінальну причину завершення функції
+                # (напр. коректний SIGTERM) - лише debug-слід на випадок
+                # рідкісного edge-case (напр. баг у gpiod-бібліотеці),
+                # без підняття рівня логування до warning/error.
+                logger.debug("Не вдалося звільнити GPIO кнопки при завершенні: %s", e)
 
 
 def main() -> None:

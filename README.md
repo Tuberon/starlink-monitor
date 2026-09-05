@@ -277,6 +277,7 @@ mypy app/
 pip install -r requirements-dev.txt
 pytest
 ```
+Покриття по модулях: `pytest --cov=app --cov-report=term-missing`.
 
 ## 🗂️ Структура проєкту
 
@@ -339,6 +340,8 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_ROUTER_POLL_INTERVAL_SEC` | `35` | інтервал опитування router, сек |
+| `STARLINK_SYSTEM_METRICS_INTERVAL_SEC` | `60` | інтервал запису CPU/пам'яті/температури, сек |
+| `STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC` | `30` | інтервал batch-запису dish-метрик, сек |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |

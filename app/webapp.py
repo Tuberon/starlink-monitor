@@ -84,7 +84,13 @@ def healthz() -> ResponseReturnValue:
             checks["watchdog"] = "no data yet"
         else:
             age_sec = time.time() - latest["ts"]
-            max_age_sec = config.POLL_INTERVAL_SEC * 3
+            # +DISH_METRICS_BATCH_INTERVAL_SEC - при буферизації dish-
+            # метрик (SD-card-wear reduction) останній запис у БД може
+            # відставати від реального часу опитування на ДО цього
+            # інтервалу, чекаючи наступного batch-flush. Без цього
+            # додавання сама буферизація хибно спрацьовувала б як
+            # "watchdog завис", хоча він реально працює нормально.
+            max_age_sec = config.POLL_INTERVAL_SEC * 3 + config.DISH_METRICS_BATCH_INTERVAL_SEC
             checks["watchdog"] = f"ok ({age_sec:.0f}s since last poll)"
             if age_sec > max_age_sec:
                 checks["watchdog"] = f"stale ({age_sec:.0f}s since last poll, expected <{max_age_sec}s)"
