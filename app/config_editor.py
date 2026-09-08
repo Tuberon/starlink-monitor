@@ -31,7 +31,6 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_AUTO_BACKUP_ENABLED", "type": "bool", "default": "1", "label": "Автоматичний періодичний backup (0/1)"},
     {"key": "STARLINK_AUTO_BACKUP_INTERVAL_SEC", "type": "int", "default": "604800", "label": "Інтервал автоматичного backup, сек"},
     {"key": "STARLINK_AUTO_BACKUP_KEEP_COUNT", "type": "int", "default": "4", "label": "Скільки останніх backup-ів зберігати"},
-
     {"key": "STARLINK_MAX_FAILURES", "type": "int", "default": "6", "label": "Невдалих опитувань перед watchdog-reboot"},
     {"key": "STARLINK_MIN_REBOOT_INTERVAL", "type": "int", "default": "180", "label": "Мін. інтервал між авто-ребутами, сек"},
     {"key": "STARLINK_NOTIFICATIONS_MUTE_AFTER", "type": "int", "default": "900", "label": "Приглушити Telegram після недоступності dish, сек"},

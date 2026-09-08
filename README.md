@@ -364,7 +364,6 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_AUTO_BACKUP_ENABLED` | `1` | автоматичний періодичний backup (0=вимк.) |
 | `STARLINK_AUTO_BACKUP_INTERVAL_SEC` | `604800` | інтервал автоматичного backup, сек |
 | `STARLINK_AUTO_BACKUP_KEEP_COUNT` | `4` | скільки останніх backup-ів зберігати |
-
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |

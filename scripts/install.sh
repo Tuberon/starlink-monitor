@@ -310,6 +310,29 @@ if [[ "$MODE" == "install" ]]; then
         return 0
       fi
     done < <(nmcli -t -f NAME connection show)
+
+    # Третій fallback: профілі, згенеровані через netplan (частий
+    # випадок на сучасних Raspberry Pi OS), часто НЕ мають явної
+    # connection.interface-name властивості - прив'язка йде іншим
+    # механізмом (SSID-match, MAC тощо), тому попередній fallback їх
+    # не знаходить (знайдено на практиці: профіль "netplan-wlan0-
+    # STARLINK" мав ПОРОЖНЮ interface-name). Якщо існує РІВНО ОДИН
+    # профіль потрібного ТИПУ з'єднання - на Pi з одним WiFi-чіпом і
+    # одним USB-Ethernet це надійна, однозначна евристика.
+    local wanted_type name_and_type ctype matches=()
+    case "$iface" in
+      wlan*) wanted_type="802-11-wireless" ;;
+      eth*|usb*) wanted_type="802-3-ethernet" ;;
+      *) return 1 ;;
+    esac
+    while IFS=: read -r name ctype; do
+      [[ -z "$name" ]] && continue
+      [[ "$ctype" == "$wanted_type" ]] && matches+=("$name")
+    done < <(nmcli -t -f NAME,TYPE connection show)
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+      echo "${matches[0]}"
+      return 0
+    fi
     return 1
   }
   read -r -p " Налаштувати статичні IP для USB-Ethernet і WiFi зараз? [т/N]: " SETUP_NET
