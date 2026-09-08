@@ -15,6 +15,23 @@ POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
 # навантаження на WiFi-канал при опитуванні так само часто, як dish,
 # непотрібне.
 ROUTER_POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_ROUTER_POLL_INTERVAL_SEC", "35"))
+# CPU/температура/пам'ять Pi змінюються повільно (на відміну від
+# ping/throughput dish, де кожна секунда важлива) - записувати їх із
+# тією самою частотою, що критичні Starlink-метрики (10с), лише
+# зайве навантаження на SD-картку без практичної користі. Окремий,
+# довший інтервал - зменшує кількість записів у system_metrics у
+# рази, не зачіпаючи основний Starlink-моніторинг взагалі.
+SYSTEM_METRICS_INTERVAL_SEC = int(os.environ.get("STARLINK_SYSTEM_METRICS_INTERVAL_SEC", "60"))
+# Замість запису КОЖНОГО dish-зчитування (10с) окремою транзакцією -
+# накопичуємо кілька в пам'яті, пишемо разом одним batch-INSERT.
+# Зменшує кількість фізичних write-транзакцій на SD-картку в рази
+# (при 30с - у ~3 рази), БЕЗ втрати жодної точки даних - усі
+# зчитування все одно потрапляють у БД, лише трохи пізніше.
+# Компроміс: при РАПТОВОМУ вимкненні живлення (не при звичайному
+# systemctl restart/update.sh - для цього є graceful shutdown через
+# SIGTERM, який flush-ить буфер негайно) можна втратити останні
+# кілька зчитувань, що ще не потрапили в БД.
+DISH_METRICS_BATCH_INTERVAL_SEC = int(os.environ.get("STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC", "30"))
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 6*10s = 60s недоступності
 MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "180"))  # захист від reboot-loop
 OBSTRUCTION_WARN_FRACTION = float(os.environ.get("STARLINK_OBSTRUCTION_WARN", "0.05"))
@@ -64,6 +81,13 @@ TELEGRAM_CONFIRM_TTL_SEC = float(os.environ.get("STARLINK_TELEGRAM_CONFIRM_TTL_S
 # TELEGRAM_SEND_TIMEOUT_SEC вище, АЛЕ незалежний параметр (різні
 # модулі, різні сервіси - не хочу штучно об'єднувати).
 TELEGRAM_NOTIFY_TIMEOUT_SEC = float(os.environ.get("STARLINK_TELEGRAM_NOTIFY_TIMEOUT_SEC", "10"))
+# Повторні спроби ЛИШЕ для мережевих помилок (timeout, DNS, з'єднання
+# розірвано) - не для HTTP-рівня відповідей типу "chat not found",
+# де повтор нічого не змінить. Невелика кількість (дефолт 1) і
+# коротка затримка - забагато затримало б основний watchdog-цикл,
+# який чекає на send_message() синхронно.
+TELEGRAM_SEND_RETRIES = int(os.environ.get("STARLINK_TELEGRAM_SEND_RETRIES", "1"))
+TELEGRAM_SEND_RETRY_DELAY_SEC = float(os.environ.get("STARLINK_TELEGRAM_SEND_RETRY_DELAY_SEC", "2"))
 # Максимум записів у списку /id без аргументів (Telegram обмежує
 # повідомлення 4096 символами - без цього ліміту довгий список
 # known_devices міг би бути повністю відхилений API, виглядаючи
@@ -89,6 +113,22 @@ MAX_LOGGED_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_LOGGED_FAILUR
 AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
 
 DB_PATH = os.environ.get("STARLINK_DB_PATH", "/var/lib/starlink-monitor/history.db")
+# Автоматичний періодичний backup (страховка від втрати known_devices/
+# налаштувань при пошкодженні БД чи виходу SD-картки з ладу - на
+# відміну від ручного через веб-кнопку, який user міг не робити
+# місяцями). Дефолт увімкнено - на відміну від SCHEDULED_REBOOT_
+# ENABLED (яка реально перезавантажує Mini), backup - чисто корисна
+# дія без побічних ефектів на моніторинг.
+AUTO_BACKUP_ENABLED = os.environ.get("STARLINK_AUTO_BACKUP_ENABLED", "1") == "1"
+AUTO_BACKUP_INTERVAL_SEC = int(os.environ.get("STARLINK_AUTO_BACKUP_INTERVAL_SEC", "604800"))  # тиждень
+AUTO_BACKUP_KEEP_COUNT = int(os.environ.get("STARLINK_AUTO_BACKUP_KEEP_COUNT", "4"))
+AUTO_BACKUP_DIR = os.environ.get(
+    "STARLINK_AUTO_BACKUP_DIR", os.path.join(os.path.dirname(DB_PATH), "backups")
+)
+# Перевірка цілісності БД (PRAGMA quick_check) - виявляє мовчазну
+# деградацію ДО того, як вона стане критичною. Той самий щоденний
+# цикл, що VACUUM - не частіше, не потребує.
+DB_INTEGRITY_CHECK_INTERVAL_SEC = int(os.environ.get("STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC", "86400"))
 HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
 # Downsampling: raw-метрики (кожні POLL_INTERVAL_SEC) старші за
 # DOWNSAMPLE_AFTER_DAYS агрегуються в DOWNSAMPLE_BUCKET_SEC-секундні

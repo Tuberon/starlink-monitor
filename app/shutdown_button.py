@@ -73,8 +73,11 @@ def watch_button() -> None:
     finally:
         try:
             release()
-        except Exception:
-            pass
+        except Exception as e:
+            # Той самий принцип, що в display.py: не перекривати
+            # оригінальну причину завершення, лише debug-слід для
+            # рідкісного edge-case.
+            logger.debug("Не вдалося звільнити GPIO кнопки виключення при завершенні: %s", e)
 
 
 def _trigger_shutdown(pin: int) -> None:

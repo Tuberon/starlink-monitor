@@ -8,13 +8,15 @@ Telegram (не блокує цикл при помилках відправки)
 """
 import json
 import logging
+import os
+import signal
 import threading
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import psutil
 
-from app import config, db, telegram_notify
+from app import config, config_editor, db, telegram_notify
 from app.labels import ALERT_LABELS, ROUTER_ALERT_LABELS, ROUTER_UPDATE_STATE_LABELS, UPDATE_STATE_LABELS
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
@@ -192,6 +194,95 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
     check_both_targets_reached(dish_id, notify_fn)
 
 
+# Попередження, які навмисно ігноруються (не пишуться в БД, журнал,
+# Telegram, дашборд) - шумні для конкретної конфігурації мережі, без
+# практичної цінності. Module-level (не атрибут класу Watchdog) -
+# потрібна і в Watchdog.poll_router() (фоновий watchdog-цикл), і в
+# check_updates_now() нижче (ручна перевірка через веб-кнопку/
+# /checkupdates) - реальний баг, знайдений на запиті користувача:
+# check_updates_now() записувала router-статус БЕЗ цього фільтра,
+# тому "прибраний" alert повертався щоразу, коли user тиснув
+# "Перевірити оновлення" вручну, аж до наступного фонового циклу
+# poll_router() (~35с), який знову коректно його прибирав.
+IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
+
+
+def build_backup_dict() -> dict[str, Any]:
+    """Формує повний backup-словник (Telegram config, фрази підпису,
+    auto-reboot, перевизначені параметри, історія відомих пристроїв) -
+    спільна для webapp.py api_settings_backup() (ручний, через веб-
+    кнопку) і perform_auto_backup() нижче (автоматичний, періодичний,
+    з watchdog-циклу) - уникає дублювання тієї самої логіки в двох
+    місцях. Bot token включається у відкритому вигляді - файл backup
+    потрібно берегти як secret."""
+    token, chat_ids, enabled = telegram_notify.get_telegram_config()
+    env_params = {
+        p["key"]: p["current"]
+        for p in config_editor.read_current_values()
+        if p["overridden"]
+    }
+    return {
+        "format_version": db.BACKUP_FORMAT_VERSION,
+        "created_at": time.time(),
+        "telegram_bot_token": token,
+        "telegram_chat_ids": chat_ids,
+        "telegram_enabled": enabled,
+        "auto_reboot_enabled": db.get_auto_reboot_enabled(),
+        "signature_phrases": telegram_notify.get_signature_phrases_text(),
+        "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
+        "dish_target_version": db.get_setting("dish_target_version"),
+        "router_target_version": db.get_setting("router_target_version"),
+        "known_devices": db.get_all_known_devices(),
+        "env_params": env_params,
+    }
+
+
+def perform_auto_backup() -> None:
+    """Записує backup у файл з ротацією (зберігає останні AUTO_BACKUP_
+    KEEP_COUNT копій, видаляє старіші) - страховка від втрати known_
+    devices/налаштувань при пошкодженні БД чи виходу SD-картки з ладу,
+    незалежно від того, чи user робив ручний backup через веб-кнопку.
+    Winятки НЕ поширюються назовні - невдалий запис backup не має
+    ламати основний watchdog-цикл (аналогічно до решти periodic-задач
+    у run_forever(), обгорнутих у try/except на рівні виклику)."""
+    os.makedirs(config.AUTO_BACKUP_DIR, exist_ok=True)
+    backup = build_backup_dict()
+    ts = int(backup["created_at"])
+    path = os.path.join(config.AUTO_BACKUP_DIR, f"backup-{ts}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(backup, f, ensure_ascii=False)
+
+    existing = sorted(
+        (f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json")),
+    )
+    for old_name in existing[:-config.AUTO_BACKUP_KEEP_COUNT] if config.AUTO_BACKUP_KEEP_COUNT > 0 else []:
+        try:
+            os.remove(os.path.join(config.AUTO_BACKUP_DIR, old_name))
+        except OSError as e:
+            logger.warning("Не вдалося видалити старий backup %s: %s", old_name, e)
+
+
+def check_db_integrity_and_notify(notify_fn: Callable[[str], None]) -> None:
+    """PRAGMA quick_check раз на добу (той самий цикл, що VACUUM) -
+    виявляє мовчазну деградацію БД ДО того, як вона стане критичною.
+    При виявленому пошкодженні - Telegram-сповіщення + СПРОБА
+    аварійного backup (в try/except: якщо БД РЕАЛЬНО пошкоджена,
+    сам backup теж може провалитись, читаючи з тієї самої БД - але
+    спроба краща за її відсутність, і винятку тут вистачить
+    logger.error, не поширення далі й не крах watchdog-циклу)."""
+    ok, message = db.check_integrity()
+    if ok:
+        return
+    logger.error("PRAGMA quick_check виявив пошкодження БД: %s", message)
+    notify_fn(f"🔴 Виявлено пошкодження БД: {message}. Спроба аварійного backup...")
+    try:
+        perform_auto_backup()
+        notify_fn("✅ Аварійний backup виконано, перевір /var/lib/starlink-monitor/backups/")
+    except Exception as e:
+        logger.error("Аварійний backup теж провалився: %s", e)
+        notify_fn(f"🔴 Аварійний backup ТЕЖ провалився: {e}")
+
+
 def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) -> tuple[DishStatus, RouterInfo]:
     """Ручна перевірка стану оновлень - негайно опитує dish і router
     (замість очікування наступного фонового циклу), записує в БД,
@@ -212,6 +303,7 @@ def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) 
     db.insert_metric(dish_status.to_dict())
 
     router_info = client.get_router_info()
+    router_info.active_alerts = [a for a in router_info.active_alerts if a not in IGNORED_ROUTER_ALERTS]
     db.set_router_status(router_info.to_dict())
 
     # dish_id для router - якщо dish зараз online, беремо ЙОГО
@@ -241,6 +333,15 @@ class Watchdog:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
         self.last_reboot_ts = 0.0
+        # SD-card-wear reduction: dish-зчитування накопичуються тут
+        # замість негайного окремого запису (кожні 10с) - flush
+        # (insert_metrics_batch) одним batch-INSERT відбувається раз
+        # на DISH_METRICS_BATCH_INTERVAL_SEC у run_forever(), і
+        # додатково при отриманні SIGTERM/SIGINT (graceful shutdown) -
+        # щоб звичайний systemctl restart/update.sh НЕ втрачав дані,
+        # лише справжнє раптове вимкнення живлення.
+        self.metrics_buffer: list[dict[str, Any]] = []
+        self.last_batch_flush_ts = time.time()
         # На відміну від last_reboot_ts (0.0 - "дозволити reboot
         # одразу", свідомо для auto-reboot-при-невдачах), тут
         # ІНІЦІАЛІЗУЄМО поточним часом - інакше "now - 0.0" завжди
@@ -337,10 +438,22 @@ class Watchdog:
         self.muted_reboot_count = 0
         self.reboot_notify_ts = []
 
+    def flush_metrics_buffer(self) -> None:
+        """Записує накопичені dish-зчитування одним batch-INSERT і
+        очищає буфер. Викликається періодично з run_forever() (кожні
+        DISH_METRICS_BATCH_INTERVAL_SEC) і додатково при отриманні
+        SIGTERM/SIGINT (graceful shutdown), щоб звичайний systemctl
+        restart/update.sh НЕ втрачав буферизовані дані."""
+        if not self.metrics_buffer:
+            return
+        db.insert_metrics_batch(self.metrics_buffer)
+        self.metrics_buffer = []
+        self.last_batch_flush_ts = time.time()
+
     def poll_once(self) -> DishStatus:
         self._check_reboot_spam_recovery()
         status = self.client.get_status()
-        db.insert_metric(status.to_dict())
+        self.metrics_buffer.append(status.to_dict())
 
         if status.online:
             if self.consecutive_failures > 0:
@@ -485,11 +598,6 @@ class Watchdog:
         except Exception as e:
             logger.warning("Не вдалося зібрати системні метрики: %s", e)
 
-    # Попередження, які навмисно ігноруються (не пишуться в БД, журнал,
-    # Telegram) - шумні для конкретної конфігурації мережі, без
-    # практичної цінності.
-    IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
-
     # Попередження/стани, які й далі пишуться в журнал подій (для
     # дашборду), але НЕ надсилаються в Telegram - шумні конкретно для
     # цього звіту, без потреби негайного сповіщення.
@@ -503,7 +611,7 @@ class Watchdog:
         лише останній відомий стан (без історії/графіків)."""
         try:
             info = self.client.get_router_info()
-            info.active_alerts = [a for a in info.active_alerts if a not in self.IGNORED_ROUTER_ALERTS]
+            info.active_alerts = [a for a in info.active_alerts if a not in IGNORED_ROUTER_ALERTS]
             db.set_router_status(info.to_dict())
             if not info.online:
                 logger.debug("Роутер недоступний: %s", info.error)
@@ -710,6 +818,20 @@ class Watchdog:
         db.init_db()
         logger.info("Starlink watchdog запущено. Опитування кожні %d с.", config.POLL_INTERVAL_SEC)
 
+        # Graceful shutdown: flush буфера dish-метрик ПЕРЕД завершенням
+        # процесу - інакше звичайний "sudo systemctl restart" (напр.
+        # під час update.sh) втрачав би до DISH_METRICS_BATCH_INTERVAL_
+        # SEC буферизованих даних щоразу, не лише при справжньому
+        # раптовому вимкненні живлення (для якого ця втрата - свідомо
+        # прийнятий компроміс, не помилка).
+        def _handle_shutdown_signal(signum: int, frame: Any) -> None:
+            logger.info("Отримано сигнал завершення (%d) - flush буфера метрик перед виходом", signum)
+            self.flush_metrics_buffer()
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGTERM, _handle_shutdown_signal)
+        signal.signal(signal.SIGINT, _handle_shutdown_signal)
+
         if config.NOTIFY_PI_STARTUP and pi_just_booted():
             self._notify("🟢 Dish Watch запущено (Raspberry Pi перезавантажено)")
 
@@ -729,14 +851,30 @@ class Watchdog:
         psutil.cpu_percent(interval=None)
         last_prune = 0.0
         last_vacuum = 0.0
+        last_auto_backup = 0.0  # 0 гарантує перший backup одразу після старту сервісу
         last_router_poll = 0.0  # 0 гарантує негайне перше опитування роутера
+        last_system_metrics_poll = 0.0  # 0 гарантує негайний перший запис
         while True:
             try:
                 self.poll_once()
             except Exception as e:
                 logger.exception("Неочікувана помилка в циклі опитування: %s", e)
 
-            self.poll_system_metrics()
+            # SD-card-wear reduction: batch-flush накопичених dish-
+            # зчитувань замість запису кожного окремо кожні 10с. Той
+            # самий таймер-паттерн, що system_metrics/router нижче.
+            if time.time() - self.last_batch_flush_ts > config.DISH_METRICS_BATCH_INTERVAL_SEC:
+                self.flush_metrics_buffer()
+
+            # CPU/температура/пам'ять змінюються повільно - окремий,
+            # довший інтервал (STARLINK_SYSTEM_METRICS_INTERVAL_SEC),
+            # не той самий, що критичні dish-метрики кожні 10с - без
+            # цього SD-картка отримувала б зайві записи без практичної
+            # користі (той самий принцип, що вже застосований до
+            # router нижче).
+            if time.time() - last_system_metrics_poll > config.SYSTEM_METRICS_INTERVAL_SEC:
+                self.poll_system_metrics()
+                last_system_metrics_poll = time.time()
 
             # Роутерний компонент опитуємо рідше, ніж dish (окремий,
             # довший інтервал, STARLINK_ROUTER_POLL_INTERVAL_SEC) - його
@@ -762,7 +900,25 @@ class Watchdog:
                     db.vacuum_and_analyze()
                 except Exception:
                     logger.exception("Помилка VACUUM/ANALYZE")
+                # Той самий щоденний цикл, що VACUUM - виявляє мовчазну
+                # деградацію БД до того, як вона стане критичною.
+                try:
+                    check_db_integrity_and_notify(self._notify)
+                except Exception:
+                    logger.exception("Помилка перевірки цілісності БД")
                 last_vacuum = time.time()
+
+            # Автоматичний періодичний backup - страховка від втрати
+            # known_devices/налаштувань, незалежно від того, чи user
+            # робив ручний backup через веб-кнопку (міг не робити
+            # місяцями).
+            if config.AUTO_BACKUP_ENABLED and time.time() - last_auto_backup > config.AUTO_BACKUP_INTERVAL_SEC:
+                try:
+                    perform_auto_backup()
+                    logger.info("Автоматичний backup виконано")
+                except Exception:
+                    logger.exception("Помилка автоматичного backup")
+                last_auto_backup = time.time()
 
             time.sleep(config.POLL_INTERVAL_SEC)
 

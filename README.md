@@ -216,7 +216,25 @@ auto-reboot, фразами підпису, очікуваними версія�
 - **Watchdog для watchdog-а** — `starlink-monitor-healthcheck.timer`
   (раз/хв) опитує `/healthz`; якщо `starlink-monitor.service` завис
   (не crash, `Restart=always` цього не бачить) — примусовий restart.
+- **Менше записів на SD-картку** — dish-метрики (кожні 10с) пишуться
+  не окремою транзакцією щоразу, а batch-INSERT раз на
+  `STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC` (типово 30с); CPU/
+  температура/пам'ять — раз на `STARLINK_SYSTEM_METRICS_INTERVAL_SEC`
+  (типово 60с), не з тією ж частотою, що критичні Starlink-дані.
+  Graceful shutdown (`SIGTERM`) примусово записує буфер перед
+  завершенням — звичайний `update.sh`/`systemctl restart` не втрачає
+  дані, лише справжнє раптове вимкнення живлення.
 - **VACUUM/ANALYZE SQLite** — раз на добу, автоматично.
+- **Перевірка цілісності БД** — той самий щоденний цикл (`PRAGMA
+  quick_check`); при виявленому пошкодженні — Telegram-сповіщення й
+  автоматична спроба аварійного backup.
+- **Автоматичний періодичний backup** — раз на тиждень (`STARLINK_
+  AUTO_BACKUP_INTERVAL_SEC`), окремо від ручного через веб-кнопку;
+  зберігає останні `STARLINK_AUTO_BACKUP_KEEP_COUNT` (типово 4) копій,
+  старіші видаляє.
+- **Повторна спроба Telegram-сповіщень** — при тимчасовій мережевій
+  помилці (не при "chat not found"-подібних) — `STARLINK_TELEGRAM_
+  SEND_RETRIES` (типово 1 повтор).
 - **Ротація журналу systemd** — `install.sh` обмежує `SystemMaxUse=200M`,
   щоб журнал не з'їв SD-картку за тривалий час роботи.
 
@@ -277,6 +295,7 @@ mypy app/
 pip install -r requirements-dev.txt
 pytest
 ```
+Покриття по модулях: `pytest --cov=app --cov-report=term-missing`.
 
 ## 🗂️ Структура проєкту
 
@@ -339,6 +358,12 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
 | `STARLINK_ROUTER_POLL_INTERVAL_SEC` | `35` | інтервал опитування router, сек |
+| `STARLINK_SYSTEM_METRICS_INTERVAL_SEC` | `60` | інтервал запису CPU/пам'яті/температури, сек |
+| `STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC` | `30` | інтервал batch-запису dish-метрик, сек |
+| `STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC` | `86400` | інтервал перевірки цілісності БД, сек |
+| `STARLINK_AUTO_BACKUP_ENABLED` | `1` | автоматичний періодичний backup (0=вимк.) |
+| `STARLINK_AUTO_BACKUP_INTERVAL_SEC` | `604800` | інтервал автоматичного backup, сек |
+| `STARLINK_AUTO_BACKUP_KEEP_COUNT` | `4` | скільки останніх backup-ів зберігати |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 | `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
 | `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
@@ -353,6 +378,8 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_TELEGRAM_POLL_TIMEOUT_SEC` | `30` | Telegram-бот: timeout long-polling, сек |
 | `STARLINK_TELEGRAM_CONFIRM_TTL_SEC` | `120` | Telegram-бот: TTL підтвердження команд, сек |
 | `STARLINK_TELEGRAM_NOTIFY_TIMEOUT_SEC` | `10` | Telegram-сповіщення: timeout запиту, сек |
+| `STARLINK_TELEGRAM_SEND_RETRIES` | `1` | Telegram: повторних спроб при мережевій помилці |
+| `STARLINK_TELEGRAM_SEND_RETRY_DELAY_SEC` | `2` | Telegram: затримка між повторами, сек |
 | `STARLINK_TELEGRAM_ID_LIST_MAX_ITEMS` | `40` | /id: макс. тарілок у списку без аргументу |
 | `STARLINK_REBOOT_SPAM_THRESHOLD` | `3` | група reboot-сповіщень: поріг кількості за вікно |
 | `STARLINK_REBOOT_SPAM_WINDOW_SEC` | `1800` | група reboot-сповіщень: вікно часу, сек |

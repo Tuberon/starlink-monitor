@@ -287,13 +287,38 @@ if [[ "$MODE" == "install" ]]; then
   echo " спричиняти конфлікти маршрутів (dish/router стають недоступні, якщо"
   echo " домашня мережа отримує вищий пріоритет за замовчуванням)."
   echo ""
+  # Знаходить NetworkManager-профіль, прив'язаний до інтерфейсу. Спершу
+  # перевіряє АКТИВНІ з'єднання (найшвидше) - АЛЕ `DEVICE`-стовпець
+  # `nmcli connection show` порожній для профілів, які існують, АЛЕ
+  # НЕ активні саме зараз (WiFi ще не встиг підключитись одразу після
+  # завантаження Pi, USB-Ethernet щойно вставлений) - реальний випадок,
+  # знайдений на практиці. Fallback: перебирає ВСІ збережені профілі,
+  # звіряючи їхню властивість connection.interface-name (прив'язка
+  # інтерфейсу в самому профілі, незалежна від поточного стану).
+  find_nm_connection() {
+    local iface="$1" conn name bound_iface
+    conn="$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v d="$iface" '$2==d{print $1; exit}')"
+    if [[ -n "$conn" ]]; then
+      echo "$conn"
+      return 0
+    fi
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      bound_iface="$(nmcli -g connection.interface-name connection show "$name" 2>/dev/null)"
+      if [[ "$bound_iface" == "$iface" ]]; then
+        echo "$name"
+        return 0
+      fi
+    done < <(nmcli -t -f NAME connection show)
+    return 1
+  }
   read -r -p " Налаштувати статичні IP для USB-Ethernet і WiFi зараз? [т/N]: " SETUP_NET
   SETUP_NET="$(echo "$SETUP_NET" | tr -d '[:space:]')"
   if [[ "$SETUP_NET" =~ ^[TtYyТт] ]]; then
     ETH_IFACE="eth0"
     WLAN_IFACE="wlan0"
-    ETH_CONN="$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v d="$ETH_IFACE" '$2==d{print $1; exit}')"
-    WLAN_CONN="$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v d="$WLAN_IFACE" '$2==d{print $1; exit}')"
+    ETH_CONN="$(find_nm_connection "$ETH_IFACE")"
+    WLAN_CONN="$(find_nm_connection "$WLAN_IFACE")"
 
     if [[ -z "$ETH_CONN" || -z "$WLAN_CONN" ]]; then
       echo " !! Не вдалося знайти профілі NetworkManager для $ETH_IFACE і/або $WLAN_IFACE."

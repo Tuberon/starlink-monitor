@@ -67,13 +67,23 @@ const ROUTER_UPDATE_STATE_LABELS = {
   'FLASHING': 'встановлення оновлення',
   'NO_UPDATE_REQUIRED': 'оновлення не потрібне',
   'REBOOT_PENDING': 'очікує перезавантаження',
-  'GETTING_TARGET_VERSION_FAILED': 'помилка перевірки оновлення',
+  // GETTING_TARGET_VERSION_FAILED і DOWNLOADING_UPDATE_IMAGE_FAILED
+  // свідомо відсутні - обидва замінюються на 'NOT_RUN' перед цим
+  // lookup'ом (HIDDEN_ROUTER_STATES нижче), тому запис тут ніколи б
+  // не використовувався напряму.
   'GETTING_TARGET_VERSION_EXHAUSTED': 'не вдалося перевірити оновлення',
   'NO_VALID_ARTIFACT': 'відсутній коректний файл оновлення',
   'ILLEGAL_ARTIFACT': 'некоректний файл оновлення',
   'DOWNLOADING_UPDATE_IMAGE_EXHAUSTED': 'не вдалося завантажити оновлення',
   'FLASHING_FAILED': 'помилка встановлення оновлення',
 };
+
+// Стани, повністю приховані з дашборду (не лише текст мітки, а й сам
+// стан замінюється на 'NOT_RUN') - "тимчасова хмарна помилка
+// перевірки/завантаження оновлення на боці SpaceX", не проблема
+// моніторингу. Той самий паттерн, що HIDDEN_ROUTER_STATES у
+// app/display.py.
+const HIDDEN_ROUTER_STATES = ['DOWNLOADING_UPDATE_IMAGE_FAILED', 'GETTING_TARGET_VERSION_FAILED'];
 
 const ROUTER_ALERT_LABELS = {
   'thermal_throttle': 'обмеження через перегрів',
@@ -365,7 +375,7 @@ function renderRouterUpdateStatus(latest) {
   // Не показуємо текст про цю конкретну помилку користувачу - роутер
   // регулярно проходить через цей стан як частину нормального циклу
   // перевірки, показ як "помилка" щоразу лише вводить в оману.
-  const displayState = state === 'DOWNLOADING_UPDATE_IMAGE_FAILED' ? 'NOT_RUN' : state;
+  const displayState = HIDDEN_ROUTER_STATES.includes(state) ? 'NOT_RUN' : state;
   badge.textContent = ROUTER_UPDATE_STATE_LABELS[displayState] || displayState;
 
   badge.classList.remove('state-idle', 'state-active', 'state-reboot');
@@ -490,7 +500,7 @@ async function handleCheckUpdates() {
     const data = await res.json();
     if (data.success) {
       const dishState = UPDATE_STATE_LABELS[data.dish.update_state] || data.dish.update_state || 'н/д';
-      const routerRawState = data.router.update_state === 'DOWNLOADING_UPDATE_IMAGE_FAILED' ? 'NOT_RUN' : data.router.update_state;
+      const routerRawState = HIDDEN_ROUTER_STATES.includes(data.router.update_state) ? 'NOT_RUN' : data.router.update_state;
       const routerState = ROUTER_UPDATE_STATE_LABELS[routerRawState] || routerRawState || 'н/д';
       hint.textContent = `Готово. Dish: ${dishState}  ·  Роутер: ${routerState}`;
     } else {

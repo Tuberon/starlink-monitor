@@ -288,8 +288,12 @@ class StarlinkClient:
             if context is not None and hasattr(context, "close"):
                 try:
                     context.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Реальна причина невдачі (якщо була) уже залогована
+                    # вище через logger.warning() - тут лише debug-слід
+                    # для рідкісного edge-case закриття gRPC-каналу,
+                    # без підняття рівня й без маскування головної помилки.
+                    logger.debug("Не вдалося закрити gRPC-канал: %s", e)
 
     def get_router_info(self) -> RouterInfo:
         """

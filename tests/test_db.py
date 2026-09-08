@@ -146,3 +146,24 @@ def test_merge_known_devices_ignores_entries_without_dish_id(db_path):
     added = db.merge_known_devices([{"first_seen_ts": 1000.0}])
     assert added == 0
     assert db.get_all_known_devices() == []
+
+
+# ---- check_integrity() - PRAGMA quick_check ----
+
+def test_check_integrity_healthy_db_returns_ok(db_path):
+    ok, message = db.check_integrity()
+    assert ok is True
+    assert message == "ok"
+
+
+def test_check_integrity_detects_fully_invalid_file(db_path):
+    """Реальний edge case, знайдений живим тестом під час реалізації:
+    файл, що ВЗАГАЛІ не є SQLite (не просто пошкоджені дані всередині),
+    змушує PRAGMA quick_check кинути sqlite3.DatabaseError замість
+    повернення результату - check_integrity() МАЄ це ловити і
+    повертати (False, message), не поширювати виняток."""
+    with open(db_path, "wb") as f:
+        f.write(b"not a valid sqlite file" * 50)
+    ok, message = db.check_integrity()
+    assert ok is False
+    assert "не є валідною SQLite-базою" in message

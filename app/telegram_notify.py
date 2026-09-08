@@ -7,6 +7,7 @@ import logging
 import os
 import random
 import socket
+import time
 from typing import Any, Optional
 
 import requests
@@ -282,23 +283,37 @@ def send_message(text: str) -> tuple[bool, str]:
     errors = []
     any_ok = False
     for chat_id in chat_ids:
-        try:
-            resp = _request_with_eth0_fallback(
-                "post",
-                url,
-                json={"chat_id": chat_id, "text": full_text, "parse_mode": "HTML"},
-                timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
-            )
-            data = resp.json()
-            if resp.status_code == 200 and data.get("ok"):
-                any_ok = True
-            else:
-                err_desc = data.get("description", f"HTTP {resp.status_code}")
-                errors.append(f"{chat_id}: {err_desc}")
-                logger.warning("Telegram sendMessage помилка для %s: %s", chat_id, err_desc)
-        except requests.RequestException as e:
-            errors.append(f"{chat_id}: {e}")
-            logger.warning("Telegram sendMessage мережева помилка для %s: %s", chat_id, e)
+        last_network_error: Optional[str] = None
+        # +1 - перша спроба не рахується "повтором". TELEGRAM_SEND_
+        # RETRIES=0 дав би рівно 1 спробу без повторів (стара
+        # поведінка); дефолт 1 - одна додаткова спроба при мережевій
+        # помилці.
+        for attempt in range(config.TELEGRAM_SEND_RETRIES + 1):
+            if attempt > 0:
+                time.sleep(config.TELEGRAM_SEND_RETRY_DELAY_SEC)
+                logger.info("Telegram sendMessage повторна спроба %d для %s", attempt, chat_id)
+            try:
+                resp = _request_with_eth0_fallback(
+                    "post",
+                    url,
+                    json={"chat_id": chat_id, "text": full_text, "parse_mode": "HTML"},
+                    timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
+                )
+                data = resp.json()
+                if resp.status_code == 200 and data.get("ok"):
+                    any_ok = True
+                else:
+                    err_desc = data.get("description", f"HTTP {resp.status_code}")
+                    errors.append(f"{chat_id}: {err_desc}")
+                    logger.warning("Telegram sendMessage помилка для %s: %s", chat_id, err_desc)
+                break  # HTTP-рівня відповідь отримана (успіх чи ні) - повтор не допоможе, не пробуємо знову
+            except requests.RequestException as e:
+                last_network_error = str(e)
+                logger.warning("Telegram sendMessage мережева помилка для %s (спроба %d): %s", chat_id, attempt + 1, e)
+        else:
+            # Цикл for завершився БЕЗ break - усі спроби (включно з
+            # повторними) дали мережеву помилку, жодної HTTP-відповіді.
+            errors.append(f"{chat_id}: {last_network_error}")
 
     if any_ok and not errors:
         return True, "надіслано"

@@ -220,6 +220,7 @@ def test_no_orphan_env_keys_in_config():
     NOT_IN_UI = {
         "STARLINK_DB_PATH",     # шлях до БД: зміна "на льоту" лишила б webapp і monitor на РІЗНИХ базах
         "STARLINK_WEBUI_HOST",  # bind-адреса: помилка (напр. 127.0.0.1) відрізала б доступ із мережі
+        "STARLINK_AUTO_BACKUP_DIR",  # обчислюваний дефолт (поруч з DB_PATH) - не вписується в простий {"default": "..."} UI-формат
     }
     config_src = open(os.path.join(os.path.dirname(config_editor.__file__), "config.py")).read()
     config_keys = set(re.findall(r'os\.environ\.get\("(STARLINK_[A-Z0-9_]+)"', config_src))

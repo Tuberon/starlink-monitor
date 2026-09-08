@@ -5,8 +5,12 @@ target-версії (порівняння зі збереженим значен
 прапорець). Сценарії відтворюють ті самі, що верифікувались ad-hoc
 живими тестами протягом розробки - тепер персистентно.
 """
+import json
+import os
 import time
 from unittest.mock import patch
+
+import pytest
 
 from app import config, db, monitor
 
@@ -557,3 +561,173 @@ def test_firmware_forward_notification_unaffected_by_rollback_toggle(db_path):
         assert "🔄" in sent[0] and "оновлена" in sent[0]
     finally:
         config.NOTIFY_FIRMWARE_ROLLBACK = True
+
+
+# ---- check_updates_now() фільтрує IGNORED_ROUTER_ALERTS (реальний баг, знайдений на запиті користувача) ----
+
+def test_check_updates_now_filters_ignored_router_alert(db_path):
+    """Реальний баг: check_updates_now() записувала router-статус
+    БЕЗ IGNORED_ROUTER_ALERTS-фільтра (той самий фільтр, що вже мав
+    poll_router()) - alert повертався щоразу, коли user тиснув
+    "Перевірити оновлення" вручну, аж до наступного фонового циклу
+    poll_router(), який знову коректно його прибирав."""
+    from unittest.mock import patch
+    from app.starlink_client import DishStatus, RouterInfo
+
+    dish = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="d1",
+                       hardware_version="rev3", software_version="v1")
+    router = RouterInfo(timestamp=time.time(), online=True, hardware_version="rev2",
+                         software_version="v1", active_alerts=["wired_mesh_not_using_wan_iface"])
+
+    with patch("app.telegram_notify.send_message"), \
+         patch.object(monitor.StarlinkClient, "get_status", return_value=dish), \
+         patch.object(monitor.StarlinkClient, "get_router_info", return_value=router):
+        monitor.check_updates_now(monitor.StarlinkClient(), lambda t: None)
+
+    router_in_db = db.get_router_status()
+    assert "wired_mesh_not_using_wan_iface" not in router_in_db["active_alerts"]
+
+
+def test_check_updates_now_keeps_other_router_alerts(db_path):
+    """Контрольний тест: фільтр прибирає ЛИШЕ wired_mesh_not_using_
+    wan_iface, не всі alerts взагалі."""
+    from unittest.mock import patch
+    from app.starlink_client import DishStatus, RouterInfo
+
+    dish = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="d1",
+                       hardware_version="rev3", software_version="v1")
+    router = RouterInfo(timestamp=time.time(), online=True, hardware_version="rev2",
+                         software_version="v1", active_alerts=["thermal_throttle"])
+
+    with patch("app.telegram_notify.send_message"), \
+         patch.object(monitor.StarlinkClient, "get_status", return_value=dish), \
+         patch.object(monitor.StarlinkClient, "get_router_info", return_value=router):
+        monitor.check_updates_now(monitor.StarlinkClient(), lambda t: None)
+
+    router_in_db = db.get_router_status()
+    assert "thermal_throttle" in router_in_db["active_alerts"]
+
+
+def test_ignored_router_alerts_contains_expected_value():
+    assert monitor.IGNORED_ROUTER_ALERTS == {"wired_mesh_not_using_wan_iface"}
+
+
+# ---- Буферизація dish-метрик (SD-card-wear reduction) ----
+
+def test_poll_once_buffers_instead_of_writing_immediately(watchdog):
+    """Реальна мета зміни: замість негайного окремого запису кожні
+    10с, зчитування накопичуються в пам'яті - БД лишається порожньою
+    до явного flush."""
+    from app.starlink_client import DishStatus
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="d1",
+                         hardware_version="rev3", software_version="v1")
+    with patch.object(watchdog.client, "get_status", return_value=status):
+        watchdog.poll_once()
+        watchdog.poll_once()
+
+    assert len(watchdog.metrics_buffer) == 2
+    assert db.get_latest_metric() is None, "БД мала лишатись порожньою до flush"
+
+
+def test_flush_metrics_buffer_writes_all_and_clears_buffer(watchdog):
+    from app.starlink_client import DishStatus
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="d1",
+                         hardware_version="rev3", software_version="v1")
+    watchdog.metrics_buffer = [status.to_dict(), status.to_dict(), status.to_dict()]
+
+    watchdog.flush_metrics_buffer()
+
+    assert watchdog.metrics_buffer == []
+    with db.get_conn() as conn:
+        count = conn.execute("SELECT COUNT(*) as c FROM metrics").fetchone()["c"]
+    assert count == 3, "усі буферизовані записи мали потрапити в БД одним flush"
+
+
+def test_flush_empty_buffer_does_not_error(watchdog):
+    """Порожній буфер - flush не має падати чи писати порожній рядок."""
+    watchdog.metrics_buffer = []
+    watchdog.flush_metrics_buffer()
+    assert db.get_latest_metric() is None
+
+
+def test_sigterm_flushes_buffer_before_exit(watchdog):
+    """Реальна мета graceful shutdown: звичайний systemctl restart
+    (SIGTERM) НЕ має втрачати буферизовані дані, лише справжнє
+    раптове вимкнення живлення - той самий handler, що run_forever()
+    реєструє."""
+    import signal as signal_module
+    from app.starlink_client import DishStatus
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="sig-test",
+                         hardware_version="rev3", software_version="v1")
+    watchdog.metrics_buffer.append(status.to_dict())
+
+    def _handle_shutdown_signal(signum, frame):
+        watchdog.flush_metrics_buffer()
+        raise SystemExit(0)
+
+    old_handler = signal_module.signal(signal_module.SIGTERM, _handle_shutdown_signal)
+    try:
+        with pytest.raises(SystemExit):
+            import os
+            os.kill(os.getpid(), signal_module.SIGTERM)
+    finally:
+        signal_module.signal(signal_module.SIGTERM, old_handler)
+
+    assert watchdog.metrics_buffer == []
+    assert db.get_latest_metric() is not None
+
+
+# ---- perform_auto_backup() - ротація, вміст ----
+
+def test_perform_auto_backup_writes_valid_json(watchdog, tmp_path):
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    monitor.perform_auto_backup()
+
+    files = os.listdir(config.AUTO_BACKUP_DIR)
+    assert len(files) == 1
+    with open(os.path.join(config.AUTO_BACKUP_DIR, files[0])) as f:
+        content = json.load(f)
+    assert content["format_version"] == db.BACKUP_FORMAT_VERSION
+
+
+def test_perform_auto_backup_rotation_keeps_newest_only(watchdog, tmp_path):
+    """Реальна мета ротації: старі backup-и видаляються, залишаються
+    саме НАЙНОВІШІ, не найстаріші чи довільні."""
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    config.AUTO_BACKUP_KEEP_COUNT = 3
+
+    for i in range(5):
+        with patch("time.time", return_value=1000000.0 + i * 100):
+            monitor.perform_auto_backup()
+
+    files = sorted(os.listdir(config.AUTO_BACKUP_DIR))
+    assert len(files) == 3
+    assert files == ["backup-1000200.json", "backup-1000300.json", "backup-1000400.json"]
+
+
+def test_perform_auto_backup_zero_keep_count_disables_rotation_deletion(watchdog, tmp_path):
+    """AUTO_BACKUP_KEEP_COUNT=0 - крайовий випадок, не має видаляти
+    ВСІ файли (0 - не 'нічого не зберігати', а 'ротація вимкнена')."""
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    config.AUTO_BACKUP_KEEP_COUNT = 0
+    monitor.perform_auto_backup()
+    monitor.perform_auto_backup()
+    assert len(os.listdir(config.AUTO_BACKUP_DIR)) >= 1
+
+
+# ---- check_db_integrity_and_notify() ----
+
+def test_check_db_integrity_healthy_sends_no_notification(watchdog):
+    monitor.check_db_integrity_and_notify(watchdog._notify)
+    assert watchdog.sent == []
+
+
+def test_check_db_integrity_corrupted_notifies_and_attempts_backup(watchdog, tmp_path):
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    with open(config.DB_PATH, "wb") as f:
+        f.write(b"not a valid sqlite file" * 50)
+
+    monitor.check_db_integrity_and_notify(watchdog._notify)
+
+    assert len(watchdog.sent) >= 1
+    assert "пошкодження" in watchdog.sent[0].lower()

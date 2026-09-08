@@ -84,7 +84,13 @@ def healthz() -> ResponseReturnValue:
             checks["watchdog"] = "no data yet"
         else:
             age_sec = time.time() - latest["ts"]
-            max_age_sec = config.POLL_INTERVAL_SEC * 3
+            # +DISH_METRICS_BATCH_INTERVAL_SEC - при буферизації dish-
+            # метрик (SD-card-wear reduction) останній запис у БД може
+            # відставати від реального часу опитування на ДО цього
+            # інтервалу, чекаючи наступного batch-flush. Без цього
+            # додавання сама буферизація хибно спрацьовувала б як
+            # "watchdog завис", хоча він реально працює нормально.
+            max_age_sec = config.POLL_INTERVAL_SEC * 3 + config.DISH_METRICS_BATCH_INTERVAL_SEC
             checks["watchdog"] = f"ok ({age_sec:.0f}s since last poll)"
             if age_sec > max_age_sec:
                 checks["watchdog"] = f"stale ({age_sec:.0f}s since last poll, expected <{max_age_sec}s)"
@@ -452,40 +458,12 @@ def api_set_signature_phrases_enabled() -> ResponseReturnValue:
     return jsonify({"success": True, "enabled": enabled})
 
 
-BACKUP_FORMAT_VERSION = 2
-
-
 @app.route("/api/settings-backup")
 def api_settings_backup() -> ResponseReturnValue:
-    """Повертає всі налаштування (Telegram config, фрази підпису,
-    auto-reboot, перевизначені параметри app/config.py, історія відомих
-    Starlink-пристроїв) одним JSON-файлом для завантаження. Bot token
-    включається у відкритому вигляді - файл backup потрібно берегти як
-    secret (не публікувати, не комітити в git). env_params містить лише
-    РЕАЛЬНО перевизначені параметри (overridden), не всі значення за
-    замовчуванням - інакше відновлення на іншому пристрої/версії коду
-    затерло б нові дефолти застарілими значеннями."""
-    token, chat_ids, enabled = telegram_notify.get_telegram_config()
-    env_params = {
-        p["key"]: p["current"]
-        for p in config_editor.read_current_values()
-        if p["overridden"]
-    }
-    backup = {
-        "format_version": BACKUP_FORMAT_VERSION,
-        "created_at": time.time(),
-        "telegram_bot_token": token,
-        "telegram_chat_ids": chat_ids,
-        "telegram_enabled": enabled,
-        "auto_reboot_enabled": db.get_auto_reboot_enabled(),
-        "signature_phrases": telegram_notify.get_signature_phrases_text(),
-        "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
-        "dish_target_version": db.get_setting("dish_target_version"),
-        "router_target_version": db.get_setting("router_target_version"),
-        "known_devices": db.get_all_known_devices(),
-        "env_params": env_params,
-    }
-    return jsonify(backup)
+    """Повертає всі налаштування одним JSON-файлом для завантаження -
+    див. monitor.build_backup_dict() для повної логіки (спільна з
+    автоматичним періодичним backup)."""
+    return jsonify(monitor.build_backup_dict())
 
 
 @app.route("/api/settings-restore", methods=["POST"])
