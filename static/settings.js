@@ -169,7 +169,7 @@ async function handleSettingsRestoreFile(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, фрази підпису, перемикач auto-reboot і перевизначені параметри моніторингу будуть перезаписані.')) {
+  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, перемикач auto-reboot і перевизначені параметри моніторингу будуть перезаписані.')) {
     e.target.value = '';
     return;
   }

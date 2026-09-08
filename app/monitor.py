@@ -207,8 +207,8 @@ IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
 
 
 def build_backup_dict() -> dict[str, Any]:
-    """Формує повний backup-словник (Telegram config, фрази підпису,
-    auto-reboot, перевизначені параметри, історія відомих пристроїв) -
+    """Формує повний backup-словник (Telegram config, auto-reboot,
+    перевизначені параметри, історія відомих пристроїв) -
     спільна для webapp.py api_settings_backup() (ручний, через веб-
     кнопку) і perform_auto_backup() нижче (автоматичний, періодичний,
     з watchdog-циклу) - уникає дублювання тієї самої логіки в двох

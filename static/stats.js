@@ -32,40 +32,4 @@ function handleClearEvents() {
 document.addEventListener('DOMContentLoaded', () => {
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   refreshEvents();
-  initCharts();
 });
-
-// ---- Графіки трендів (без сторонніх бібліотек - Starlink-дашборд
-// має працювати навіть без інтернету, коли dish саме офлайн, тому
-// CDN-залежність (напр. Chart.js) тут навмисно уникнена) ----
-
-async function loadCharts(hours) {
-  try {
-    const res = await fetch(`/api/metrics-chart?hours=${hours}`);
-    const data = await res.json();
-    if (!data.length) return;
-
-    const timestamps = data.map(d => d.bucket_ts);
-    drawLineChart(el('chartPing'), [
-      { data: data.map(d => d.ping_latency_ms), color: '#5ee6c4' },
-      { data: data.map(d => d.ping_drop_ratio != null ? d.ping_drop_ratio * 100 : null), color: '#ff6b6b' },
-    ], { timestamps });
-    drawLineChart(el('chartObstruction'), [
-      { data: data.map(d => d.obstruction_fraction != null ? d.obstruction_fraction * 100 : null), color: '#ffb454' },
-    ], { beginAtZero: true, timestamps });
-  } catch (e) {
-    console.error('Помилка завантаження графіків:', e);
-  }
-}
-
-function initCharts() {
-  const buttons = document.querySelectorAll('#chartPeriodSelect button');
-  buttons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      buttons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      loadCharts(btn.dataset.hours);
-    });
-  });
-  loadCharts(6);
-}

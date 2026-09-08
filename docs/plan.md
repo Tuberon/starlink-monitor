@@ -2,7 +2,7 @@
 
 ## Зроблено
 
-- [x] Моніторинг dish: throughput, latency, obstruction, uptime, стан
+- [x] Моніторинг dish: latency, obstruction, uptime, стан
       оновлення ПЗ, попередження, dish_id
 - [x] Моніторинг router: окрема прошивка, стан оновлення, попередження
 - [x] Автоматичний reboot (watchdog + update-ready для dish і router)
@@ -25,7 +25,7 @@
 - [x] Список під'єднаних WiFi-клієнтів роутера на дашборді
 - [x] Запам'ятовування версій ПЗ dish/router по dish_id (`known_devices`) +
       команда `/id [ID]` в Telegram-боті (список пристроїв або деталі)
-- [x] Окрема сторінка `/settings` (Telegram, фрази підпису, backup/restore)
+- [x] Окрема сторінка `/settings` (Telegram, backup/restore)
 - [x] Редагування параметрів `app/config.py` через веб-інтерфейс (`/settings`)
 - [x] Перемикач додавання випадкових фраз підпису до Telegram-повідомлень
 - [x] Фільтрація вибраних router alerts (не пишуться в БД/журнал/Telegram)

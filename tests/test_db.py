@@ -1,9 +1,6 @@
 """
-Тести для app/db.py - downsampling старих метрик. Найважливіший
-сценарій: get_metrics_chart_data() має бути БЕЗШОВНОЮ на межі cutoff
-між raw (metrics) і downsampled (metrics_downsampled) даними - UNION
-ALL з тим самим cutoff для обох частин природно забезпечує це, без
-явного знання порогу downsample у самому запиті.
+Тести для app/db.py - downsampling/prune старих метрик, злиття історії
+відомих пристроїв, перевірка цілісності БД.
 """
 import time
 
@@ -62,29 +59,6 @@ def test_downsample_is_idempotent(db_path):
     with db.get_conn() as conn:
         count = conn.execute("SELECT COUNT(*) as c FROM metrics_downsampled").fetchone()["c"]
     assert count == first_call
-
-
-def test_chart_data_seamless_across_downsample_boundary(db_path):
-    """Найважливіший сценарій: графік за 7 днів дає ПРИБЛИЗНО ту саму
-    кількість точок і НУЛЬ прогалин до і після downsampling - UNION
-    ALL з тим самим cutoff для обох таблиць природно забезпечує
-    безшовний перехід без явного знання порогу downsample у запиті."""
-    config.DOWNSAMPLE_AFTER_DAYS = 3
-    config.POLL_INTERVAL_SEC = 60
-    now = time.time()
-    _insert_metrics(7 * 24 * 60 // 60, 60, now - 7 * 86400, downlink=50.0)
-
-    data_before = db.get_metrics_chart_data(hours=7 * 24, target_points=150)
-    points_before = len(data_before)
-
-    db.downsample_old_metrics()
-
-    data_after = db.get_metrics_chart_data(hours=7 * 24, target_points=150)
-    points_after = len(data_after)
-
-    assert abs(points_after - points_before) <= 5
-    gaps = sum(1 for d in data_after if d["downlink_mbps"] is None)
-    assert gaps == 0
 
 
 def test_prune_old_cleans_both_raw_and_downsampled(db_path):

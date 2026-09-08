@@ -110,16 +110,6 @@ def api_status() -> ResponseReturnValue:
     return jsonify({"latest": latest, "uptime_24h_pct": uptime_pct})
 
 
-@app.route("/api/metrics-chart")
-def api_metrics_chart() -> ResponseReturnValue:
-    try:
-        hours = float(request.args.get("hours", 24))
-    except (TypeError, ValueError):
-        hours = 24
-    hours = min(max(hours, 0.1), 24 * config.HISTORY_RETENTION_DAYS)
-    return jsonify(db.get_metrics_chart_data(hours))
-
-
 @app.route("/api/events")
 def api_events() -> ResponseReturnValue:
     limit = min(int(request.args.get("limit", 30)), 500)

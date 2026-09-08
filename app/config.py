@@ -16,7 +16,7 @@ POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_POLL_INTERVAL", "10"))
 # непотрібне.
 ROUTER_POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_ROUTER_POLL_INTERVAL_SEC", "35"))
 # CPU/температура/пам'ять Pi змінюються повільно (на відміну від
-# ping/throughput dish, де кожна секунда важлива) - записувати їх із
+# ping/швидкості каналу dish, де кожна секунда важлива) - записувати їх із
 # тією самою частотою, що критичні Starlink-метрики (10с), лише
 # зайве навантаження на SD-картку без практичної користі. Окремий,
 # довший інтервал - зменшує кількість записів у system_metrics у

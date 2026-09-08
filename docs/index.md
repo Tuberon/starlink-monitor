@@ -40,7 +40,7 @@
 
 | Файл | Опис |
 |---|---|
-| `common.js` | Спільні для dashboard.js/stats.js: `fmtTime`, `fmtAgo`, `drawLineChart` (canvas-графіки без CDN) |
+| `common.js` | Спільні для dashboard.js/stats.js: `fmtTime`, `fmtAgo` |
 | `theme.js` | Темна/світла тема - toggle на /settings, підключено на всіх 3 сторінках |
 | `dashboard.js` | Логіка головної сторінки (`/`) |
 | `settings.js` | Логіка сторінки налаштувань (`/settings`) |
