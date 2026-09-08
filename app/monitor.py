@@ -9,6 +9,7 @@ Telegram (не блокує цикл при помилках відправки)
 import json
 import logging
 import os
+
 import signal
 import threading
 import time
@@ -281,6 +282,7 @@ def check_db_integrity_and_notify(notify_fn: Callable[[str], None]) -> None:
     except Exception as e:
         logger.error("Аварійний backup теж провалився: %s", e)
         notify_fn(f"🔴 Аварійний backup ТЕЖ провалився: {e}")
+
 
 
 def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) -> tuple[DishStatus, RouterInfo]:

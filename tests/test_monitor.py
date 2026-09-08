@@ -731,3 +731,4 @@ def test_check_db_integrity_corrupted_notifies_and_attempts_backup(watchdog, tmp
 
     assert len(watchdog.sent) >= 1
     assert "пошкодження" in watchdog.sent[0].lower()
+
