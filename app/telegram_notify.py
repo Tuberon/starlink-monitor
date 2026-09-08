@@ -4,8 +4,6 @@
 керуються з веб-інтерфейсу без перезапуску сервісу.
 """
 import logging
-import os
-import random
 import socket
 import time
 from typing import Any, Optional
@@ -18,7 +16,6 @@ from app import config, db
 logger = logging.getLogger("telegram_notify")
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
-SIGNATURE_PHRASES_PATH = os.path.join(os.path.dirname(__file__), "signature_phrases.txt")
 
 # DNS-сервери для ручного резолвінгу через eth0.
 _FALLBACK_DNS_SERVERS = ["8.8.8.8", "1.1.1.1"]
@@ -179,67 +176,6 @@ def _request_with_eth0_fallback(method: str, url: str, **kwargs: Any) -> request
             return _request_via_eth0(method, url, resolved_ip=resolved_ip, **kwargs)
 
 
-def _random_signature_phrase() -> str:
-    """Повертає випадкову фразу з app/signature_phrases.txt (по одній на
-    рядок). Якщо файл відсутній/порожній - повертає порожній рядок,
-    щоб не ламати відправку повідомлень."""
-    try:
-        with open(SIGNATURE_PHRASES_PATH, encoding="utf-8") as f:
-            phrases = [line.strip() for line in f if line.strip()]
-        return random.choice(phrases) if phrases else ""
-    except OSError as e:
-        logger.warning("Не вдалося прочитати signature_phrases.txt: %s", e)
-        return ""
-
-
-def get_signature_phrases_text() -> str:
-    """Повертає сирий вміст signature_phrases.txt для редагування у
-    веб-інтерфейсі (одна фраза на рядок, як у файлі)."""
-    try:
-        with open(SIGNATURE_PHRASES_PATH, encoding="utf-8") as f:
-            return f.read()
-    except OSError as e:
-        logger.warning("Не вдалося прочитати signature_phrases.txt: %s", e)
-        return ""
-
-
-def set_signature_phrases_text(text: str) -> tuple[bool, str]:
-    """Записує вміст signature_phrases.txt з веб-інтерфейсу. Порожні рядки
-    прибираються, дублікати не перевіряються (можна повторювати фрази).
-    Порожній результат (жодної непорожньої фрази) відхиляється - інакше
-    send_message лишиться зовсім без фраз."""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return False, "Потрібна хоча б одна непорожня фраза"
-    try:
-        with open(SIGNATURE_PHRASES_PATH, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        return True, f"Збережено {len(lines)} фраз(и)"
-    except OSError as e:
-        logger.warning("Не вдалося записати signature_phrases.txt: %s", e)
-        return False, str(e)
-
-
-def get_signature_phrases_enabled() -> bool:
-    """Runtime-перемикач: чи додавати випадкову фразу підпису в кінець
-    Telegram-повідомлень. За замовчуванням вимкнено."""
-    return db.get_setting("signature_phrases_enabled", "0") == "1"
-
-
-def set_signature_phrases_enabled(enabled: bool) -> None:
-    db.set_setting("signature_phrases_enabled", "1" if enabled else "0")
-
-
-def append_signature(text: str) -> str:
-    """Додає випадкову фразу підпису в кінець text, якщо перемикач
-    увімкнений і фрази є. Спільний хелпер - раніше цей самий патерн
-    (get_signature_phrases_enabled() перевірка + _random_signature_phrase()
-    + конкатенація) був продубльований у send_message() тут та у
-    telegram_bot.py (_send, _cmd_reboot_request)."""
-    phrase = _random_signature_phrase() if get_signature_phrases_enabled() else ""
-    return f"{text}\n\n{phrase}" if phrase else text
-
-
 def get_telegram_config() -> tuple[str, list[str], bool]:
     """Повертає (token, chat_id, enabled) з БД. chat_id може містити
     кілька id через кому (сповіщення кільком отримувачам)."""
@@ -277,7 +213,7 @@ def send_message(text: str) -> tuple[bool, str]:
     if not chat_ids:
         return False, "Не вказано жодного chat_id"
 
-    full_text = append_signature(text)
+    full_text = text
 
     url = API_BASE.format(token=token, method="sendMessage")
     errors = []

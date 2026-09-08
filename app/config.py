@@ -218,15 +218,6 @@ DISPLAY_UPDATE_FLASH_SEC = int(os.environ.get("STARLINK_DISPLAY_UPDATE_FLASH_SEC
 # сервіс/файл - shutdown_button.py, не display.py).
 DISPLAY_BUTTON_POLL_INTERVAL_SEC = float(os.environ.get("STARLINK_DISPLAY_BUTTON_POLL_INTERVAL_SEC", "0.1"))
 
-# Періодичний реальний speedtest (не лише пропускна здатність з телеметрії
-# dish, яка показує "заявлений" канал, не реальну користувацьку швидкість
-# крізь весь маршрут до інтернету). Вимкнено за замовчуванням - тест
-# споживає реальний трафік (десятки-сотні МБ на прогін) і на кілька
-# секунд навантажує WiFi-радіомодуль, який dish/router також
-# використовують для локального опитування.
-SPEEDTEST_ENABLED = os.environ.get("STARLINK_SPEEDTEST_ENABLED", "0") == "1"
-SPEEDTEST_INTERVAL_SEC = int(os.environ.get("STARLINK_SPEEDTEST_INTERVAL", "1800"))  # двічі/год
-
 _local_cfg = "/etc/starlink-monitor/config.local.py"
 if os.path.exists(_local_cfg):
     with open(_local_cfg) as f:

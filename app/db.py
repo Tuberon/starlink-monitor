@@ -13,8 +13,9 @@ from app import config
 # періодичний, обидва в monitor.build_backup_dict()) - тут, не в
 # webapp.py, щоб бути доступною з monitor.py без циклічного імпорту
 # (webapp.py вже імпортує monitor, тому monitor не може імпортувати
-# щось із webapp.py).
-BACKUP_FORMAT_VERSION = 2
+# щось із webapp.py). v3 - signature_phrases/signature_phrases_
+# enabled поля видалені разом із самим функціоналом фраз підпису.
+BACKUP_FORMAT_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metrics (
@@ -109,18 +110,6 @@ CREATE TABLE IF NOT EXISTS known_devices (
     router_software_version TEXT,
     router_software_updated_ts REAL
 );
-
-CREATE TABLE IF NOT EXISTS speedtest_results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts REAL NOT NULL,
-    download_mbps REAL,
-    upload_mbps REAL,
-    ping_ms REAL,
-    server_name TEXT,
-    success INTEGER NOT NULL,
-    error TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_speedtest_results_ts ON speedtest_results(ts);
 """
 
 
@@ -358,14 +347,6 @@ def _parse_metric_row(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def get_recent_metrics(limit: int = 500) -> list[dict[str, Any]]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM metrics ORDER BY ts DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [_parse_metric_row(dict(r)) for r in reversed(rows)]
-
-
 def get_metrics_chart_data(hours: float, target_points: int = 150) -> list[dict[str, Any]]:
     """Агреговані дані для графіків на /stats - SQL GROUP BY bucket,
     об'єднує raw metrics (недавні, повна 10с деталізація) і
@@ -475,7 +456,6 @@ def prune_old(days: Optional[int] = None) -> None:
         conn.execute("DELETE FROM metrics_downsampled WHERE bucket_ts < ?", (cutoff,))
         conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
         conn.execute("DELETE FROM system_metrics WHERE ts < ?", (cutoff,))
-        conn.execute("DELETE FROM speedtest_results WHERE ts < ?", (cutoff,))
 
 
 def vacuum_and_analyze() -> None:
@@ -654,40 +634,6 @@ def merge_known_devices(devices: list[dict[str, Any]]) -> int:
             if cursor.rowcount > 0:
                 added += 1
     return added
-
-
-def insert_speedtest_result(data: dict[str, Any]) -> None:
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO speedtest_results
-               (ts, download_mbps, upload_mbps, ping_ms, server_name, success, error)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (
-                data["ts"],
-                data.get("download_mbps"),
-                data.get("upload_mbps"),
-                data.get("ping_ms"),
-                data.get("server_name", ""),
-                int(data.get("success", False)),
-                data.get("error", ""),
-            ),
-        )
-
-
-def get_recent_speedtest_results(limit: int = 50) -> list[dict[str, Any]]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM speedtest_results ORDER BY ts DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-def get_latest_speedtest_result() -> Optional[dict[str, Any]]:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM speedtest_results WHERE success = 1 ORDER BY ts DESC LIMIT 1"
-        ).fetchone()
-        return dict(row) if row else None
 
 
 def parse_version_list(raw: Optional[str]) -> list[str]:

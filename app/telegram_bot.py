@@ -273,9 +273,7 @@ class TelegramBot:
 
     def _cmd_reboot_request(self, token: str, chat_id: str) -> None:
         self._pending_reboot_confirm[chat_id] = time.time()
-        text = telegram_notify.append_signature(
-            "\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини."
-        )
+        text = "\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини."
         _api_call(
             "sendMessage",
             token,
@@ -380,5 +378,4 @@ class TelegramBot:
         return f"{days} дн тому"
 
     def _send(self, token: str, chat_id: str, text: str) -> None:
-        full_text = telegram_notify.append_signature(text)
-        _api_call("sendMessage", token, config.TELEGRAM_SEND_TIMEOUT_SEC, chat_id=chat_id, text=full_text, parse_mode="HTML")
+        _api_call("sendMessage", token, config.TELEGRAM_SEND_TIMEOUT_SEC, chat_id=chat_id, text=text, parse_mode="HTML")

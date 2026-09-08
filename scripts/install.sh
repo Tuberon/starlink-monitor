@@ -53,13 +53,6 @@ if [[ "$MAJOR_CHANGE" -eq 1 ]]; then
         /etc/systemd/system/starlink-grpc-fetch.service
   systemctl daemon-reload
   rm -f /etc/sudoers.d/starlink-monitor
-  # signature_phrases.txt (можливо відредагований користувачем) зберігаємо
-  # окремо і повертаємо назад після перевстановлення файлів проєкту.
-  SAVED_PHRASES=""
-  if [[ -f "$PROJECT_DIR/app/signature_phrases.txt" ]]; then
-    SAVED_PHRASES="$(mktemp)"
-    cp "$PROJECT_DIR/app/signature_phrases.txt" "$SAVED_PHRASES"
-  fi
   rm -rf "$PROJECT_DIR"
   MODE="install"
   echo "==> Попередню інсталяцію видалено — продовжую як повне встановлення"
@@ -131,22 +124,12 @@ fi
 echo "==> Синхронізую файли проєкту в $PROJECT_DIR (лише змінені відносно попередньої інсталяції)"
 mkdir -p "$PROJECT_DIR"
 RSYNC_EXCLUDES=(--exclude 'venv' --exclude '.git')
-if [[ "$MODE" == "update" && -f "$PROJECT_DIR/app/signature_phrases.txt" ]]; then
-  RSYNC_EXCLUDES+=(--exclude 'app/signature_phrases.txt')
-fi
 # -c: порівняння за контрольною сумою (не лише за розміром/часом), --itemize-changes
 # показує, які файли реально змінились - корисно бачити, що саме оновилось.
 RSYNC_OUT="$(rsync -ac --itemize-changes "${RSYNC_EXCLUDES[@]}" "$SRC_DIR/" "$PROJECT_DIR/")"
 echo "$RSYNC_OUT"
 CHANGED_FILES="$(echo "$RSYNC_OUT" | grep -c '^[<>ch]' || true)"
 chown -R "$RUN_USER:$RUN_USER" "$PROJECT_DIR"
-
-if [[ -n "${SAVED_PHRASES:-}" && -f "$SAVED_PHRASES" ]]; then
-  cp "$SAVED_PHRASES" "$PROJECT_DIR/app/signature_phrases.txt"
-  chown "$RUN_USER:$RUN_USER" "$PROJECT_DIR/app/signature_phrases.txt"
-  rm -f "$SAVED_PHRASES"
-  echo "==> Відновлено попередній signature_phrases.txt після перевстановлення"
-fi
 
 if [[ "$MODE" == "update" && "$CHANGED_FILES" -eq 0 ]]; then
   echo "==> Змінених файлів не виявлено, файлова частина без змін"

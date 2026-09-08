@@ -33,7 +33,6 @@ router — різні enum з різними назвами станів).
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
 | `gpio_utils.py` | Спільна gpiod v1/v2-сумісна логіка читання GPIO-входу (shutdown_button.py + display.py) |
-| `speedtest_runner.py` | Періодичний реальний speedtest (потік у monitor.py, вимкнено за замовчуванням) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 
@@ -90,7 +89,7 @@ recovery()`) — інша ситуація, ніж `NOTIFICATIONS_MUTE_AFTER_SEC
 | Сервіс | Роль | Особливості безпеки |
 |---|---|---|
 | `starlink-monitor.service` | Watchdog + Telegram-бот (потік) | `NoNewPrivileges=true`, `AmbientCapabilities=CAP_NET_RAW` (SO_BINDTODEVICE), `CapabilityBoundingSet` звужено до цієї capability |
-| `starlink-webui.service` | Flask dashboard | БЕЗ `NoNewPrivileges` (потрібен sudo для reboot/poweroff Pi), `AmbientCapabilities=CAP_NET_RAW`, `CapabilityBoundingSet` НЕ звужено (sudo systemctl reboot успадкував би обмеження), `ReadWritePaths` включає `signature_phrases.txt` |
+| `starlink-webui.service` | Flask dashboard | БЕЗ `NoNewPrivileges` (потрібен sudo для reboot/poweroff Pi), `AmbientCapabilities=CAP_NET_RAW`, `CapabilityBoundingSet` НЕ звужено (sudo systemctl reboot успадкував би обмеження) |
 | `starlink-shutdown-button.service` | Слухає GPIO-кнопку виключення | БЕЗ `NoNewPrivileges` (sudo poweroff), `Restart=on-failure` (не `always` — чистий вихід при вимкненій кнопці не збій) |
 | `starlink-grpc-fetch.service` | Опційне ручне оновлення vendored `starlink_grpc.py` до найновішої upstream-версії — НЕ enabled/started автоматично (файл vendored, `app/vendor/`) | — |
 | `starlink-wan-failover.service`/`.timer` | Періодична (кожні ~20с) перевірка інтернету через wlan0, коригування route-metric | root-сервіс; `CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW` — навіть root тут без решти системних можливостей |
@@ -106,9 +105,7 @@ recovery()`) — інша ситуація, ніж `NOTIFICATIONS_MUTE_AFTER_SEC
   (`/opt/starlink-monitor` існує чи ні). У update-режимі: пропускає
   apt/pip якщо `requirements.txt` не змінився; **виявляє суттєві
   зміни** (нові пакети — не просто зміна версії) і при виявленні
-  повністю видаляє й перевстановлює; `app/signature_phrases.txt`
-  (відредагований користувачем) зберігається окремо і відновлюється
-  після перевстановлення. Наприкінці, **лише в install-режимі** —
+  повністю видаляє й перевстановлює. Наприкінці, **лише в install-режимі** —
   опційний інтерактивний блок налаштування статичних IP для eth0/wlan0
   (з підтвердженням, дефолти редаговані), вимикає конфліктуючий `dhcpcd`.
 - `scripts/update.sh` — ручне оновлення: sha256-перевірка архіву,
@@ -441,7 +438,7 @@ Telegram API ВІДХИЛЯВ запит (валідний JSON з `ok: false`, 
 ## Backup/restore налаштувань
 
 `GET /api/settings-backup` віддає JSON (Telegram bot token, chat_ids,
-enabled, auto_reboot_enabled, вміст і перемикач signature_phrases,
+enabled, auto_reboot_enabled,
 dish/router_target_version, історія відомих Starlink-пристроїв
 (`known_devices` — dish_id, версії ПЗ/апаратні, часові мітки),
 `env_params` — лише перевизначені параметри app/config.py) —
@@ -569,46 +566,17 @@ CSS custom properties в `static/style.css` — та сама семантика
 статус-бару мобільного браузера з фактичним фоном сторінки), і
 `localStorage`.
 
-## Реальний speedtest (app/speedtest_runner.py)
-
-`run_once()` — один прогін через бібліотеку `speedtest-cli`, ніколи
-не кидає виняток (помилка в полі `error`, `success=False`).
-`run_forever(stop_event)` — цикл з інтервалом `SPEEDTEST_INTERVAL_SEC`,
-перевіряє `stop_event` кожні 5с сну (не чекає повний інтервал при
-зупинці сервісу). Запускається як потік у `Watchdog.run_forever()`
-поруч із Telegram-ботом, лише якщо `SPEEDTEST_ENABLED=1` (за
-замовчуванням вимкнено — реальний трафік + навантаження WiFi-радіо).
-Результати — таблиця `speedtest_results` (SQLite), очищення разом з
-іншими таблицями в `prune_old()`. `POST /api/speedtest-run` виконує
-одноразовий синхронний прогін на вимогу користувача (10-30с, окей
-блокувати — це усвідомлена дія, не фоновий цикл).
-
-**Прив'язка до `wlan0`** — `_WLAN0BoundSocket` (тимчасовий monkey-patch
-`socket.socket` на час виклику `speedtest`-бібліотеки, гарантоване
-відновлення через `finally`, навіть при винятку всередині — перевірено
-живим тестом). Без прив'язки тест покладався б на дефолтний маршрут
-ОС, зазвичай wlan0 (нижчий route-metric), АЛЕ не гарантовано: якщо
-тест спрацює саме під час тимчасової WAN-failover-корекції маршруту,
-результат оманливо вимірював би домашню eth0-мережу під виглядом
-"швидкості Starlink". Бібліотека `speedtest-cli` не надає API для
-injecting кастомного сокета/сесії (на відміну від `requests`) — той
-самий загальний підхід, що вже застосований для eth0-прив'язки в
-`telegram_notify.py` (`CAP_NET_RAW`, вже наданий
-`starlink-monitor.service`), лише навпаки за напрямком інтерфейсу.
-
 ## /stats — повна статистика
 
-Головна сторінка показує лише 5 останніх подій журналу і коротку
-summary-панель speedtest (поточні значення + кнопка запуску).
+Головна сторінка показує лише 5 останніх подій журналу.
 `/stats` (`templates/stats.html`, `static/stats.js`) — повний журнал
-подій (`limit=500`) і повна історія speedtest-результатів, без інших
-елементів дашборду. "Очистити" на обох сторінках — лише локально в
-браузері (`eventsClearedLocally` в кожному JS-файлі окремо, БД не
-зачіпається), той самий підхід, що вже був на головній.
+подій (`limit=500`), без інших елементів дашборду. "Очистити" на
+обох сторінках — лише локально в браузері (`eventsClearedLocally`
+в кожному JS-файлі окремо, БД не зачіпається), той самий підхід,
+що вже був на головній.
 
-**Графіки трендів на /stats** (throughput, ping/drop%, obstruction) —
-`canvas`, `drawLineChart()` в `static/common.js` (спільна з
-`throughputChart` на головній сторінці — див. нижче), БЕЗ сторонньої
+**Графіки трендів на /stats** (ping/drop%, obstruction) —
+`canvas`, `drawLineChart()` в `static/common.js`, БЕЗ сторонньої
 бібліотеки (Chart.js тощо): дашборд про мережу має лишатись робочим
 навіть без інтернету, коли dish саме offline (CDN-залежність тоді не
 завантажилась б). Дані —
@@ -630,7 +598,7 @@ downsampling). bucket-розмір масштабується залежно в�
 значення кожної серії (кольором лінії) — без цього графік показував
 лише форму без жодної конкретної величини (знайдено користувачем як
 "неінформативно" на реальному скріншоті). `options.beginAtZero`
-(throughput, obstruction — природно невід'ємні метрики) розширює
+(obstruction — природно невід'ємна метрика) розширює
 шкалу до 0, даючи чесніший масштаб замість роздування дрібних
 природних коливань на всю висоту графіка; ping НЕ отримує цю опцію
 свідомо — вузький природний діапазон (напр. 28-35мс), beginAtZero
@@ -709,14 +677,6 @@ index і показує реальні значення, `mouseleave` ховає
 для розміру) уже був написаний правильно (responsive), достатньо було
 дати CSS повідомити браузеру фактичну доступну ширину. `display:block`
 заодно прибирає типовий inline-elements baseline-проміжок знизу.
-
-**`throughputChart` на головній сторінці** (`/`, `static/dashboard.js`
-`refreshHistory()`) — той самий `drawLineChart()`, дані з
-`/api/history?limit=120` (raw, не downsampled — короткий recency-
-орієнтований графік, не потребує aggregation), без CDN-залежності —
-консистентно з графіками на `/stats`. Легенда (кольорові мітки
-Downlink/Uplink) — проста текстова розмітка в HTML (`.chart-legend`),
-`drawLineChart()` її не малює.
 
 `downsample_old_metrics()` (щогодини, разом з `prune_old()`) агрегує
 raw-рядки старші за `DOWNSAMPLE_AFTER_DAYS` (дефолт 3) у

@@ -29,45 +29,9 @@ function handleClearEvents() {
   el('eventLog').innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Журнал очищено на екрані</span></div>';
 }
 
-async function loadSpeedtestHistory() {
-  try {
-    const res = await fetch('/api/speedtest-history?limit=500');
-    const data = await res.json();
-    renderSpeedtest(data);
-  } catch (e) {
-    console.error('speedtest history load failed', e);
-  }
-}
-
-function renderSpeedtest(data) {
-  const latest = data.latest;
-  const sub = el('speedtestSub');
-  if (!data.enabled) {
-    sub.textContent = 'вимкнено (увімкнути на сторінці Налаштування)';
-  } else if (latest) {
-    sub.textContent = `останній тест: ${fmtTime(latest.ts)}, сервер: ${latest.server_name || '—'}`;
-  } else {
-    sub.textContent = 'ще не запускався';
-  }
-
-  const log = el('speedtestLog');
-  const rows = data.results || [];
-  if (rows.length === 0) {
-    log.innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Ще немає результатів</span></div>';
-    return;
-  }
-  log.innerHTML = rows.map(r => {
-    if (!r.success) {
-      return `<div class="log-row fail"><span class="time">${fmtTime(r.ts)}</span><span class="kind">помилка</span><span>${r.error || 'невідома помилка'}</span></div>`;
-    }
-    return `<div class="log-row ok"><span class="time">${fmtTime(r.ts)}</span><span class="kind">тест</span><span>⬇ ${r.download_mbps} · ⬆ ${r.upload_mbps} Мбіт/с · ping ${r.ping_ms}мс · ${r.server_name || ''}</span></div>`;
-  }).join('');
-}
-
 document.addEventListener('DOMContentLoaded', () => {
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   refreshEvents();
-  loadSpeedtestHistory();
   initCharts();
 });
 
@@ -82,10 +46,6 @@ async function loadCharts(hours) {
     if (!data.length) return;
 
     const timestamps = data.map(d => d.bucket_ts);
-    drawLineChart(el('chartThroughput'), [
-      { data: data.map(d => d.downlink_mbps), color: '#5ee6c4' },
-      { data: data.map(d => d.uplink_mbps), color: '#ffb454' },
-    ], { beginAtZero: true, timestamps });
     drawLineChart(el('chartPing'), [
       { data: data.map(d => d.ping_latency_ms), color: '#5ee6c4' },
       { data: data.map(d => d.ping_drop_ratio != null ? d.ping_drop_ratio * 100 : null), color: '#ff6b6b' },

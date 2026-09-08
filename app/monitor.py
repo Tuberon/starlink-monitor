@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import signal
-import threading
 import time
 from typing import Any, Callable, Optional
 
@@ -228,8 +227,6 @@ def build_backup_dict() -> dict[str, Any]:
         "telegram_chat_ids": chat_ids,
         "telegram_enabled": enabled,
         "auto_reboot_enabled": db.get_auto_reboot_enabled(),
-        "signature_phrases": telegram_notify.get_signature_phrases_text(),
-        "signature_phrases_enabled": telegram_notify.get_signature_phrases_enabled(),
         "dish_target_version": db.get_setting("dish_target_version"),
         "router_target_version": db.get_setting("router_target_version"),
         "known_devices": db.get_all_known_devices(),
@@ -838,13 +835,6 @@ class Watchdog:
         from app.telegram_bot import TelegramBot
         telegram_bot = TelegramBot()
         telegram_bot.start()
-
-        from app import speedtest_runner
-        speedtest_stop = threading.Event()
-        speedtest_thread = threading.Thread(
-            target=speedtest_runner.run_forever, args=(speedtest_stop,), daemon=True
-        )
-        speedtest_thread.start()
 
         # "Прогрів" psutil.cpu_percent: перший виклик без базового заміру
         # завжди повертає 0.0, тому робимо його тут і відкидаємо результат.

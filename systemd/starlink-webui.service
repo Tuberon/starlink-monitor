@@ -26,7 +26,7 @@ StandardError=journal
 # знайдено на реальному запуску - "Read-only file system" попередження
 # від apt, хоча сама файлова система Pi змонтована rw).
 ProtectSystem=strict
-ReadWritePaths=/var/lib/starlink-monitor /opt/starlink-monitor/app/signature_phrases.txt /etc/starlink-monitor /var/lib/apt/lists
+ReadWritePaths=/var/lib/starlink-monitor /etc/starlink-monitor /var/lib/apt/lists
 ProtectHome=true
 # CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback при
 # ручних reboot/shutdown-сповіщеннях, коли WiFi Starlink без інтернету) -

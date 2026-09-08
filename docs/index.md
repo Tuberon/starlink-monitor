@@ -32,7 +32,6 @@
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
 | `gpio_utils.py` | Спільна gpiod v1/v2-логіка читання GPIO (shutdown_button.py + display.py) |
-| `speedtest_runner.py` | Періодичний реальний speedtest (вимкнено за замовчуванням) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 | `vendor/starlink_grpc.py` | Vendored (не наш код) — gRPC-хелпери з sparky8512/starlink-grpc-tools, окрема ліцензія |

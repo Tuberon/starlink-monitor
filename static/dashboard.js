@@ -183,7 +183,6 @@ function _renderStatusData(latest) {
     el('mDown').innerHTML = `${latest.downlink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
     el('mUp').innerHTML = `${latest.uplink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
     el('mPing').innerHTML = `${latest.ping_latency_ms ?? '—'}<span class="unit">мс</span>`;
-    el('stDishDownload').innerHTML = `${latest.downlink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
 
     const dropPct = latest.ping_drop_ratio != null ? (latest.ping_drop_ratio * 100).toFixed(1) : null;
     el('mDrop').innerHTML = `${dropPct ?? '—'}<span class="unit">%</span>`;
@@ -239,20 +238,6 @@ function renderAlerts(latest) {
   body.innerHTML = alerts
     .map(a => `<span class="alert-chip">${ALERT_LABELS[a] || a}</span>`)
     .join('');
-}
-
-async function refreshHistory() {
-  try {
-    const res = await fetch('/api/history?limit=120');
-    const rows = await res.json();
-
-    drawLineChart(el('throughputChart'), [
-      { data: rows.map(r => r.downlink_mbps), color: '#5ee6c4' },
-      { data: rows.map(r => r.uplink_mbps), color: '#7aa2ff' },
-    ], { beginAtZero: true, timestamps: rows.map(r => r.ts) });
-  } catch (e) {
-    console.error('history refresh failed', e);
-  }
 }
 
 async function refreshSystemStatus() {
@@ -590,69 +575,11 @@ async function handleAutoRebootToggle(e) {
   }
 }
 
-async function loadSpeedtestSummary() {
-  try {
-    const res = await fetch('/api/speedtest-history?limit=1');
-    const data = await res.json();
-    const latest = data.latest;
-    el('stDownload').innerHTML = `${latest ? latest.download_mbps : '—'}<span class="unit">Мбіт/с</span>`;
-    el('stUpload').innerHTML = `${latest ? latest.upload_mbps : '—'}<span class="unit">Мбіт/с</span>`;
-    el('stPing').innerHTML = `${latest ? latest.ping_ms : '—'}<span class="unit">мс</span>`;
-
-    const sub = el('speedtestSub');
-    if (!data.enabled) {
-      sub.textContent = 'вимкнено (увімкнути на сторінці Налаштування)';
-    } else if (latest) {
-      sub.textContent = `останній тест: ${fmtTime(latest.ts)}, сервер: ${latest.server_name || '—'}`;
-    } else {
-      sub.textContent = 'ще не запускався';
-    }
-  } catch (e) {
-    console.error('speedtest summary load failed', e);
-  }
-}
-
-async function handleSpeedtestRun() {
-  const btn = el('speedtestRunBtn');
-  const hint = el('speedtestHint');
-  btn.disabled = true;
-  hint.textContent = 'Виконую тест (10-30с)...';
-  try {
-    const res = await fetch('/api/speedtest-run', { method: 'POST' });
-    const data = await res.json();
-    hint.textContent = data.success
-      ? `Готово: ⬇ ${data.download_mbps} Мбіт/с, ⬆ ${data.upload_mbps} Мбіт/с`
-      : `Помилка: ${data.error || 'невідома'}`;
-    loadSpeedtestSummary();
-  } catch (e) {
-    hint.textContent = 'Помилка мережі при запуску тесту';
-    console.error('speedtest run failed', e);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-let speedtestTickCounter = 0;
-const SPEEDTEST_REFRESH_EVERY_N_TICKS = 60; // раз на ~60с - дані оновлюються рідко
-
-let historyTickCounter = 0;
-const HISTORY_REFRESH_EVERY_N_TICKS = 5; // з REFRESH_MS=1000 це кожні ~5с -
-// достатньо часто для плавних графіків, але без зайвих запитів тих самих
-// 120 рядків між реальними новими опитуваннями dish (POLL_INTERVAL_SEC=10с)
-
 function tick() {
   refreshStatus();
-  historyTickCounter++;
-  if (historyTickCounter % HISTORY_REFRESH_EVERY_N_TICKS === 0) {
-    refreshHistory();
-  }
   refreshSystemStatus();
   refreshRouterStatus();
   refreshEvents();
-  speedtestTickCounter++;
-  if (speedtestTickCounter % SPEEDTEST_REFRESH_EVERY_N_TICKS === 0) {
-    loadSpeedtestSummary();
-  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -663,9 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('checkUpdatesBtn').addEventListener('click', handleCheckUpdates);
   el('aptCheckBtn').addEventListener('click', handleAptCheck);
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);
-  el('speedtestRunBtn').addEventListener('click', handleSpeedtestRun);
   loadConfigFlags();
-  loadSpeedtestSummary();
   tick();
 
   // Вкладка згорнута/неактивна - опитування раз на 30с замість

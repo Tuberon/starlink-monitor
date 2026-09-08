@@ -110,12 +110,6 @@ def api_status() -> ResponseReturnValue:
     return jsonify({"latest": latest, "uptime_24h_pct": uptime_pct})
 
 
-@app.route("/api/history")
-def api_history() -> ResponseReturnValue:
-    limit = min(int(request.args.get("limit", 500)), 5000)
-    return jsonify(db.get_recent_metrics(limit))
-
-
 @app.route("/api/metrics-chart")
 def api_metrics_chart() -> ResponseReturnValue:
     try:
@@ -124,28 +118,6 @@ def api_metrics_chart() -> ResponseReturnValue:
         hours = 24
     hours = min(max(hours, 0.1), 24 * config.HISTORY_RETENTION_DAYS)
     return jsonify(db.get_metrics_chart_data(hours))
-
-
-@app.route("/api/speedtest-history")
-def api_speedtest_history() -> ResponseReturnValue:
-    limit = min(int(request.args.get("limit", 50)), 500)
-    return jsonify({
-        "results": db.get_recent_speedtest_results(limit),
-        "latest": db.get_latest_speedtest_result(),
-        "enabled": config.SPEEDTEST_ENABLED,
-    })
-
-
-@app.route("/api/speedtest-run", methods=["POST"])
-def api_speedtest_run() -> ResponseReturnValue:
-    """Ручний одноразовий speedtest на вимогу користувача - виконується
-    синхронно (10-30с), бо це усвідомлена дія користувача, який готовий
-    почекати на результат, а не фоновий цикл, що не повинен блокувати
-    щось інше."""
-    from app import speedtest_runner
-    result = speedtest_runner.run_once()
-    db.insert_speedtest_result(result)
-    return jsonify(result)
 
 
 @app.route("/api/events")
@@ -428,36 +400,6 @@ def api_telegram_test() -> ResponseReturnValue:
     return jsonify({"success": False, "message": msg})
 
 
-@app.route("/api/signature-phrases")
-def api_get_signature_phrases() -> ResponseReturnValue:
-    return jsonify({
-        "text": telegram_notify.get_signature_phrases_text(),
-        "enabled": telegram_notify.get_signature_phrases_enabled(),
-    })
-
-
-@app.route("/api/signature-phrases", methods=["POST"])
-def api_set_signature_phrases() -> ResponseReturnValue:
-    payload = request.get_json(silent=True) or {}
-    text = payload.get("text", "")
-    ok, msg = telegram_notify.set_signature_phrases_text(text)
-    db.insert_event("signature_phrases_updated", f"Фрази підпису оновлено: {msg}", success=ok)
-    return jsonify({"success": ok, "message": msg})
-
-
-@app.route("/api/signature-phrases-enabled", methods=["POST"])
-def api_set_signature_phrases_enabled() -> ResponseReturnValue:
-    payload = request.get_json(silent=True) or {}
-    enabled = bool(payload.get("enabled"))
-    telegram_notify.set_signature_phrases_enabled(enabled)
-    db.insert_event(
-        "signature_phrases_toggled",
-        f"Додавання фраз підпису: {'увімкнено' if enabled else 'вимкнено'}",
-        success=True,
-    )
-    return jsonify({"success": True, "enabled": enabled})
-
-
 @app.route("/api/settings-backup")
 def api_settings_backup() -> ResponseReturnValue:
     """Повертає всі налаштування одним JSON-файлом для завантаження -
@@ -491,15 +433,6 @@ def api_settings_restore() -> ResponseReturnValue:
         if "auto_reboot_enabled" in payload:
             db.set_auto_reboot_enabled(bool(payload["auto_reboot_enabled"]))
             restored.append("auto-reboot")
-
-        if "signature_phrases" in payload:
-            ok, msg = telegram_notify.set_signature_phrases_text(payload["signature_phrases"])
-            if ok:
-                restored.append("фрази підпису")
-
-        if "signature_phrases_enabled" in payload:
-            telegram_notify.set_signature_phrases_enabled(bool(payload["signature_phrases_enabled"]))
-            restored.append("перемикач фраз")
 
         if payload.get("dish_target_version"):
             db.set_setting("dish_target_version", payload["dish_target_version"])

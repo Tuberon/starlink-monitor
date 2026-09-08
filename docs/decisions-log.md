@@ -2285,3 +2285,162 @@ name`): обидва інтерфейси тепер реально знаход
 тест — два WiFi-профілі одночасно (неоднозначний випадок) — функція
 коректно відмовляється вгадувати (`exit 1`), не застосовує IP-
 налаштування до випадкового профілю.
+
+## Видалено функціонал "Фрази підпису" повністю
+
+**Запит користувача**: видалити функціонал фраз підпису (випадкова
+фраза в кінці кожного Telegram-повідомлення).
+
+**Обсяг видалення** (10 файлів):
+- `app/telegram_notify.py` — 5 функцій (`_random_signature_phrase`,
+  `get/set_signature_phrases_text`, `get/set_signature_phrases_
+  enabled`, `append_signature`), константа `SIGNATURE_PHRASES_PATH`,
+  імпорти `os`/`random` (більше ніде не використовувались у файлі)
+- `app/telegram_bot.py` — 2 виклики `append_signature()` (`_send()`,
+  `_cmd_reboot_request()`)
+- `app/monitor.py` — 2 поля з `build_backup_dict()`
+- `app/db.py` — `BACKUP_FORMAT_VERSION` 2→3 (структура backup
+  змінилась)
+- `app/webapp.py` — 3 API-endpoints (`/api/signature-phrases` GET/
+  POST, `/api/signature-phrases-enabled`), 2 блоки restore-логіки
+  (інакше викликали б `AttributeError` на видалені функції)
+- `app/signature_phrases.txt` — файл видалено
+- `scripts/install.sh` — логіка збереження/відновлення файлу при
+  `update.sh` (2 блоки, `SAVED_PHRASES` змінна, `RSYNC_EXCLUDES`)
+- `systemd/starlink-webui.service` — прибрано з `ReadWritePaths`
+- `static/settings.js` — 4 функції, event listeners, init-виклики
+  (2 місця — основний DOMContentLoaded і restore-обробник)
+- `templates/settings.html` — ціла UI-панель
+- Документація: README (2 абзаци), `architecture.md` (3 місця),
+  `plan.md` (3 checklist-рядки оновлено)
+
+**`docs/decisions-log.md` навмисно НЕ редагувався** для старих
+записів про цей функціонал (баг `signature_phrases.txt read-only`,
+реалізація `append_signature()`) — навмисний історичний журнал,
+зберігає повну історію проєкту, включно з уже видаленими фічами.
+
+**Перевірено живими тестами** (не лише синтаксисом): `/settings`
+реально рендериться без жодного `signaturePhrases`-елемента; усі 3
+видалені API-endpoints реально повертають 404; новий backup реально
+не містить `signature_phrases`-полів і має `format_version=3`;
+**restore СТАРОГО backup-файлу (v2, із застарілими signature-полями)
+не падає** — зайві поля в payload просто ігноруються (JSON-restore
+явно перевіряє `"key" in payload` для кожного поля, а не ітерує
+весь payload), критично для зворотної сумісності зі старими backup-
+файлами користувачів.
+
+**Перевірено**: 189 тестів (жоден не покривав видалений функціонал
+напряму, тому пройшли без модифікацій), `mypy` чисто, стійкість до
+рандомізованого порядку.
+
+## Видалено функціонал "Реальний speedtest" повністю
+
+**Запит користувача**: видалити функціонал speedtest (реальний вимір
+швидкості через `speedtest-cli`, окремий фоновий потік + ручний
+запуск + панель порівняння із заявленою dish-швидкістю).
+
+**Обсяг видалення** (16 файлів):
+- `app/speedtest_runner.py` — модуль видалено повністю (129 рядків)
+- `app/monitor.py` — прибрано запуск speedtest-потоку з `run_forever()`,
+  зайвий `import threading` (більше ніде не використовувався)
+- `app/webapp.py` — видалено 2 API-endpoints (`/api/speedtest-history`,
+  `/api/speedtest-run`)
+- `app/db.py` — видалено схему таблиці `speedtest_results`, її індекс,
+  рядок у `prune_old()`, 3 функції (`insert_speedtest_result`,
+  `get_recent_speedtest_results`, `get_latest_speedtest_result`)
+- `app/config.py`/`config_editor.py` — видалено `SPEEDTEST_ENABLED`/
+  `SPEEDTEST_INTERVAL_SEC`
+- `requirements.txt` — видалено `speedtest-cli==2.1.3`
+- `mypy.ini` — видалено зайву `[mypy-speedtest]` type-stub секцію
+  (виявлено через попередження mypy "unused section" одразу після
+  видалення пакета, не залишено непоміченим)
+- `static/dashboard.js`/`stats.js` — видалено 4 функції, лічильники
+  тіків, event listeners, оновлено `tick()`/init
+- `templates/index.html`/`stats.html` — видалено 2 UI-панелі
+- Документація: README (5 місць, включно з anchor-посиланням у
+  "Зміст" — заголовок розділу змінився після видалення пункту),
+  `architecture.md` (3 місця, цілий розділ "Реальний speedtest"),
+  `plan.md`, `index.md`
+
+**Реальна проблема, знайдена ДО живого тестування (не постфактум)**:
+HTML-елемент `stDishDownload` видалявся разом із цілою панеллю
+"Заявлена vs реальна швидкість", але JS-рядок у `dashboard.js`
+(`el('stDishDownload').innerHTML = ...`), що оновлював цей елемент
+дублюючим значенням `downlink_mbps` (та сама метрика вже показана в
+`mDown` в основній панелі), лишався — спричинило б `TypeError:
+Cannot set properties of null` у браузері при кожному оновленні
+дашборду. Знайдено явним пошуком (`grep` по всіх JS-файлах на
+конкретний id елемента) ПЕРЕД тестуванням, не через помилку в
+консолі браузера.
+
+**`docs/decisions-log.md` навмисно НЕ редагувався** для старих
+записів про цей функціонал — навмисний історичний журнал.
+
+**Перевірено живими тестами** (не лише синтаксисом): усі 3 сторінки
+дашборду реально рендеряться без жодного слідy `speedtest` у HTML;
+обидва видалені API-endpoints реально повертають 404; `init_db()`
+реально виконує оновлену SQL-схему без помилок.
+
+**Перевірено**: 189 тестів (жоден не покривав видалений функціонал
+напряму, пройшли без модифікацій), `mypy` чисто (без залишкового
+попередження про unused mypy.ini-секцію), тристороння звірка (53
+параметри, було 55, 0 розбіжностей), стійкість до рандомізованого
+порядку.
+
+## Видалено графік "Пропускна здатність" (throughput), метрики залишено
+
+**Запит користувача**: видалити графік та пов'язаний функціонал
+"Пропускна здатність" — на відміну від двох попередніх видалень
+(фрази підпису, speedtest), тут потрібне було точне розмежування:
+`downlink_mbps`/`uplink_mbps` — фундаментальні поля dish-статистики
+(з реального Starlink API), не окремий ізольований функціонал, тому
+видалено САМЕ візуалізацію (графік), а не самі метрики.
+
+**Свідомо залишено недоторканим**: `mDown`/`mUp` (поточні числові
+значення в панелі "Метрики" на головній), поля `downlink_mbps`/
+`uplink_mbps` у `DishStatus`-dataclass, схемі БД, `get_status()`-
+парсингу, `get_metrics_chart_data()`. Перевірено індивідуально: 3
+тестові файли (`test_db.py`, `test_starlink_client.py`, `test_
+display.py`) зі згадками цих полів тестують загальний dish-парсинг/
+downsampling/display-логіку, не графік-специфічний UI — жодного з
+них не чіпав.
+
+**Обсяг видалення**:
+- `static/dashboard.js` — функція `refreshHistory()` (єдина мета —
+  малювати `throughputChart`), лічильник тіків (`historyTickCounter`/
+  `HISTORY_REFRESH_EVERY_N_TICKS`), виклик у `tick()`
+- `templates/index.html` — панель "Пропускна здатність" з
+  `throughputChart`
+- `app/webapp.py` — `/api/history` endpoint (перевірено: більше
+  ніде не використовувався жодним frontend-кодом після видалення
+  `refreshHistory()`)
+- `app/db.py` — `get_recent_metrics()` (єдиний споживач був видалений
+  endpoint; `_parse_metric_row()`-helper, який вона використовувала,
+  залишений — потрібен деінде, `get_latest_metric()`)
+- `static/stats.js`/`templates/stats.html` — **лише** throughput-
+  частина блоку "Тренди" (`chartThroughput`), точково, зі збереженням
+  сусідніх `chartPing` та `chartObstruction` у тому самому `<div
+  class="panel">` з єдиним перемикачем періоду
+- `static/common.js` — оновлено застарілий коментар (згадка
+  `throughputChart` як приклад використання `drawLineChart()`)
+- Документація: README (не потребував правок — наявні згадки вже
+  загальні), `architecture.md` (окрема секція про `throughputChart`
+  видалена, 2 суміжні описи `beginAtZero`/списку графіків на /stats
+  скориговані; історичні ілюстративні приклади з "throughput" у
+  поясненні percentile-scaling/label-overlap алгоритмів залишені
+  без змін — не твердження про поточний UI, а історичний контекст
+  чому механізм реалізовано), `plan.md` (застаріле "next steps"
+  твердження "dish має графіки throughput/latency" виправлено на
+  "latency/obstruction")
+
+**Перевірено живими тестами** (не лише синтаксисом): обидві сторінки
+(`/`, `/stats`) реально рендеряться без жодного слідy `throughputChart`
+/`chartThroughput`/"Пропускна здатність"; `/api/history` реально
+повертає 404; контрольний тест — `chartPing`/`chartObstruction`
+реально залишились присутні в HTML `/stats` (підтверджує точність
+видалення — не зачепило сусідні графіки в тому самому блоці).
+
+**Перевірено**: 189 тестів (жоден не покривав видалений графік-код
+напряму, пройшли без модифікацій), `mypy` чисто, тристороння звірка
+(53 параметри, без змін — цей функціонал не мав власних env-
+параметрів), стійкість до рандомізованого порядку.
