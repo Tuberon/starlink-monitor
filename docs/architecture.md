@@ -31,8 +31,9 @@ router — різні enum з різними назвами станів).
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення (кешовано) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
+| `activity_led.py` | Опційний LED активності SD-картки - блимає при кожному commit у БД (не окремий процес, частина monitor.py) |
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
-| `gpio_utils.py` | Спільна gpiod v1/v2-сумісна логіка читання GPIO-входу (shutdown_button.py + display.py) |
+| `gpio_utils.py` | Спільна gpiod v1/v2-сумісна логіка читання GPIO-входу (shutdown_button.py + display.py) і запису GPIO-виходу (activity_led.py) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 
@@ -491,6 +492,43 @@ NOPASSWD: ALL`), записати подію в журнал, надіслати
 чи `webapp.py` — свідома ізоляція, бо GPIO-доступ вимагає групу
 `gpio` і `python3-libgpiod` (системний пакет, не pip), а не всі
 установки мають фізичну кнопку.
+
+## LED активності SD-картки (GPIO)
+
+На відміну від кнопки/дисплея — **не окремий процес**, частина
+`monitor.py` (watchdog-цикл), бо реагує на кожен реальний commit у
+SQLite, а не на зовнішню подію на власному таймері. `app/activity_
+led.py:ActivityLed` — інкапсулює GPIO-стан; `init()` викликається раз
+на старті `run_forever()`, реєструє `blink` як callback через
+`db.set_activity_callback()`. `app/db.py:get_conn()` викликає цей
+callback **лише** після успішного `conn.commit()` (не при винятку/
+rollback — LED не має блимати на провалених записах).
+
+**Лише watchdog-процес ініціалізує LED, не `webapp.py`** — уникає
+конфлікту двох процесів за один ексклюзивний GPIO-запит (gpiod
+character-device API не дозволяє двом процесам одночасно тримати
+запит на ту саму лінію). `webapp.py` не імпортує `activity_led`
+взагалі.
+
+**Неблокуючий `blink()`** — вмикає LED синхронно, вимкнення
+відкладається через `threading.Timer(blink_sec, ...)` (daemon-потік,
+не заважає завершенню процесу) — сам запис у БД не отримує додаткової
+затримки. Послідовні `blink()`-виклики (напр. dish-flush і system_
+metrics в одному циклі) скасовують попередній таймер (`Timer.cancel()`)
+перед стартом нового — LED лишається рівно увімкненим між ними, не
+блимає нервово. Перевірено живим тестом: два `blink()` з малим
+інтервалом дають послідовність `[1, 1, 0]` (не `[1, 0, 1, 0]`).
+
+`gpio_utils.open_output_line()` — симетрична до `open_input_line()`
+(gpiod v1/v2-сумісність), але `Direction.OUTPUT`/`LINE_REQ_DIR_OUT`
+замість `INPUT`, і `set_value(int)` замість `get_value()`.
+
+`ACTIVITY_LED_PIN=0` (дефолт, вимкнено) — той самий принцип opt-in,
+що кнопка й дисплей. `starlink-monitor.service` отримав
+`SupplementaryGroups=gpio` (раніше був відсутній - монітор не
+потребував GPIO до цієї фічі), `install.sh` уже додавав `RUN_USER`
+до групи `gpio` для кнопки/дисплея, тому додаткових кроків
+встановлення не потрібно.
 
 - Увімкнено за замовчуванням на `GPIO27` (`SHUTDOWN_BUTTON_GPIO_PIN=27`);
   `0` вимикає — сервіс одразу виходить з кодом 0, не помилка

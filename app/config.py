@@ -144,6 +144,14 @@ WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 # GPIO BCM pin для фізичної кнопки виключення; 0 = вимкнено, 27 = дефолт
 SHUTDOWN_BUTTON_GPIO_PIN = int(os.environ.get("STARLINK_SHUTDOWN_BUTTON_PIN", "27"))
 SHUTDOWN_BUTTON_HOLD_SEC = float(os.environ.get("STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "3"))
+# Додатковий GPIO-світлодіод, що коротко блимає при кожному реальному
+# записі в SQLite (dish-метрики, system_metrics, events, router-
+# status, backup, VACUUM) - візуальна індикація активності SD-картки.
+# Вимкнено за замовчуванням (0) - опційна периферія, як shutdown-
+# кнопка й TFT-дисплей; дефолт 17 - вільний GPIO-пін, не перетинається
+# з SHUTDOWN_BUTTON_GPIO_PIN (27) чи DISPLAY_*_PIN (8/25/24/18).
+ACTIVITY_LED_PIN = int(os.environ.get("STARLINK_ACTIVITY_LED_PIN", "0"))
+ACTIVITY_LED_BLINK_MS = int(os.environ.get("STARLINK_ACTIVITY_LED_BLINK_MS", "50"))
 # Як часто перевіряти стан GPIO-піна кнопки виключення - окремий від
 # DISPLAY_BUTTON_POLL_INTERVAL_SEC нижче, бо це РІЗНІ сервіси
 # (shutdown_button.py, окремий від display.py), навіть якщо дефолт

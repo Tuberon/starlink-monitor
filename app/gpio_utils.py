@@ -78,6 +78,60 @@ def open_input_line(pin: int, consumer: str) -> tuple[Callable[[], int], Callabl
     return _init_line_v1(gpiod, chip_path, pin, consumer)
 
 
+def _init_output_line_v2(
+    gpiod: Any, chip_path: str, pin: int, consumer: str
+) -> tuple[Callable[[int], None], Callable[[], None]]:
+    """gpiod >= 2.0: той самий request_lines(), але Direction.OUTPUT
+    замість INPUT - без Bias (не потрібен для виходу)."""
+    from gpiod.line import Direction, Value
+
+    request = gpiod.request_lines(
+        chip_path,
+        consumer=consumer,
+        config={pin: gpiod.LineSettings(direction=Direction.OUTPUT)},
+    )
+
+    def set_value(value: int) -> None:
+        request.set_value(pin, Value.ACTIVE if value else Value.INACTIVE)
+
+    def release() -> None:
+        request.release()
+
+    return set_value, release
+
+
+def _init_output_line_v1(
+    gpiod: Any, chip_path: str, pin: int, consumer: str
+) -> tuple[Callable[[int], None], Callable[[], None]]:
+    """gpiod < 2.0 (застарілий API): LINE_REQ_DIR_OUT замість _IN."""
+    chip = gpiod.Chip(chip_path)
+    line = chip.get_line(pin)
+    line.request(consumer=consumer, type=gpiod.LINE_REQ_DIR_OUT)
+
+    def set_value(value: int) -> None:
+        line.set_value(1 if value else 0)
+
+    def release() -> None:
+        line.release()
+
+    return set_value, release
+
+
+def open_output_line(pin: int, consumer: str) -> tuple[Callable[[int], None], Callable[[], None]]:
+    """Відкриває GPIO-пін як цифровий вихід (сумісно з gpiod v1 і v2) -
+    симетрична до open_input_line(), для LED/реле/іншої периферії, яку
+    МИ вмикаємо, а не читаємо. Повертає (set_value, release) або
+    кидає виняток, якщо gpiod не встановлено чи ініціалізація
+    провалилась - виклик має сам обробити except."""
+    import gpiod
+
+    chip_path = find_gpio_chip()
+    is_v2 = not hasattr(gpiod.Chip, "get_line")
+    if is_v2:
+        return _init_output_line_v2(gpiod, chip_path, pin, consumer)
+    return _init_output_line_v1(gpiod, chip_path, pin, consumer)
+
+
 class ButtonPressTracker:
     """Відстежує натискання/утримання кнопки (pull-up, LOW=натиснуто) -
     чиста, стейтфул структура без залежності від реального GPIO, легко

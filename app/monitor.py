@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 import psutil
 
-from app import config, config_editor, db, telegram_notify
+from app import activity_led, config, config_editor, db, telegram_notify
 from app.labels import ALERT_LABELS, ROUTER_ALERT_LABELS, ROUTER_UPDATE_STATE_LABELS, UPDATE_STATE_LABELS
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
@@ -815,6 +815,14 @@ class Watchdog:
         db.init_db()
         logger.info("Starlink watchdog запущено. Опитування кожні %d с.", config.POLL_INTERVAL_SEC)
 
+        # LED активності SD-картки (опційно, вимкнено за замовчуванням) -
+        # лише watchdog-процес (не webapp.py) ініціалізує GPIO-пін,
+        # щоб уникнути конфлікту двох процесів за один і той самий
+        # ексклюзивний GPIO-запит.
+        led = activity_led.ActivityLed(config.ACTIVITY_LED_PIN, config.ACTIVITY_LED_BLINK_MS)
+        if led.init():
+            db.set_activity_callback(led.blink)
+
         # Graceful shutdown: flush буфера dish-метрик ПЕРЕД завершенням
         # процесу - інакше звичайний "sudo systemctl restart" (напр.
         # під час update.sh) втрачав би до DISH_METRICS_BATCH_INTERVAL_
@@ -824,6 +832,7 @@ class Watchdog:
         def _handle_shutdown_signal(signum: int, frame: Any) -> None:
             logger.info("Отримано сигнал завершення (%d) - flush буфера метрик перед виходом", signum)
             self.flush_metrics_buffer()
+            led.close()
             raise SystemExit(0)
 
         signal.signal(signal.SIGTERM, _handle_shutdown_signal)

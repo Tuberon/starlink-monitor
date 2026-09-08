@@ -141,3 +141,50 @@ def test_check_integrity_detects_fully_invalid_file(db_path):
     ok, message = db.check_integrity()
     assert ok is False
     assert "не є валідною SQLite-базою" in message
+
+
+# ---- set_activity_callback() - хук для LED активності SD-картки ----
+
+def test_activity_callback_called_after_successful_commit(db_path):
+    calls = []
+    db.set_activity_callback(lambda: calls.append(1))
+    try:
+        db.insert_event("test", "тест", success=True)
+        assert len(calls) >= 1, "callback мав спрацювати після успішного commit"
+    finally:
+        db.set_activity_callback(None)
+
+
+def test_activity_callback_not_called_on_exception(db_path):
+    """Реальна мета: LED НЕ має блимати при провалених/rollback
+    транзакціях - лише при реально успішному записі."""
+    calls = []
+    db.set_activity_callback(lambda: calls.append(1))
+    try:
+        try:
+            with db.get_conn() as conn:
+                conn.execute("SELECT * FROM nonexistent_table")
+        except Exception:
+            pass
+        assert calls == [], "callback НЕ мав спрацювати при винятку"
+    finally:
+        db.set_activity_callback(None)
+
+
+def test_activity_callback_exception_does_not_break_write(db_path):
+    """Якщо сам callback провалюється (напр. LED-бібліотека мала
+    проблему) - запис у БД МАЄ все одно пройти успішно."""
+    db.set_activity_callback(lambda: (_ for _ in ()).throw(RuntimeError("LED зламався")))
+    try:
+        db.insert_event("test", "запис попри зламаний callback", success=True)
+        events = db.get_recent_events(10)
+        assert any(e["message"] == "запис попри зламаний callback" for e in events)
+    finally:
+        db.set_activity_callback(None)
+
+
+def test_no_activity_callback_is_safe_default(db_path):
+    """Дефолтний стан (None) - запис МАЄ працювати звично, без жодної
+    помилки через відсутність callback."""
+    db.set_activity_callback(None)
+    db.insert_event("test", "звичайний запис без LED", success=True)

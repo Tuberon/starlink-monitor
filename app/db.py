@@ -5,7 +5,7 @@ import re
 import sqlite3
 import time
 from contextlib import contextmanager
-from typing import Any, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional
 
 from app import config
 
@@ -15,6 +15,18 @@ from app import config
 # (webapp.py вже імпортує monitor, тому monitor не може імпортувати
 # щось із webapp.py).
 BACKUP_FORMAT_VERSION = 3
+
+# Опційний callback для LED активності SD-картки (app/activity_led.py),
+# викликається get_conn() після кожного успішного commit. None за
+# замовчуванням - жодних накладних витрат, якщо LED вимкнено чи не
+# зареєстрований (webapp.py-процес свідомо цього не робить, лише
+# watchdog-процес monitor.py, де відбувається основний обсяг записів).
+_activity_callback: Optional[Callable[[], None]] = None
+
+
+def set_activity_callback(callback: Optional[Callable[[], None]]) -> None:
+    global _activity_callback
+    _activity_callback = callback
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metrics (
@@ -138,6 +150,17 @@ def get_conn() -> Iterator[sqlite3.Connection]:
     try:
         yield conn
         conn.commit()
+        # Лише ПІСЛЯ успішного commit (не при винятку/rollback) -
+        # опційний хук для LED активності SD-картки (app/activity_led.py).
+        # Реєструється watchdog-процесом через set_activity_callback();
+        # без реєстрації (LED вимкнено чи це webapp.py-процес, який не
+        # ініціалізує LED) - _activity_callback лишається None, немає
+        # накладних витрат.
+        if _activity_callback is not None:
+            try:
+                _activity_callback()
+            except Exception:
+                pass
     finally:
         conn.close()
 

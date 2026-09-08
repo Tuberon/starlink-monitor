@@ -7,6 +7,13 @@ Wants=network-online.target
 Type=simple
 User=__RUN_USER__
 Group=__RUN_USER__
+# gpio-група потрібна для доступу до /dev/gpiochip* (LED активності
+# SD-картки, опційно, ACTIVITY_LED_PIN=0 за замовчуванням) - той
+# самий підхід, що вже в starlink-shutdown-button.service/starlink-
+# display.service. Сумісно з NoNewPrivileges=true нижче: supplementary
+# groups - частина початкового стану процесу, який systemd встановлює
+# ДО запуску, не runtime privilege escalation.
+SupplementaryGroups=gpio
 WorkingDirectory=/opt/starlink-monitor
 Environment=PYTHONUNBUFFERED=1
 Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor

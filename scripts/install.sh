@@ -112,7 +112,7 @@ if [[ "$MODE" == "install" ]]; then
     echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
   fi
 
-  echo "==> Додаю $RUN_USER до групи gpio (доступ до /dev/gpiochip* для кнопки виключення/дисплея)"
+  echo "==> Додаю $RUN_USER до групи gpio (доступ до /dev/gpiochip* для кнопки виключення/дисплея/LED активності)"
   usermod -aG gpio "$RUN_USER" 2>/dev/null || echo "!! Група gpio відсутня в системі - пропускаю (кнопка виключення не працюватиме без неї)"
 
   echo "==> Додаю $RUN_USER до групи spi (доступ до /dev/spidev* для фізичного TFT-дисплея)"

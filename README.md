@@ -4,6 +4,7 @@
 
 **Зміст**: [Що робить](#-що-робить) · [Схема підключення](#-схема-підключення-опційне-обладнання) ·
 [GPIO-кнопка](#-фізична-кнопка-виключення-gpio) ·
+[LED активності](#-led-активності-sd-картки-gpio) ·
 [TFT-дисплей](#️-фізичний-tft-дисплей-st7789-spi) ·
 [Telegram](#-telegram-сповіщення-та-команди) · [Backup](#-backuprestore-налаштувань) ·
 [healthz/PWA](#-додатково-healthz-pwa) · [Надійність](#️-надійність) ·
@@ -48,6 +49,9 @@
            │ Кнопка          │  │ USB-Ethernet  │
            │ вимк./підсвітка │  │ дротовий eth0 │
            └─────────────────┘  └───────────────┘
+
+  (не показано: додатковий LED активності SD-картки — GPIO17 + GND,
+   опційно, деталі нижче)
 ```
 
 TFT-дисплей і кнопка — опційні (`STARLINK_DISPLAY_ENABLED=0` за
@@ -74,6 +78,24 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 Обробляється тоді всередині `starlink-display.service`, а
 `starlink-shutdown-button.service` сам себе вимикає (щоб не
 конкурувати за той самий GPIO-пін).
+
+## 💡 LED активності SD-картки (GPIO)
+
+Додатковий світлодіод, що коротко блимає при кожному реальному
+записі в SQLite (dish-метрики, системні метрики, журнал подій,
+статус router, автоматичний backup, VACUUM) — візуальна індикація
+активності, аналогічна вбудованому activity-LED настільних дисків.
+Вимкнено за замовчуванням (`STARLINK_ACTIVITY_LED_PIN=0`, той самий
+принцип, що кнопка й дисплей — опційна периферія). Підключення: LED
+(з резистором ~330Ω) між обраним GPIO-піном (BCM) і GND. Увімкнення —
+у `/etc/starlink-monitor/env`:
+```
+STARLINK_ACTIVITY_LED_PIN=17
+STARLINK_ACTIVITY_LED_BLINK_MS=50
+```
+потім `sudo systemctl restart starlink-monitor.service`. Обробляється
+лише watchdog-процесом (не веб-дашбордом) — уникає конфлікту двох
+процесів за один ексклюзивний GPIO-запит.
 
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
@@ -378,6 +400,8 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
 | `STARLINK_SHUTDOWN_BUTTON_PIN` | `27` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
 | `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
+| `STARLINK_ACTIVITY_LED_PIN` | `0` | GPIO-пін LED активності SD-картки (0=вимк.) |
+| `STARLINK_ACTIVITY_LED_BLINK_MS` | `50` | тривалість спалаху LED активності, мс |
 | `STARLINK_DISPLAY_ENABLED` | `0` | фізичний TFT-дисплей статусу (0/1) |
 | `STARLINK_DISPLAY_SPI_CS_PIN` | `8` | дисплей: GPIO-пін CS (bit-banged) |
 | `STARLINK_DISPLAY_DC_PIN` | `25` | дисплей: GPIO-пін DC |

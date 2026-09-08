@@ -59,6 +59,8 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_WEBUI_PORT", "type": "int", "default": "8080", "label": "Порт веб-інтерфейсу"},
     {"key": "STARLINK_SHUTDOWN_BUTTON_PIN", "type": "int", "default": "27", "label": "GPIO-пін кнопки виключення (0=вимк.)"},
     {"key": "STARLINK_SHUTDOWN_BUTTON_HOLD_SEC", "type": "float", "default": "3", "label": "Утримання кнопки перед вимкненням, сек"},
+    {"key": "STARLINK_ACTIVITY_LED_PIN", "type": "int", "default": "0", "label": "GPIO-пін LED активності SD-картки (0=вимк.)"},
+    {"key": "STARLINK_ACTIVITY_LED_BLINK_MS", "type": "int", "default": "50", "label": "Тривалість спалаху LED активності, мс"},
     {"key": "STARLINK_DISPLAY_ENABLED", "type": "bool", "default": "0", "label": "Фізичний TFT-дисплей статусу (0/1)"},
     {"key": "STARLINK_DISPLAY_SPI_CS_PIN", "type": "int", "default": "8", "label": "Дисплей: GPIO-пін CS (bit-banged, не апаратний CE0/CE1)"},
     {"key": "STARLINK_DISPLAY_DC_PIN", "type": "int", "default": "25", "label": "Дисплей: GPIO-пін DC"},

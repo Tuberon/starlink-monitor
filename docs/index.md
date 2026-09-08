@@ -30,8 +30,9 @@
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
+| `activity_led.py` | Опційний LED активності SD-картки, частина monitor.py (не окремий процес) |
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
-| `gpio_utils.py` | Спільна gpiod v1/v2-логіка читання GPIO (shutdown_button.py + display.py) |
+| `gpio_utils.py` | Спільна gpiod v1/v2-логіка читання GPIO (shutdown_button.py + display.py) і запису GPIO (activity_led.py) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
 | `vendor/starlink_grpc.py` | Vendored (не наш код) — gRPC-хелпери з sparky8512/starlink-grpc-tools, окрема ліцензія |
@@ -87,8 +88,9 @@
 | `conftest.py` | Спільні fixtures: `db_path` (ізольована тимчасова БД), `watchdog` (з mock-ованим `_notify`) |
 | `test_monitor.py` | Групування reboot-спаму, дедублікація target-версій, `_maybe_reboot()` |
 | `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
-| `test_db.py` | Downsampling метрик, безшовність графіка через межу cutoff |
+| `test_db.py` | Downsampling метрик, `check_integrity()`, callback-хук LED активності |
 | `test_display.py` | Виявлення зміни update_state (flash-підсвітка), auto-off логіка |
+| `test_activity_led.py` | Неблокуюче blink/close, послідовні виклики без блимання, callback-помилки не поширюються |
 | `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити; retry лише для мережевих помилок, не HTTP-рівня |
 | `test_telegram_bot.py` | /checkupdates команда - диспетчеризація, known_devices, target-версії |
 | `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |
