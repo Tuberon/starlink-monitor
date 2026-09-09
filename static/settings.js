@@ -202,14 +202,30 @@ async function loadEnvConfig() {
   try {
     const res = await fetch('/api/env-config');
     const data = await res.json();
-    form.innerHTML = data.params.map(p => {
-      const value = p.overridden ? p.current : '';
-      const placeholder = `за замовчуванням: ${p.default}${p.overridden ? '' : ' (активне зараз)'}`;
-      return `
-        <label class="tg-label" for="env_${p.key}">${p.label}</label>
-        <input class="tg-input" type="text" id="env_${p.key}" data-key="${p.key}"
-               value="${value}" placeholder="${placeholder}">
-      `;
+
+    // Групуємо за category, зберігаючи порядок першої появи кожної
+    // категорії в даних з бекенду (не сортуємо алфавітно - порядок
+    // з config_editor.py вже логічний: monitoring, reliability,
+    // telegram, gpio).
+    const groups = new Map();
+    for (const p of data.params) {
+      const cat = p.category || 'інше';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(p);
+    }
+
+    form.innerHTML = Array.from(groups.entries()).map(([cat, params]) => {
+      const label = (data.category_labels && data.category_labels[cat]) || cat;
+      const fields = params.map(p => {
+        const value = p.overridden ? p.current : '';
+        const placeholder = `за замовчуванням: ${p.default}${p.overridden ? '' : ' (активне зараз)'}`;
+        return `
+          <label class="tg-label" for="env_${p.key}">${p.label}</label>
+          <input class="tg-input" type="text" id="env_${p.key}" data-key="${p.key}"
+                 value="${value}" placeholder="${placeholder}">
+        `;
+      }).join('');
+      return `<h3 class="env-category-head">${label}</h3>${fields}`;
     }).join('');
   } catch (e) {
     form.innerHTML = '<span class="hint">Помилка завантаження параметрів</span>';

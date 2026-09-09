@@ -452,7 +452,10 @@ def api_settings_restore() -> ResponseReturnValue:
 
 @app.route("/api/env-config")
 def api_get_env_config() -> ResponseReturnValue:
-    return jsonify({"params": config_editor.read_current_values()})
+    return jsonify({
+        "params": config_editor.read_current_values(),
+        "category_labels": config_editor.CATEGORY_LABELS,
+    })
 
 
 @app.route("/api/env-config", methods=["POST"])

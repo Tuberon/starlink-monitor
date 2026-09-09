@@ -360,6 +360,11 @@
     letter-spacing:0.05em; color:var(--text-low); margin-top:8px;
   }
   .tg-label:first-child{margin-top:0;}
+  .env-category-head{
+    font-size:0.8rem; font-weight:600; color:var(--signal);
+    margin:18px 0 4px; padding-bottom:4px; border-bottom:1px solid var(--line);
+  }
+  .env-category-head:first-child{margin-top:0;}
   .tg-input{
     font-family:var(--font-mono); font-size:0.82rem;
     background: var(--sky-800); color: var(--text-hi);

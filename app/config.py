@@ -130,13 +130,6 @@ AUTO_BACKUP_DIR = os.environ.get(
 # цикл, що VACUUM - не частіше, не потребує.
 DB_INTEGRITY_CHECK_INTERVAL_SEC = int(os.environ.get("STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC", "86400"))
 HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
-# Downsampling: raw-метрики (кожні POLL_INTERVAL_SEC) старші за
-# DOWNSAMPLE_AFTER_DAYS агрегуються в DOWNSAMPLE_BUCKET_SEC-секундні
-# середні (окрема таблиця metrics_downsampled), зменшуючи розмір БД -
-# довгострокові тренди на /stats лишаються видимими (грубіші), лише
-# детальна деталізація старих даних втрачається.
-DOWNSAMPLE_AFTER_DAYS = int(os.environ.get("STARLINK_DOWNSAMPLE_AFTER_DAYS", "3"))
-DOWNSAMPLE_BUCKET_SEC = int(os.environ.get("STARLINK_DOWNSAMPLE_BUCKET_SEC", "300"))
 
 WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")
 WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))

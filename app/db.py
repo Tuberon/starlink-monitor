@@ -53,17 +53,6 @@ CREATE TABLE IF NOT EXISTS metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts);
 
-CREATE TABLE IF NOT EXISTS metrics_downsampled (
-    bucket_ts REAL PRIMARY KEY,
-    sample_count INTEGER NOT NULL,
-    online_fraction REAL,
-    downlink_mbps REAL,
-    uplink_mbps REAL,
-    ping_latency_ms REAL,
-    ping_drop_ratio REAL,
-    obstruction_fraction REAL
-);
-
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
@@ -369,52 +358,6 @@ def _parse_metric_row(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def downsample_old_metrics() -> int:
-    """Агрегує raw-метрики (app/db.py: таблиця metrics) старші за
-    config.DOWNSAMPLE_AFTER_DAYS у config.DOWNSAMPLE_BUCKET_SEC-
-    секундні середні (metrics_downsampled), видаляючи оригінальні
-    детальні рядки - зменшує розмір БД, довгострокові тренди на
-    /stats лишаються видимими (грубіші деталізацією). Ідемпотентно:
-    PRIMARY KEY(bucket_ts) + ON CONFLICT DO NOTHING захищає від
-    дублювання, якщо викликати повторно на вже оброблений діапазон
-    (не повинно траплятись - raw-рядки видаляються одразу після
-    агрегації - але захист не зайвий, бо DELETE тут незворотний).
-    Повертає кількість bucket'ів, реально доданих цим викликом."""
-    cutoff = time.time() - config.DOWNSAMPLE_AFTER_DAYS * 86400
-    bucket_sec = config.DOWNSAMPLE_BUCKET_SEC
-    with get_conn() as conn:
-        rows = conn.execute(
-            """SELECT
-                 CAST(ts / ? AS INTEGER) * ? as bucket_ts,
-                 COUNT(*) as sample_count,
-                 AVG(online) as online_fraction,
-                 AVG(downlink_mbps) as downlink_mbps,
-                 AVG(uplink_mbps) as uplink_mbps,
-                 AVG(ping_latency_ms) as ping_latency_ms,
-                 AVG(ping_drop_ratio) as ping_drop_ratio,
-                 AVG(obstruction_fraction) as obstruction_fraction
-               FROM metrics
-               WHERE ts < ?
-               GROUP BY bucket_ts""",
-            (bucket_sec, bucket_sec, cutoff),
-        ).fetchall()
-
-        for r in rows:
-            conn.execute(
-                """INSERT INTO metrics_downsampled
-                   (bucket_ts, sample_count, online_fraction, downlink_mbps,
-                    uplink_mbps, ping_latency_ms, ping_drop_ratio, obstruction_fraction)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(bucket_ts) DO NOTHING""",
-                (r["bucket_ts"], r["sample_count"], r["online_fraction"],
-                 r["downlink_mbps"], r["uplink_mbps"], r["ping_latency_ms"],
-                 r["ping_drop_ratio"], r["obstruction_fraction"]),
-            )
-
-        conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
-    return len(rows)
-
-
 def get_recent_events(limit: int = 50) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -434,7 +377,6 @@ def prune_old(days: Optional[int] = None) -> None:
     cutoff = time.time() - days * 86400
     with get_conn() as conn:
         conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
-        conn.execute("DELETE FROM metrics_downsampled WHERE bucket_ts < ?", (cutoff,))
         conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
         conn.execute("DELETE FROM system_metrics WHERE ts < ?", (cutoff,))
 

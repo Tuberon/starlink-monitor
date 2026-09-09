@@ -473,6 +473,30 @@ dish/router_target_version, історія відомих Starlink-пристр�
 Bot token у файлі — у відкритому вигляді, файл backup потрібно
 берегти як secret.
 
+## Категоризація параметрів на /settings (app/config_editor.py)
+
+`EDITABLE_PARAMS` (54 записи) — кожен має `category`
+(`monitoring`/`reliability`/`telegram`/`gpio`), `CATEGORY_LABELS`
+дає людський підпис для кожної. `/api/env-config` повертає обидва
+разом (`{"params": [...], "category_labels": {...}}`).
+`static/settings.js:loadEnvConfig()` групує параметри в `Map` за
+`category` (зберігаючи порядок першої появи — той самий, що в
+`EDITABLE_PARAMS`, не алфавітний), малює `<h3 class="env-category-
+head">` перед кожною групою.
+
+**Мотивація** (запит користувача, після власного зауваження в
+аудиті про 59+ параметрів у плоскому списку): плаский список без
+структури важко сканувати оком, шукаючи конкретний параметр серед
+50+. Групування — суто UI-зміна, не впливає на `save_values()`/
+валідацію/env-файл (`category` — метадані для рендерингу, не
+частина логіки збереження).
+
+Два тести (`test_every_param_has_valid_category`, `test_no_orphan_
+category_labels`) перевіряють узгодженість у **обидва боки**: кожен
+параметр має валідну категорію, і кожна категорія реально
+використовується хоч одним параметром (не залишиться підпис для
+вже спорожнілої групи).
+
 ## Керування Raspberry Pi (веб)
 
 `pi_power.execute_pi_power_action()` (`app/pi_power.py`, спільний
@@ -686,17 +710,6 @@ CSS custom properties в `static/style.css` — та сама семантика
 обох сторінках — лише локально в браузері (`eventsClearedLocally`
 в кожному JS-файлі окремо, БД не зачіпається), той самий підхід,
 що вже був на головній.
-
-`downsample_old_metrics()` (щогодини, разом з `prune_old()`) агрегує
-raw-рядки старші за `DOWNSAMPLE_AFTER_DAYS` (дефолт 3) у
-`DOWNSAMPLE_BUCKET_SEC`-секундні (дефолт 300 = 5хв) середні,
-видаляючи оригінальні детальні рядки. `PRIMARY KEY(bucket_ts)` +
-`ON CONFLICT DO NOTHING` — ідемпотентність про всяк випадок (захист
-не мав би бути потрібним, бо raw-рядки видаляються одразу після
-агрегації в тій самій транзакції, але DELETE тут незворотний, тому
-зайвий запобіжник виправданий). `prune_old()` очищує
-`metrics_downsampled` за повною `HISTORY_RETENTION_DAYS`-межею
-аналогічно до `metrics`.
 
 ## Системний WAN-failover (scripts/wan_failover_check.sh)
 

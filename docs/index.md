@@ -89,7 +89,7 @@
 | `conftest.py` | Спільні fixtures: `db_path` (ізольована тимчасова БД), `watchdog` (з mock-ованим `_notify`) |
 | `test_monitor.py` | Групування reboot-спаму, дедублікація target-версій, `_maybe_reboot()` |
 | `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
-| `test_db.py` | Downsampling метрик, `check_integrity()`, callback-хук LED активності |
+| `test_db.py` | Prune старих метрик, `check_integrity()`, callback-хук LED активності |
 | `test_display.py` | Виявлення зміни update_state (flash-підсвітка), auto-off логіка, повідомлення reboot/poweroff (rotation, перевірені гліфи) |
 | `test_activity_led.py` | Неблокуюче blink/close, послідовні виклики без блимання, callback-помилки не поширюються |
 | `test_pi_power.py` | DB-сигнал записується ДО systemctl-команди, провал прибирає сигнал, lazy notify_fn default |

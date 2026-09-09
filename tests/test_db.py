@@ -1,5 +1,5 @@
 """
-Тести для app/db.py - downsampling/prune старих метрик, злиття історії
+Тести для app/db.py - prune старих метрик, злиття історії
 відомих пристроїв, перевірка цілісності БД.
 """
 import time
@@ -19,71 +19,23 @@ def _insert_metrics(count, interval_s, base_ts, downlink=50.0):
         db.insert_metric(status.to_dict())
 
 
-def test_downsample_moves_old_data_and_keeps_recent(db_path):
-    """Дані старші за DOWNSAMPLE_AFTER_DAYS переносяться в
-    metrics_downsampled і видаляються з metrics, недавні лишаються
-    недоторканими в metrics."""
-    config.DOWNSAMPLE_AFTER_DAYS = 3
-    config.DOWNSAMPLE_BUCKET_SEC = 300
+def test_prune_old_removes_expired_raw_metrics_keeps_recent(db_path):
+    """prune_old() видаляє raw-метрики старші за retention-межу,
+    недавні лишає недоторканими."""
+    config.HISTORY_RETENTION_DAYS = 30
     now = time.time()
-
-    _insert_metrics(200, 60, now - 4 * 86400)  # старі (>3 днів)
-    _insert_metrics(200, 60, now - 1 * 86400)  # недавні (<3 днів)
+    _insert_metrics(50, 60, now - 35 * 86400)  # застарілі (>30д)
+    _insert_metrics(50, 60, now - 5 * 86400)   # актуальні
 
     with db.get_conn() as conn:
         count_before = conn.execute("SELECT COUNT(*) as c FROM metrics").fetchone()["c"]
-    assert count_before == 400
-
-    buckets = db.downsample_old_metrics()
-    assert buckets > 0
-
-    with db.get_conn() as conn:
-        count_after_raw = conn.execute("SELECT COUNT(*) as c FROM metrics").fetchone()["c"]
-        count_downsampled = conn.execute("SELECT COUNT(*) as c FROM metrics_downsampled").fetchone()["c"]
-    assert count_after_raw == 200  # лише недавні лишились
-    assert count_downsampled == buckets
-
-
-def test_downsample_is_idempotent(db_path):
-    """Повторний виклик після того, як старих raw-рядків уже немає -
-    не дублює дані (PRIMARY KEY(bucket_ts) + ON CONFLICT DO NOTHING)."""
-    config.DOWNSAMPLE_AFTER_DAYS = 3
-    now = time.time()
-    _insert_metrics(100, 60, now - 4 * 86400)
-
-    first_call = db.downsample_old_metrics()
-    second_call = db.downsample_old_metrics()
-
-    assert first_call > 0
-    assert second_call == 0
-    with db.get_conn() as conn:
-        count = conn.execute("SELECT COUNT(*) as c FROM metrics_downsampled").fetchone()["c"]
-    assert count == first_call
-
-
-def test_prune_old_cleans_both_raw_and_downsampled(db_path):
-    """prune_old() видаляє застарілі дані з ОБОХ таблиць (raw metrics
-    за retention-межею, і metrics_downsampled теж, не лише raw)."""
-    config.HISTORY_RETENTION_DAYS = 30
-    now = time.time()
-
-    with db.get_conn() as conn:
-        conn.execute(
-            "INSERT INTO metrics_downsampled (bucket_ts, sample_count, online_fraction, downlink_mbps) "
-            "VALUES (?, ?, ?, ?)",
-            (now - 35 * 86400, 30, 1.0, 50.0),  # застарілий (>30д)
-        )
-        conn.execute(
-            "INSERT INTO metrics_downsampled (bucket_ts, sample_count, online_fraction, downlink_mbps) "
-            "VALUES (?, ?, ?, ?)",
-            (now - 10 * 86400, 30, 1.0, 50.0),  # актуальний
-        )
+    assert count_before == 100
 
     db.prune_old()
 
     with db.get_conn() as conn:
-        count = conn.execute("SELECT COUNT(*) as c FROM metrics_downsampled").fetchone()["c"]
-    assert count == 1
+        count_after = conn.execute("SELECT COUNT(*) as c FROM metrics").fetchone()["c"]
+    assert count_after == 50
 
 
 # ---- known_devices - історія відомих Starlink-пристроїв (backup/restore) ----

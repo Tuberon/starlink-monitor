@@ -227,3 +227,23 @@ def test_no_orphan_env_keys_in_config():
     ui_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
     orphans = config_keys - ui_keys - NOT_IN_UI
     assert orphans == set(), f"параметри config.py, відсутні в UI-редакторі: {orphans}"
+
+
+def test_every_param_has_valid_category():
+    """Кожен параметр у EDITABLE_PARAMS МАЄ category, і кожна category
+    МАЄ підпис у CATEGORY_LABELS - інакше /settings показав би "інше"
+    чи сирий slug замість людського підпису для якоїсь групи."""
+    for p in config_editor.EDITABLE_PARAMS:
+        assert "category" in p, f"{p['key']} не має category"
+        assert p["category"] in config_editor.CATEGORY_LABELS, (
+            f"{p['key']}: category={p['category']!r} відсутня в CATEGORY_LABELS"
+        )
+
+
+def test_no_orphan_category_labels():
+    """Зворотна перевірка: кожен запис CATEGORY_LABELS реально
+    використовується хоча б одним параметром - інакше застарілий
+    підпис категорії, з якої вже видалили всі параметри."""
+    used = {p["category"] for p in config_editor.EDITABLE_PARAMS}
+    orphan_labels = set(config_editor.CATEGORY_LABELS) - used
+    assert orphan_labels == set(), f"category_labels без жодного параметра: {orphan_labels}"
