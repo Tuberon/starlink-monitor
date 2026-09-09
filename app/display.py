@@ -30,7 +30,7 @@ import threading
 import time
 from typing import Any, Optional
 
-from app import config, db, gpio_utils
+from app import config, db, gpio_utils, pi_power
 from app.shutdown_button import _trigger_shutdown
 
 logging.basicConfig(
@@ -245,6 +245,28 @@ def _redraw(display: Any, Image: Any, ImageDraw: Any, font_status: Any, font_upd
     display.image(img)
 
 
+def _draw_power_action_message(display: Any, Image: Any, ImageDraw: Any, font: Any, action: str) -> None:
+    """Повноекранне повідомлення "Вимикається.../Перезавантажується..."
+    - викликається ОДИН раз, ПЕРЕД тим, як сам процес дисплея буде
+    вбитий через SIGTERM від systemctl reboot/poweroff (див.
+    app/pi_power.py: затримка ПЕРЕД реальним викликом команди дає
+    час цьому кадру реально відобразитись на екрані)."""
+    if config.DISPLAY_ROTATION in (90, 270):
+        canvas_size = (display.height, display.width)
+    else:
+        canvas_size = (display.width, display.height)
+
+    img = Image.new("RGB", canvas_size, "black")
+    draw = ImageDraw.Draw(img)
+    text = "● Вимикається..." if action == "poweroff" else "● Перезавантажується..."
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = max(0, (canvas_size[0] - text_w) // 2)
+    y = max(0, (canvas_size[1] - text_h) // 2)
+    draw.text((x, y), text, font=font, fill="yellow")
+    display.image(img)
+
+
 def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     if not config.DISPLAY_ENABLED:
         logger.info("DISPLAY_ENABLED не встановлено (0) - дисплей вимкнено, завершення")
@@ -331,6 +353,22 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     try:
         while True:
             if stop_event and stop_event.is_set():
+                return
+
+            # Перевіряємо ЩОРАЗУ (швидкий ~100мс цикл, не звичайний
+            # 5-секундний REFRESH_SEC) - reboot/poweroff від pi_power.py
+            # чекає лише DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC (типово 2с)
+            # перед реальним systemctl-викликом, тому потрібно виявити
+            # сигнал майже одразу, а не з затримкою до 5с.
+            try:
+                pending_action = db.get_setting(pi_power.PENDING_ACTION_SETTING_KEY)
+            except Exception:
+                pending_action = None
+            if pending_action in ("reboot", "poweroff"):
+                try:
+                    _draw_power_action_message(display, Image, ImageDraw, font_status, pending_action)
+                except Exception:
+                    logger.exception("Не вдалося намалювати повідомлення про %s", pending_action)
                 return
 
             now = time.time()

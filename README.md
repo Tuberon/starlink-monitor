@@ -77,7 +77,11 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 перемикає підсвітку дисплея, **довге** (як і раніше) вимикає Pi.
 Обробляється тоді всередині `starlink-display.service`, а
 `starlink-shutdown-button.service` сам себе вимикає (щоб не
-конкурувати за той самий GPIO-пін).
+конкурувати за той самий GPIO-пін). При reboot/poweroff (з кнопки чи
+з веб-дашборду) — якщо дисплей увімкнено, на екрані на кілька секунд
+з'являється повідомлення "Вимикається.../Перезавантажується..." перед
+тим, як Pi реально почне вимикатись (`STARLINK_DISPLAY_SHUTDOWN_
+MESSAGE_DELAY_SEC`, типово 2с).
 
 ## 💡 LED активності SD-картки (GPIO)
 
@@ -413,6 +417,7 @@ Telegram-налаштування видаляє лише після окрем�
 | `STARLINK_DISPLAY_OFFSET_LEFT` | `35` | дисплей: зміщення X відносно GRAM, px |
 | `STARLINK_DISPLAY_OFFSET_TOP` | `0` | дисплей: зміщення Y відносно GRAM, px |
 | `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
+| `STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC` | `2` | дисплей: затримка перед reboot/poweroff, сек |
 | `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
 | `STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` | `60` | дисплей: автовимкнення підсвітки, сек (0=вимк.) |
 | `STARLINK_DISPLAY_UPDATE_FLASH_SEC` | `5` | дисплей: підсвітка при зміні статусу оновлення, сек (0=вимк.) |

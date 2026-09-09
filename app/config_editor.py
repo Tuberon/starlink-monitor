@@ -72,6 +72,7 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_DISPLAY_OFFSET_LEFT", "type": "int", "default": "35", "label": "Дисплей: зміщення X відносно GRAM, px"},
     {"key": "STARLINK_DISPLAY_OFFSET_TOP", "type": "int", "default": "0", "label": "Дисплей: зміщення Y відносно GRAM, px"},
     {"key": "STARLINK_DISPLAY_REFRESH_SEC", "type": "int", "default": "5", "label": "Дисплей: інтервал оновлення, сек"},
+    {"key": "STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC", "type": "float", "default": "2", "label": "Дисплей: затримка перед reboot/poweroff, сек"},
     {"key": "STARLINK_DISPLAY_SPI_SPEED_HZ", "type": "int", "default": "40000000", "label": "Дисплей: швидкість SPI, Гц"},
     {"key": "STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC", "type": "int", "default": "60", "label": "Дисплей: автовимкнення підсвітки, сек (0=вимк.)"},
     {"key": "STARLINK_DISPLAY_UPDATE_FLASH_SEC", "type": "int", "default": "5", "label": "Дисплей: підсвітка при зміні статусу оновлення, сек (0=вимк.)"},

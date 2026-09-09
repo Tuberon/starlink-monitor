@@ -850,6 +850,7 @@ class Watchdog:
         psutil.cpu_percent(interval=None)
         last_prune = 0.0
         last_vacuum = 0.0
+        last_integrity_check = 0.0
         last_auto_backup = 0.0  # 0 гарантує перший backup одразу після старту сервісу
         last_router_poll = 0.0  # 0 гарантує негайне перше опитування роутера
         last_system_metrics_poll = 0.0  # 0 гарантує негайний перший запис
@@ -899,13 +900,18 @@ class Watchdog:
                     db.vacuum_and_analyze()
                 except Exception:
                     logger.exception("Помилка VACUUM/ANALYZE")
-                # Той самий щоденний цикл, що VACUUM - виявляє мовчазну
-                # деградацію БД до того, як вона стане критичною.
+                last_vacuum = time.time()
+
+            # Окремий інтервал від VACUUM (типово той самий 86400с, але
+            # реально конфігурований через DB_INTEGRITY_CHECK_INTERVAL_SEC,
+            # не жорстко прив'язаний до VACUUM-таймера) - виявляє мовчазну
+            # деградацію БД до того, як вона стане критичною.
+            if time.time() - last_integrity_check > config.DB_INTEGRITY_CHECK_INTERVAL_SEC:
                 try:
                     check_db_integrity_and_notify(self._notify)
                 except Exception:
                     logger.exception("Помилка перевірки цілісності БД")
-                last_vacuum = time.time()
+                last_integrity_check = time.time()
 
             # Автоматичний періодичний backup - страховка від втрати
             # known_devices/налаштувань, незалежно від того, чи user

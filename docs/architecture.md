@@ -31,6 +31,7 @@ router — різні enum з різними назвами станів).
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення (кешовано) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
+| `pi_power.py` | Спільний reboot/poweroff для webapp.py/shutdown_button.py, DB-сигнал для повідомлення на дисплеї |
 | `activity_led.py` | Опційний LED активності SD-картки - блимає при кожному commit у БД (не окремий процес, частина monitor.py) |
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
 | `gpio_utils.py` | Спільна gpiod v1/v2-сумісна логіка читання GPIO-входу (shutdown_button.py + display.py) і запису GPIO-виходу (activity_led.py) |
@@ -492,6 +493,58 @@ NOPASSWD: ALL`), записати подію в журнал, надіслати
 чи `webapp.py` — свідома ізоляція, бо GPIO-доступ вимагає групу
 `gpio` і `python3-libgpiod` (системний пакет, не pip), а не всі
 установки мають фізичну кнопку.
+
+## Повідомлення на дисплеї при reboot/poweroff (app/pi_power.py)
+
+Спільний модуль для трьох джерел дії (веб-дашборд `webapp.py`,
+фізична кнопка `shutdown_button.py`, і `display.py` — та сама кнопка,
+короткий шлях через прямий import `_trigger_shutdown` з `shutdown_
+button.py`, не дублювання коду) — `execute_pi_power_action()` виконує
+`systemctl reboot`/`poweroff`, записує подію, надсилає Telegram.
+
+**Показ повідомлення на TFT-дисплеї - через DB-сигнал, не прямий
+виклик `display.py`**: це окремий процес, що ексклюзивно тримає
+SPI-запит, тому неможливо намалювати щось на екрані напряму з іншого
+процесу (той самий клас обмеження, що вже вирішувався для LED-
+активності через GPIO character-device API). `db.set_setting(
+pi_power.PENDING_ACTION_SETTING_KEY, action)` записується ПЕРЕД
+реальним викликом `systemctl`. `display.py` опитує цей setting у
+своєму швидкому (~100мс, `DISPLAY_BUTTON_POLL_INTERVAL_SEC`) циклі
+кнопки — НЕ чекає звичайний 5-секундний `DISPLAY_REFRESH_SEC`-цикл
+оновлення статусу, бо часу до SIGTERM від самого `systemctl reboot/
+poweroff` замало. Виявивши сигнал, малює `_draw_power_action_message()`
+і одразу завершує `run_forever()` (`return`, не продовжує звичайний
+цикл — процес все одно скоро буде вбитий).
+
+**`DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC`** (типово 2с, застосовується
+лише якщо `DISPLAY_ENABLED=1`) — затримка ПЕРЕД реальним `systemctl`-
+викликом у `pi_power.py`, дає час 100мс-циклу дисплея реально
+побачити сигнал і намалювати кадр ДО того, як сам процес дисплея
+буде вбитий.
+
+**Провал команди (напр. `sudo`-права відсутні) прибирає сигнал**
+(`db.set_setting(..., "")`) — інакше він лишився б "завислим" і
+наступний запуск `display.py` показав би застаріле повідомлення про
+вимкнення, хоча Pi реально продовжує працювати.
+
+**Реальна помилка, знайдена живим тестом, не в production-коді, а в
+API-дизайні**: перша версія `notify_fn: Callable[[str], Any] =
+telegram_notify.send_message` як early-bound default-параметр
+обчислюється ОДИН раз при імпорті модуля - `patch("app.telegram_
+notify.send_message")` у тестах не міг його замінити (default вже
+"заморожений" як посилання на оригінальну функцію). Виправлено на
+lazy-визначення (`notify_fn: Optional[...] = None`, `if notify_fn is
+None: notify_fn = telegram_notify.send_message` всередині функції) -
+краща практика незалежно від тестів, уникає прихованого "заморожування"
+залежності при імпорті.
+
+**Символи на дисплеї для повідомлення** — перша версія використовувала
+`⏻`/`🔁` (Unicode symbol/emoji), автоматизована перевірка `font.
+getmask(ch).getbbox() is not None` хибно підтвердила "гліф є" - лише
+РЕАЛЬНИЙ рендеринг зображення показав порожні "тофу"-квадрати
+(fallback-гліф теж дає непорожній bbox). Замінено на `●` (той самий
+символ, що вже підтверджено працює в `_status_lines()` для online/
+offline індикатора).
 
 ## LED активності SD-картки (GPIO)
 

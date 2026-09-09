@@ -203,6 +203,13 @@ DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
 DISPLAY_OFFSET_LEFT = int(os.environ.get("STARLINK_DISPLAY_OFFSET_LEFT", "35"))
 DISPLAY_OFFSET_TOP = int(os.environ.get("STARLINK_DISPLAY_OFFSET_TOP", "0"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))
+# Затримка ПЕРЕД реальним systemctl reboot/poweroff - дає display.py
+# (окремий процес, опитує швидким циклом ~100мс, не чекає звичайний
+# 5-секундний REFRESH_SEC) час намалювати повідомлення "Вимикається/
+# Перезавантажується" на екрані ДО того, як SIGTERM від самого
+# reboot/poweroff вб'є процес дисплея. Не застосовується, якщо
+# DISPLAY_ENABLED=0 - немає екрана, немає сенсу чекати.
+DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC = float(os.environ.get("STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC", "2"))
 # Офіційна специфікація модуля не вказує максимальну частоту SPI.
 # 40МГц - консервативний дефолт для типового підключення джампер-
 # дротами (не пресована плата) - на такому монтажі вищі частоти

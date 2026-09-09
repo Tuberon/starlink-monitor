@@ -14,10 +14,9 @@ Pi, як і тут) - цей сервіс тоді одразу завершує
 в app/gpio_utils.py (спільна з display.py).
 """
 import logging
-import subprocess
 import time
 
-from app import config, db, gpio_utils, telegram_notify
+from app import config, db, gpio_utils, pi_power
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,19 +83,14 @@ def _trigger_shutdown(pin: int) -> None:
     logger.warning("Кнопка виключення утримана %.1fс на GPIO%d - виконую poweroff", config.SHUTDOWN_BUTTON_HOLD_SEC, pin)
     try:
         db.init_db()
-        db.insert_event("pi_shutdown", f"Виключення через фізичну кнопку (GPIO{pin})", success=True)
     except Exception as e:
-        logger.warning("Не вдалося записати подію в БД: %s", e)
+        logger.warning("Не вдалося ініціалізувати БД: %s", e)
 
-    try:
-        telegram_notify.send_message(f"⏻ Raspberry Pi вимикається через фізичну кнопку (GPIO{pin})")
-    except Exception as e:
-        logger.warning("Не вдалося надіслати Telegram-сповіщення: %s", e)
-
-    try:
-        subprocess.run(["sudo", "systemctl", "poweroff"], timeout=10)
-    except Exception as e:
-        logger.error("Не вдалося виконати poweroff: %s", e)
+    pi_power.execute_pi_power_action(
+        ["sudo", "systemctl", "poweroff"], "poweroff",
+        "pi_shutdown", f"Виключення через фізичну кнопку (GPIO{pin})",
+        f"⏻ Raspberry Pi вимикається через фізичну кнопку (GPIO{pin})", "вимкнути",
+    )
 
 
 def main() -> None:

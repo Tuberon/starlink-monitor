@@ -107,3 +107,75 @@ def test_other_router_states_remain_visible():
 
 def test_hidden_router_states_contains_exactly_two_states():
     assert set(HIDDEN_ROUTER_STATES) == {"DOWNLOADING_UPDATE_IMAGE_FAILED", "GETTING_TARGET_VERSION_FAILED"}
+
+
+# ---- _draw_power_action_message() - повідомлення при reboot/poweroff ----
+
+class _FakeDisplay:
+    """Мінімальний mock реального ST7789-об'єкта - лише width/height
+    (потрібні для розрахунку canvas) і image() (перевіряємо виклик)."""
+    width, height = 320, 170
+
+    def __init__(self):
+        self.last_image = None
+
+    def image(self, img):
+        self.last_image = img
+
+
+def _real_font():
+    from PIL import ImageFont
+    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+
+
+def test_draw_power_action_message_poweroff_renders_without_error():
+    from PIL import Image, ImageDraw
+    from app.display import _draw_power_action_message
+
+    disp = _FakeDisplay()
+    _draw_power_action_message(disp, Image, ImageDraw, _real_font(), "poweroff")
+    assert disp.last_image is not None
+
+
+def test_draw_power_action_message_reboot_renders_without_error():
+    from PIL import Image, ImageDraw
+    from app.display import _draw_power_action_message
+
+    disp = _FakeDisplay()
+    _draw_power_action_message(disp, Image, ImageDraw, _real_font(), "reboot")
+    assert disp.last_image is not None
+
+
+def test_draw_power_action_message_uses_only_verified_glyphs():
+    """Реальна регресія, знайдена живим тестом під час реалізації:
+    emoji-символи (⏻, 🔁) виглядали як порожні "тофу"-квадрати на
+    DejaVu-шрифті, хоча автоматизована getbbox()-перевірка хибно
+    показувала "гліф є". Перевіряємо, що використовується безпечний,
+    перевірений символ (●), не ці конкретні emoji."""
+    import inspect
+    from app import display
+    source = inspect.getsource(display._draw_power_action_message)
+    assert "⏻" not in source, "цей emoji не відображається коректно на DejaVu-шрифті"
+    assert "🔁" not in source, "цей emoji не відображається коректно на DejaVu-шрифті"
+    assert "●" in source
+
+
+def test_draw_power_action_message_respects_rotation():
+    """Той самий підхід, що _redraw(): для rotation 90/270 canvas
+    МАЄ бути транспонований (height x width), інакше зображення не
+    впишеться в дисплей після повороту бібліотекою Adafruit."""
+    from PIL import Image, ImageDraw
+    from app import config, display
+
+    disp = _FakeDisplay()
+    old_rotation = config.DISPLAY_ROTATION
+    try:
+        config.DISPLAY_ROTATION = 90
+        display._draw_power_action_message(disp, Image, ImageDraw, _real_font(), "poweroff")
+        assert disp.last_image.size == (disp.height, disp.width)
+
+        config.DISPLAY_ROTATION = 0
+        display._draw_power_action_message(disp, Image, ImageDraw, _real_font(), "poweroff")
+        assert disp.last_image.size == (disp.width, disp.height)
+    finally:
+        config.DISPLAY_ROTATION = old_rotation

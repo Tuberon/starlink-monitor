@@ -8,7 +8,7 @@ from typing import Any, Optional
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, monitor, system_metrics, telegram_notify
+from app import config, config_editor, db, monitor, pi_power, system_metrics, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -489,23 +489,11 @@ def _run_system_command(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
         return False, str(e)
 
 
-def _execute_pi_power_action(cmd: list[str], event_kind: str, event_label: str,
-                              success_text: str, fail_verb: str) -> tuple[bool, str]:
-    """Спільна логіка для system-reboot/system-shutdown: виконати команду,
-    записати подію в журнал, надіслати Telegram-сповіщення про результат."""
-    ok, msg = _run_system_command(cmd)
-    db.insert_event(event_kind, f"Ручне {event_label} Raspberry Pi через веб-інтерфейс: {msg}", success=ok)
-    if ok:
-        telegram_notify.send_message(success_text)
-    else:
-        telegram_notify.send_message(f"❌ Не вдалося {fail_verb} Raspberry Pi: {msg}")
-    return ok, msg
-
-
 @app.route("/api/system-reboot", methods=["POST"])
 def api_system_reboot() -> ResponseReturnValue:
-    ok, msg = _execute_pi_power_action(
-        ["sudo", "systemctl", "reboot"], "pi_reboot", "перезавантаження",
+    ok, msg = pi_power.execute_pi_power_action(
+        ["sudo", "systemctl", "reboot"], "reboot", "pi_reboot",
+        "Ручне перезавантаження Raspberry Pi через веб-інтерфейс",
         "🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс", "перезавантажити",
     )
     return jsonify({"success": ok, "message": msg})
@@ -513,8 +501,9 @@ def api_system_reboot() -> ResponseReturnValue:
 
 @app.route("/api/system-shutdown", methods=["POST"])
 def api_system_shutdown() -> ResponseReturnValue:
-    ok, msg = _execute_pi_power_action(
-        ["sudo", "systemctl", "poweroff"], "pi_shutdown", "виключення",
+    ok, msg = pi_power.execute_pi_power_action(
+        ["sudo", "systemctl", "poweroff"], "poweroff", "pi_shutdown",
+        "Ручне виключення Raspberry Pi через веб-інтерфейс",
         "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "вимкнути",
     )
     return jsonify({"success": ok, "message": msg})
