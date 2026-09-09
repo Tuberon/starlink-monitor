@@ -26,7 +26,7 @@ router — різні enum з різними назвами станів).
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
 | `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
-| `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
+| `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення (кешовано) |
@@ -110,6 +110,25 @@ recovery()`) — інша ситуація, ніж `NOTIFICATIONS_MUTE_AFTER_SEC
   повністю видаляє й перевстановлює. Наприкінці, **лише в install-режимі** —
   опційний інтерактивний блок налаштування статичних IP для eth0/wlan0
   (з підтвердженням, дефолти редаговані), вимикає конфліктуючий `dhcpcd`.
+
+  **Зниження системного навантаження** (теж лише install-режим, після
+  мережевого блоку) — інтерактивна пропозиція `systemctl disable --now`
+  для короткого, добре перевіреного списку служб (`bluetooth`,
+  `hciuart`, `avahi-daemon`(+`.socket`), `triggerhappy`, `ModemManager`).
+  Кожен кандидат перевіряється **індивідуально** через `systemctl
+  list-unit-files`+`is-enabled`/`is-active` **перед** пропозицією — не
+  питає про службу, якої немає в системі (мінімальні образи вже можуть
+  бракувати частини списку). **Вимикає, не видаляє** пакети — уникає
+  ризику зламаних залежностей через `apt purge`, легко відновлюється
+  через `systemctl enable --now`. Явне попередження про `avahi-daemon`
+  (`.local`-mDNS-резолюція), якщо він серед виявлених кандидатів —
+  вимкнення могло б забрати доступ через `raspberrypi.local` для тих,
+  хто підключається так, не по IP. Мережеві служби (`ssh`,
+  `NetworkManager`, `wpa_supplicant`, `dhcpcd`) і core systemd-юніти
+  **ніколи не входять у список кандидатів** — на headless-пристрої без
+  фізичного доступу заблокований SSH означає повну втрату контролю.
+  Окремий, незалежний крок (той самий блок) — опційний `apt-get
+  autoremove`/`clean` (дисковий простір, не RAM/CPU).
 - `scripts/update.sh` — ручне оновлення: sha256-перевірка архіву,
   розпакування, виклик install.sh.
 - `scripts/uninstall.sh` — зупиняє й видаляє сервіси, sudoers-правило,
@@ -280,7 +299,7 @@ RequestException` (мережеві помилки). `for...else` на рівн�
 `monitor.version_in_target_list()` — перевірка входження.
 `monitor.check_target_version_reached()` (module-level функція, НЕ
 метод класу `Watchdog` — колишні `Watchdog._version_in_target_list()`/
-`_check_target_version_reached()` thin-wrapper методи видалені як
+`check_target_version_reached()` thin-wrapper методи видалені як
 мертвий код: жоден production-виклик не використовував їх напряму
 після рефакторингу на спільні функції для watchdog-циклу й ручної
 кнопки, лише застарілі тести — тести оновлено на прямі виклики) —
@@ -305,7 +324,7 @@ CRUD, GET також повертає `dish_current`/`router_current` (з
 коли дізнаюсь про наступну".
 
 `POST /api/target-versions` приймає новий список версій лише якщо
-КОЖЕН кандидат у ньому НЕ старіший за вже відому (`_is_older_version()`,
+КОЖЕН кандидат у ньому НЕ старіший за вже відому (`is_older_version()`,
 `webapp.py`) — база для порівняння = максимум із (попередній target-
 список, якщо був; поточна встановлена версія). Захист від випадкового
 відкату (описка, забутий раніше введений новіший target). Якщо ХОЧ
@@ -369,7 +388,7 @@ router ще ні). Викликається з ОБОХ `poll_once()` і `poll_r
 або один, або інший цикл опитування може стати тим, що робить умову
 істинною одночасно для обох (компоненти опитуються незалежно, різними
 циклами). Дедублікація — той самий принцип, що в
-`_check_target_version_reached()`, notified-ключ (`both_targets_
+`check_target_version_reached()`, notified-ключ (`both_targets_
 notified`) включає `self.last_known_dish_id` теж (той самий принцип
 ізоляції МІЖ фізичними пристроями) + обидва target одночасно —
 природно "скидається", щойно користувач змінить БУДЬ-ЯКИЙ з двох
@@ -385,7 +404,7 @@ backup/restore — internal dedup-стан
 `upsert_router_and_notify()`, `check_updates_now()` (усі в `app/
 monitor.py`, ПОЗА класом `Watchdog`, приймають `notify_fn: Callable[
 [str], None]` замість `self._notify`). Колишні `Watchdog`-thin-wrapper
-методи (`_check_target_version_reached()` тощо) видалені як мертвий
+методи (`check_target_version_reached()` тощо) видалені як мертвий
 код (нижче) — жоден production-виклик не використовував їх напряму
 після цього рефакторингу.
 
@@ -456,7 +475,9 @@ Bot token у файлі — у відкритому вигляді, файл bac
 
 ## Керування Raspberry Pi (веб)
 
-`_execute_pi_power_action()` (`app/webapp.py`) — спільна логіка для
+`pi_power.execute_pi_power_action()` (`app/pi_power.py`, спільний
+модуль для веб-дашборду, фізичної кнопки й `display.py` — див.
+"Повідомлення на дисплеї при reboot/poweroff" нижче) — для
 `/api/system-reboot`/`/api/system-shutdown`: виконати команду через
 `_run_system_command()` (обмежений sudo, `/etc/sudoers.d/starlink-
 monitor` — навмисно вузько, конкретні команди, не blanket `ALL=(ALL)

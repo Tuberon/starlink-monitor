@@ -3,7 +3,7 @@ import logging
 import os
 import subprocess
 import time
-from typing import Any, Optional
+from typing import Optional
 
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue

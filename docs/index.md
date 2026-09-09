@@ -25,7 +25,7 @@
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
 | `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
-| `telegram_notify.py` | Вихідні сповіщення + підпис-фрази |
+| `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення |
@@ -57,7 +57,7 @@
 |---|---|
 | `index.html` | Головний дашборд |
 | `settings.html` | Сторінка налаштувань |
-| `stats.html` | Сторінка статистики/графіків |
+| `stats.html` | Сторінка статистики (журнал подій) |
 
 ## `systemd/` — unit-файли
 
