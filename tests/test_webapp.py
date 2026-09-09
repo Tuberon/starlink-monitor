@@ -2,7 +2,9 @@
 Тести для app/db.py (компаратор версій прошивки Starlink) та
 app/webapp.py (валідація /api/target-versions - "лише новіші").
 """
+import json
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -353,3 +355,247 @@ def test_target_versions_real_typo_still_rejected_after_rollback_fix(client):
     resp = client.post("/api/target-versions", json={"dish_target": "2026.01.01.mr50000"})
     data = resp.get_json()
     assert data["success"] is False, "справжня описка (не поточна версія, не новіша) мала відхилитись"
+
+
+# ---- /healthz - зовнішній моніторинг (UptimeRobot тощо) ----
+
+def test_healthz_no_data_yet_returns_200(client):
+    """Реальний сценарій: щойно встановлений Pi, watchdog ще жодного
+    разу не записав метрику - НЕ має вважатись "degraded" (503),
+    процес просто щойно стартував."""
+    resp = client.get("/healthz")
+    data = resp.get_json()
+    assert resp.status_code == 200
+    assert data["checks"]["watchdog"] == "no data yet"
+
+
+def test_healthz_fresh_metric_returns_200(client):
+    from app.starlink_client import DishStatus
+    db.insert_metric(DishStatus(timestamp=time.time(), online=True, uptime_s=100).to_dict())
+    resp = client.get("/healthz")
+    data = resp.get_json()
+    assert resp.status_code == 200
+    assert data["status"] == "ok"
+    assert "ok" in data["checks"]["watchdog"]
+
+
+def test_healthz_stale_metric_returns_503(client):
+    """Головна мета /healthz: watchdog реально завис (deadlock, не
+    crash) - метрика стара, свіжих немає, зовнішній моніторинг МАЄ
+    отримати 503, не тихе 200."""
+    from app import config
+    from app.starlink_client import DishStatus
+    stale_ts = time.time() - (config.POLL_INTERVAL_SEC * 3 + config.DISH_METRICS_BATCH_INTERVAL_SEC + 60)
+    db.insert_metric(DishStatus(timestamp=stale_ts, online=True, uptime_s=100).to_dict())
+    resp = client.get("/healthz")
+    data = resp.get_json()
+    assert resp.status_code == 503
+    assert data["status"] == "degraded"
+    assert "stale" in data["checks"]["watchdog"]
+
+
+# ---- /api/reboot-dish - реальна фізична дія ----
+
+def test_reboot_dish_success_logs_event_and_notifies(client):
+    from app import webapp
+    with patch.object(webapp.client, "reboot_dish", return_value=(True, "ok")), \
+         patch("app.telegram_notify.send_message") as mock_notify:
+        resp = client.post("/api/reboot-dish")
+    data = resp.get_json()
+    assert data["success"] is True
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "dish_reboot" for e in events)
+    mock_notify.assert_called_once()
+    assert "перезавантажено" in mock_notify.call_args[0][0]
+
+
+def test_reboot_dish_failure_reports_error_message(client):
+    from app import webapp
+    with patch.object(webapp.client, "reboot_dish", return_value=(False, "timeout")), \
+         patch("app.telegram_notify.send_message") as mock_notify:
+        resp = client.post("/api/reboot-dish")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "Не вдалося" in mock_notify.call_args[0][0]
+
+
+# ---- /api/telegram-config - маскування token (безпекова логіка) ----
+
+def test_telegram_config_get_no_token_set(client):
+    resp = client.get("/api/telegram-config")
+    data = resp.get_json()
+    assert data["token_set"] is False
+    assert data["token_masked"] == ""
+
+
+def test_telegram_config_get_masks_long_token(client):
+    """Реальна мета: повний token НІКОЛИ не має з'являтись у відповіді
+    (secret, видимий у мережевому інспекторі браузера/консолі)."""
+    from app import telegram_notify
+    telegram_notify.set_telegram_config(token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11", chat_ids=None, enabled=None)
+    resp = client.get("/api/telegram-config")
+    data = resp.get_json()
+    assert data["token_set"] is True
+    assert "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" not in str(data)
+    assert data["token_masked"].startswith("123456")
+    assert "..." in data["token_masked"]
+
+
+def test_telegram_config_get_masks_short_token_fully(client):
+    """Короткий token (<=10 символів) - взагалі не показує жодної
+    його частини (навіть перші 6 символів вже забагато для дуже
+    короткого secret), просто "***"."""
+    from app import telegram_notify
+    telegram_notify.set_telegram_config(token="short1", chat_ids=None, enabled=None)
+    resp = client.get("/api/telegram-config")
+    data = resp.get_json()
+    assert data["token_masked"] == "***"
+    assert "short1" not in str(data)
+
+
+def test_telegram_config_post_parses_comma_separated_string(client):
+    resp = client.post("/api/telegram-config", json={"chat_ids": "111, 222 ,333"})
+    assert resp.get_json()["success"] is True
+    from app import telegram_notify
+    _, chat_ids, _ = telegram_notify.get_telegram_config()
+    assert chat_ids == ["111", "222", "333"]
+
+
+def test_telegram_config_post_accepts_list_directly(client):
+    resp = client.post("/api/telegram-config", json={"chat_ids": ["444", "555"]})
+    assert resp.get_json()["success"] is True
+    from app import telegram_notify
+    _, chat_ids, _ = telegram_notify.get_telegram_config()
+    assert chat_ids == ["444", "555"]
+
+
+# ---- /api/auto-reboot ----
+
+def test_set_auto_reboot_toggle_on(client):
+    resp = client.post("/api/auto-reboot", json={"enabled": True})
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["enabled"] is True
+    assert db.get_auto_reboot_enabled() is True
+
+
+def test_set_auto_reboot_toggle_off(client):
+    client.post("/api/auto-reboot", json={"enabled": True})
+    resp = client.post("/api/auto-reboot", json={"enabled": False})
+    assert resp.get_json()["enabled"] is False
+    assert db.get_auto_reboot_enabled() is False
+
+
+# ---- /api/settings-backup + /api/settings-restore - повний цикл ----
+
+def test_backup_then_restore_round_trip(client):
+    from app import telegram_notify
+    telegram_notify.set_telegram_config(token="test-token-123456789", chat_ids=["777"], enabled=True)
+    db.set_auto_reboot_enabled(True)
+
+    backup_resp = client.get("/api/settings-backup")
+    backup_data = backup_resp.get_json()
+    assert backup_data["telegram_bot_token"] == "test-token-123456789"
+
+    telegram_notify.set_telegram_config(token="", chat_ids=[], enabled=False)
+    db.set_auto_reboot_enabled(False)
+
+    restore_resp = client.post("/api/settings-restore", data=json.dumps(backup_data), content_type="application/json")
+    assert restore_resp.get_json()["success"] is True
+
+    token, chat_ids, enabled = telegram_notify.get_telegram_config()
+    assert token == "test-token-123456789"
+    assert chat_ids == ["777"]
+    assert db.get_auto_reboot_enabled() is True
+
+
+def test_restore_rejects_payload_without_format_version(client):
+    resp = client.post("/api/settings-restore", data=json.dumps({"telegram_bot_token": "x"}), content_type="application/json")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "формат" in data["message"].lower()
+
+
+# ---- Решта restore-гілок та env-config endpoints ----
+
+def test_restore_applies_env_params(client):
+    from app import monitor
+    backup = monitor.build_backup_dict()
+    backup["env_params"] = {"STARLINK_POLL_INTERVAL": "15"}
+    resp = client.post("/api/settings-restore", data=json.dumps(backup), content_type="application/json")
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "параметри моніторингу" in data["message"]
+
+
+def test_restore_applies_target_versions(client):
+    from app import monitor
+    backup = monitor.build_backup_dict()
+    backup["dish_target_version"] = "2026.01.01.mr1"
+    resp = client.post("/api/settings-restore", data=json.dumps(backup), content_type="application/json")
+    assert resp.get_json()["success"] is True
+    assert db.get_setting("dish_target_version") == "2026.01.01.mr1"
+
+
+def test_restore_applies_known_devices(client):
+    from app import monitor
+    backup = monitor.build_backup_dict()
+    backup["known_devices"] = [{
+        "dish_id": "restored-dish", "first_seen_ts": time.time(), "last_seen_ts": time.time(),
+    }]
+    resp = client.post("/api/settings-restore", data=json.dumps(backup), content_type="application/json")
+    assert resp.get_json()["success"] is True
+    assert db.get_known_device("restored-dish") is not None
+
+
+def test_restore_handles_malformed_payload_without_crashing(client):
+    """Реальний edge case: payload з format_version, але з іншими
+    полями зіпсованого типу (напр. known_devices - рядок, не список).
+    Головна гарантія - НЕ падає з 500 (виняток спіймано і повернутий
+    як success=False), а не конкретне значення success для ЦЬОГО
+    прикладу (known_devices="not-a-list" ітерується як символи, кожен
+    ігнорується merge_known_devices() через відсутність dish_id -
+    толерантно, без винятку)."""
+    resp = client.post(
+        "/api/settings-restore",
+        data=json.dumps({"format_version": 3, "known_devices": "not-a-list"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert "success" in resp.get_json()
+
+
+def test_restore_exception_path_returns_success_false(client):
+    """Реальний виняток (не толерантний edge case) МАЄ повернути
+    success=False, не поширюватись як 500."""
+    resp = client.post(
+        "/api/settings-restore",
+        data=json.dumps({"format_version": 3, "env_params": "not-a-dict"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is False
+
+
+# ---- /api/env-config ----
+
+def test_env_config_get_returns_all_params_with_categories(client):
+    resp = client.get("/api/env-config")
+    data = resp.get_json()
+    assert len(data["params"]) > 0
+    assert "category_labels" in data
+
+
+def test_env_config_post_saves_and_logs_event(client):
+    resp = client.post("/api/env-config", json={"values": {"STARLINK_POLL_INTERVAL": "20"}})
+    data = resp.get_json()
+    assert data["success"] is True
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "env_config_updated" for e in events)
+
+
+def test_env_config_post_validation_error_reports_failure(client):
+    resp = client.post("/api/env-config", json={"values": {"STARLINK_POLL_INTERVAL": "not-a-number"}})
+    data = resp.get_json()
+    assert data["success"] is False
