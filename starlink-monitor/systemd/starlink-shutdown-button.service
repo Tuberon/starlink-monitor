@@ -1,0 +1,30 @@
+[Unit]
+Description=Starlink Monitor - Physical Shutdown Button (GPIO)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+SupplementaryGroups=gpio
+WorkingDirectory=/opt/starlink-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/venv/bin/python -m app.shutdown_button
+# on-failure (не always): якщо кнопка не налаштована (SHUTDOWN_BUTTON_GPIO_PIN=0),
+# процес одразу завершується з кодом 0 - це не помилка, рестартувати не потрібно.
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# NoNewPrivileges НЕ встановлюємо: сервіс викликає sudo systemctl poweroff
+# при утриманні кнопки - див. /etc/sudoers.d/starlink-monitor.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/starlink-monitor
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

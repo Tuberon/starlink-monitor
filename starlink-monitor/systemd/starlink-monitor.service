@@ -1,0 +1,45 @@
+[Unit]
+Description=Starlink Mini Watchdog Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+# gpio-група потрібна для доступу до /dev/gpiochip* (LED активності
+# SD-картки, опційно, ACTIVITY_LED_PIN=0 за замовчуванням) - той
+# самий підхід, що вже в starlink-shutdown-button.service/starlink-
+# display.service. Сумісно з NoNewPrivileges=true нижче: supplementary
+# groups - частина початкового стану процесу, який systemd встановлює
+# ДО запуску, не runtime privilege escalation.
+SupplementaryGroups=gpio
+WorkingDirectory=/opt/starlink-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=STARLINK_PROJECT_DIR=/opt/starlink-monitor
+EnvironmentFile=-/etc/starlink-monitor/env
+ExecStart=/opt/starlink-monitor/venv/bin/python -m app.monitor
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Обмеження, щоб процес не міг зашкодити системі поза потрібним обсягом
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/starlink-monitor
+ProtectHome=true
+# CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback,
+# коли WiFi Starlink не має інтернету) - без цього прив'язка сокета
+# до IP-адреси eth0 не форсує реальний вихідний інтерфейс (Linux все
+# одно обирає інтерфейс за таблицею маршрутизації, ігноруючи джерельну
+# IP). Сумісно з NoNewPrivileges=true - ambient capability надається
+# systemd до запуску процесу (частина початкового стану), не через
+# runtime privilege escalation, яку NoNewPrivileges якраз блокує.
+# CapabilityBoundingSet звужує можливі capabilities лише до цієї
+# однієї - принцип найменших привілеїв.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

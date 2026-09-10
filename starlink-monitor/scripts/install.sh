@@ -1,0 +1,511 @@
+#!/usr/bin/env bash
+# Встановлення Starlink Monitor на Raspberry Pi OS (Bookworm) / RPi Zero 2 W.
+# Запускати з правами sudo: `sudo bash scripts/install.sh`
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Запустіть з sudo: sudo bash scripts/install.sh"
+  exit 1
+fi
+
+if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" ]]; then
+  echo "Запустіть через sudo від імені звичайного користувача"
+  echo "(не з-під прямого root-логіна): sudo bash scripts/install.sh"
+  exit 1
+fi
+RUN_USER="$SUDO_USER"
+RUN_USER_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="/opt/starlink-monitor"
+
+if [[ -d "$PROJECT_DIR" ]]; then
+  MODE="update"
+  echo "==> Виявлено існуючу інсталяцію в $PROJECT_DIR — режим оновлення"
+else
+  MODE="install"
+  echo "==> Існуючої інсталяції не знайдено — повне встановлення"
+fi
+
+# Суттєва зміна = у новому requirements.txt з'явився пакет, якого не було
+# в попередній інсталяції (порівняння за НАЗВОЮ пакета, без версії - зміна
+# версії існуючого пакета не вважається суттєвою і не вимагає перевстановлення).
+# Новий пакет типово вимагає додаткового системного ПЗ (build-залежності,
+# системні бібліотеки тощо), тому в такому випадку безпечніше повністю
+# видалити попередню інсталяцію і пройти install-потік з нуля.
+MAJOR_CHANGE=0
+if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
+  NEW_PKGS="$(grep -oE '^[A-Za-z0-9_.-]+' "$SRC_DIR/requirements.txt" | tr 'A-Z' 'a-z' | sort -u)"
+  OLD_PKGS="$(grep -oE '^[A-Za-z0-9_.-]+' "$PROJECT_DIR/requirements.txt" | tr 'A-Z' 'a-z' | sort -u)"
+  ADDED_PKGS="$(comm -13 <(echo "$OLD_PKGS") <(echo "$NEW_PKGS"))"
+  if [[ -n "$ADDED_PKGS" ]]; then
+    MAJOR_CHANGE=1
+    echo "==> Суттєва зміна: нові пакети в requirements.txt:"
+    echo "$ADDED_PKGS" | sed 's/^/     - /'
+  fi
+fi
+
+if [[ "$MAJOR_CHANGE" -eq 1 ]]; then
+  echo "==> Видаляю попередню інсталяцію перед повним перевстановленням"
+  systemctl stop starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service 2>/dev/null || true
+  systemctl disable starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service 2>/dev/null || true
+  rm -f /etc/systemd/system/starlink-monitor.service \
+        /etc/systemd/system/starlink-webui.service \
+        /etc/systemd/system/starlink-grpc-fetch.service
+  systemctl daemon-reload
+  rm -f /etc/sudoers.d/starlink-monitor
+  rm -rf "$PROJECT_DIR"
+  MODE="install"
+  echo "==> Попередню інсталяцію видалено — продовжую як повне встановлення"
+fi
+
+REQ_CHANGED=1
+if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
+  if diff -q "$SRC_DIR/requirements.txt" "$PROJECT_DIR/requirements.txt" >/dev/null 2>&1; then
+    REQ_CHANGED=0
+  fi
+fi
+
+if [[ "$MODE" == "install" ]]; then
+  echo "==> Встановлюю системні пакети"
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    python3 python3-venv python3-pip python3-dev build-essential git curl \
+    network-manager python3-libgpiod gpiod fonts-dejavu-core
+
+  echo "==> Перевіряю наявність grpcurl"
+  if ! command -v grpcurl >/dev/null 2>&1; then
+    echo "==> grpcurl не знайдено, встановлюю"
+    # 1) Спроба через apt (Debian trixie+ вже має пакет grpcurl у репозиторіях)
+    if apt-get install -y --no-install-recommends grpcurl 2>/dev/null; then
+      echo "==> grpcurl встановлено через apt"
+    else
+      # 2) Fallback: завантажити готовий бінарник з GitHub releases під поточну архітектуру.
+      #    "latest/download" - стабільне посилання GitHub, що завжди вказує на останній реліз.
+      ARCH="$(dpkg --print-architecture)"
+      case "$ARCH" in
+        arm64)  GRPCURL_ARCH="arm64" ;;
+        armhf)  GRPCURL_ARCH="armv6" ;;
+        amd64)  GRPCURL_ARCH="x86_64" ;;
+        *) echo "!! Невідома архітектура $ARCH, пропускаю авто-встановлення grpcurl"; GRPCURL_ARCH="" ;;
+      esac
+      if [[ -n "$GRPCURL_ARCH" ]]; then
+        # GitHub asset-файли завжди містять номер версії в імені
+        # (напр. grpcurl_1.9.3_linux_arm64.tar.gz), тому спершу резолвимо
+        # реальний тег останнього релізу через redirect
+        # "releases/latest" -> ".../tag/vX.Y.Z", і лише потім будуємо URL.
+        LATEST_TAG="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+          "https://github.com/fullstorydev/grpcurl/releases/latest" | sed -n 's#.*/tag/v##p')"
+        if [[ -z "$LATEST_TAG" ]]; then
+          LATEST_TAG="1.9.3"  # fallback, якщо резолв версії не вдався
+        fi
+        TMP_TGZ="$(mktemp)"
+        curl -fsSL \
+          "https://github.com/fullstorydev/grpcurl/releases/download/v${LATEST_TAG}/grpcurl_${LATEST_TAG}_linux_${GRPCURL_ARCH}.tar.gz" \
+          -o "$TMP_TGZ"
+        tar -xzf "$TMP_TGZ" -C /usr/local/bin grpcurl
+        chmod +x /usr/local/bin/grpcurl
+        rm -f "$TMP_TGZ"
+        echo "==> grpcurl $LATEST_TAG встановлено в /usr/local/bin ($(grpcurl --version 2>&1 | head -1))"
+      fi
+    fi
+  else
+    echo "==> grpcurl вже встановлено ($(command -v grpcurl))"
+  fi
+
+  echo "==> Додаю $RUN_USER до групи gpio (доступ до /dev/gpiochip* для кнопки виключення/дисплея/LED активності)"
+  usermod -aG gpio "$RUN_USER" 2>/dev/null || echo "!! Група gpio відсутня в системі - пропускаю (кнопка виключення не працюватиме без неї)"
+
+  echo "==> Додаю $RUN_USER до групи spi (доступ до /dev/spidev* для фізичного TFT-дисплея)"
+  usermod -aG spi "$RUN_USER" 2>/dev/null || echo "!! Група spi відсутня в системі - пропускаю (дисплей не працюватиме без неї, потрібен dtparam=spi=on)"
+else
+  echo "==> Режим оновлення — пропускаю перевірку/оновлення системних пакетів"
+fi
+
+echo "==> Синхронізую файли проєкту в $PROJECT_DIR (лише змінені відносно попередньої інсталяції)"
+mkdir -p "$PROJECT_DIR"
+RSYNC_EXCLUDES=(--exclude 'venv' --exclude '.git')
+# -c: порівняння за контрольною сумою (не лише за розміром/часом), --itemize-changes
+# показує, які файли реально змінились - корисно бачити, що саме оновилось.
+RSYNC_OUT="$(rsync -ac --itemize-changes "${RSYNC_EXCLUDES[@]}" "$SRC_DIR/" "$PROJECT_DIR/")"
+echo "$RSYNC_OUT"
+CHANGED_FILES="$(echo "$RSYNC_OUT" | grep -c '^[<>ch]' || true)"
+chown -R "$RUN_USER:$RUN_USER" "$PROJECT_DIR"
+
+if [[ "$MODE" == "update" && "$CHANGED_FILES" -eq 0 ]]; then
+  echo "==> Змінених файлів не виявлено, файлова частина без змін"
+fi
+
+echo "==> Створюю/оновлюю Python venv та залежності"
+if [[ ! -d "$PROJECT_DIR/venv" ]]; then
+  # --system-site-packages: дозволяє venv бачити системний python3-libgpiod
+  # (кнопка виключення) - libgpiod не завжди чисто ставиться через pip,
+  # системний пакет через apt надійніший на Raspberry Pi OS.
+  sudo -u "$RUN_USER" python3 -m venv --system-site-packages "$PROJECT_DIR/venv"
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+elif [[ "$REQ_CHANGED" -eq 1 ]]; then
+  echo "==> requirements.txt змінився — оновлюю залежності"
+  # БЕЗ --upgrade: requirements.txt тепер має ЛИШЕ точні == піни (не
+  # >=), тому звичайний install ідемпотентний і торкається ЛИШЕ
+  # пакетів, чий точний pin реально відрізняється від встановленого.
+  # --upgrade тут раніше (баг, знайдений на реальному Pi) оновлював
+  # УСІ пакети у файлі до найновіших версій, що задовольняють >=,
+  # навіть ті, чий рядок не змінювався - одного разу так випадково
+  # оновився adafruit-blinka (8.x->9.2.0, hardware-критичний для
+  # TFT-дисплея), хоч ми explicitly домовились його не чіпати.
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+else
+  echo "==> venv вже існує, requirements.txt без змін — пропускаю pip install"
+fi
+
+echo "==> Каталог даних"
+mkdir -p /var/lib/starlink-monitor
+chown -R "$RUN_USER:$RUN_USER" /var/lib/starlink-monitor
+# 700 (не дефолтний 755 від mkdir) - БД усередині (settings-таблиця)
+# зберігає Telegram bot token у відкритому вигляді; той самий рівень
+# захисту, що вже застосований нижче до /etc/starlink-monitor/env.
+chmod 700 /var/lib/starlink-monitor
+
+mkdir -p /etc/starlink-monitor
+if [[ ! -f /etc/starlink-monitor/env ]]; then
+  cat > /etc/starlink-monitor/env <<'EOF'
+# Локальні налаштування Starlink Monitor. Див. app/config.py для повного списку.
+# STARLINK_DISH_ADDR=192.168.100.1:9200
+# STARLINK_POLL_INTERVAL=10
+# STARLINK_WEBUI_PORT=8080
+EOF
+fi
+# webui.service редагує цей файл через сторінку /settings - потрібен
+# запис для RUN_USER, під яким сервіс і працює.
+chown -R "$RUN_USER:$RUN_USER" /etc/starlink-monitor
+chmod 600 /etc/starlink-monitor/env
+
+echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
+# ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
+# необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi,
+# необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi.
+# Це навмисно вузько — НЕ blanket "ALL=(ALL) NOPASSWD: ALL".
+cat > /etc/sudoers.d/starlink-monitor <<EOF
+$RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-monitor.service
+$RUN_USER ALL=(root) NOPASSWD: /bin/systemctl restart starlink-webui.service
+$RUN_USER ALL=(root) NOPASSWD: /bin/systemctl reboot
+$RUN_USER ALL=(root) NOPASSWD: /bin/systemctl poweroff
+EOF
+chmod 0440 /etc/sudoers.d/starlink-monitor
+visudo -c -f /etc/sudoers.d/starlink-monitor
+
+echo "==> Встановлюю/оновлюю systemd unit-файли (підстановка користувача $RUN_USER)"
+UNITS_UPDATED=0
+for svc in starlink-monitor.service starlink-webui.service starlink-grpc-fetch.service \
+           starlink-shutdown-button.service starlink-wan-failover.service starlink-wan-failover.timer \
+           starlink-monitor-healthcheck.service starlink-monitor-healthcheck.timer starlink-display.service; do
+  NEW_UNIT="$(sed "s/__RUN_USER__/$RUN_USER/g" "$PROJECT_DIR/systemd/$svc")"
+  DEST="/etc/systemd/system/$svc"
+  if [[ ! -f "$DEST" ]] || ! diff -q <(echo "$NEW_UNIT") "$DEST" >/dev/null 2>&1; then
+    echo "$NEW_UNIT" > "$DEST"
+    UNITS_UPDATED=1
+  fi
+done
+
+if [[ "$UNITS_UPDATED" -eq 1 ]]; then
+  systemctl daemon-reload
+fi
+
+systemctl enable --now starlink-monitor.service
+systemctl enable --now starlink-webui.service
+systemctl enable --now starlink-shutdown-button.service
+systemctl enable --now starlink-display.service
+# starlink-grpc-fetch.service НЕ enable/start автоматично -
+# starlink_grpc.py тепер vendored (app/vendor/starlink_grpc.py, вже в
+# архіві проєкту) для відтворюваності збірки, не завантажується
+# динамічно з інтернету при встановленні. Unit-файл встановлюється
+# (вище) лише для ручного, опційного оновлення vendored копії до
+# найновішої upstream-версії: `sudo systemctl start
+# starlink-grpc-fetch.service`.
+# .timer вмикається й запускається одразу (не .service - той лише
+# oneshot, запускається таймером за розкладом, не при завантаженні).
+systemctl enable --now starlink-wan-failover.timer
+systemctl enable --now starlink-monitor-healthcheck.timer
+
+# Обмеження розміру журналу systemd - за замовчуванням journald може
+# з часом накопичити значний обсяг логів (роками роботи Pi), поки не
+# з'їсть помітну частку SD-картки. Ідемпотентно - додається лише якщо
+# ще не налаштовано (не перезаписує вже наявне значення користувача).
+if ! grep -q "^SystemMaxUse=" /etc/systemd/journald.conf 2>/dev/null; then
+  echo "==> Обмежую розмір журналу systemd (SystemMaxUse=200M)"
+  echo "SystemMaxUse=200M" >> /etc/systemd/journald.conf
+  systemctl restart systemd-journald
+fi
+
+# fstrim.timer - періодичний TRIM для flash-носіїв (та сама лінія, що
+# PRAGMA synchronous=NORMAL: зменшення зношення SD-картки). Стандартна
+# частина util-linux, майже напевно вже встановлена на Raspberry Pi
+# OS - лише enable+start, без встановлення пакету. Безпечно навіть
+# якщо конкретна SD-картка НЕ підтримує TRIM - fstrim у такому
+# випадку просто нічого не робить, не шкодить.
+if systemctl list-unit-files fstrim.timer &>/dev/null; then
+  systemctl enable --now fstrim.timer
+else
+  echo "==> fstrim.timer не знайдено (util-linux застарілий?) - пропускаю"
+fi
+
+if [[ "$MODE" == "update" ]]; then
+  if [[ "$CHANGED_FILES" -gt 0 || "$REQ_CHANGED" -eq 1 || "$UNITS_UPDATED" -eq 1 ]]; then
+    echo "==> Виявлено зміни — перезапускаю сервіси"
+    systemctl restart starlink-monitor.service
+    systemctl restart starlink-webui.service
+    systemctl restart starlink-shutdown-button.service
+    systemctl restart starlink-display.service
+  else
+    echo "==> Змін не виявлено — сервіси не перезапускаю"
+  fi
+fi
+
+if [[ "$MODE" == "install" ]]; then
+  echo ""
+  echo "======================================================================"
+  echo " Налаштування мережі (опційно)"
+  echo "======================================================================"
+  echo ""
+  echo " Типова топологія: USB-Ethernet — доступ у домашню мережу/інтернет,"
+  echo " WiFi (wlan0) — підключення до Starlink Mini (моніторинг + reboot dish)."
+  echo " За замовчуванням обидва інтерфейси отримують адресу по DHCP, що може"
+  echo " спричиняти конфлікти маршрутів (dish/router стають недоступні, якщо"
+  echo " домашня мережа отримує вищий пріоритет за замовчуванням)."
+  echo ""
+  # Знаходить NetworkManager-профіль, прив'язаний до інтерфейсу. Спершу
+  # перевіряє АКТИВНІ з'єднання (найшвидше) - АЛЕ `DEVICE`-стовпець
+  # `nmcli connection show` порожній для профілів, які існують, АЛЕ
+  # НЕ активні саме зараз (WiFi ще не встиг підключитись одразу після
+  # завантаження Pi, USB-Ethernet щойно вставлений) - реальний випадок,
+  # знайдений на практиці. Fallback: перебирає ВСІ збережені профілі,
+  # звіряючи їхню властивість connection.interface-name (прив'язка
+  # інтерфейсу в самому профілі, незалежна від поточного стану).
+  find_nm_connection() {
+    local iface="$1" conn name bound_iface
+    conn="$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v d="$iface" '$2==d{print $1; exit}')"
+    if [[ -n "$conn" ]]; then
+      echo "$conn"
+      return 0
+    fi
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      bound_iface="$(nmcli -g connection.interface-name connection show "$name" 2>/dev/null)"
+      if [[ "$bound_iface" == "$iface" ]]; then
+        echo "$name"
+        return 0
+      fi
+    done < <(nmcli -t -f NAME connection show)
+
+    # Третій fallback: профілі, згенеровані через netplan (частий
+    # випадок на сучасних Raspberry Pi OS), часто НЕ мають явної
+    # connection.interface-name властивості - прив'язка йде іншим
+    # механізмом (SSID-match, MAC тощо), тому попередній fallback їх
+    # не знаходить (знайдено на практиці: профіль "netplan-wlan0-
+    # STARLINK" мав ПОРОЖНЮ interface-name). Якщо існує РІВНО ОДИН
+    # профіль потрібного ТИПУ з'єднання - на Pi з одним WiFi-чіпом і
+    # одним USB-Ethernet це надійна, однозначна евристика.
+    local wanted_type name_and_type ctype matches=()
+    case "$iface" in
+      wlan*) wanted_type="802-11-wireless" ;;
+      eth*|usb*) wanted_type="802-3-ethernet" ;;
+      *) return 1 ;;
+    esac
+    while IFS=: read -r name ctype; do
+      [[ -z "$name" ]] && continue
+      [[ "$ctype" == "$wanted_type" ]] && matches+=("$name")
+    done < <(nmcli -t -f NAME,TYPE connection show)
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+      echo "${matches[0]}"
+      return 0
+    fi
+    return 1
+  }
+  read -r -p " Налаштувати статичні IP для USB-Ethernet і WiFi зараз? [т/N]: " SETUP_NET
+  SETUP_NET="$(echo "$SETUP_NET" | tr -d '[:space:]')"
+  if [[ "$SETUP_NET" =~ ^[TtYyТт] ]]; then
+    ETH_IFACE="eth0"
+    WLAN_IFACE="wlan0"
+    ETH_CONN="$(find_nm_connection "$ETH_IFACE")"
+    WLAN_CONN="$(find_nm_connection "$WLAN_IFACE")"
+
+    if [[ -z "$ETH_CONN" || -z "$WLAN_CONN" ]]; then
+      echo " !! Не вдалося знайти профілі NetworkManager для $ETH_IFACE і/або $WLAN_IFACE."
+      echo "    Перевірте підключення обох інтерфейсів (nmcli connection show) і повторіть пізніше:"
+      echo "      sudo bash scripts/install.sh"
+    else
+      echo " Знайдено з'єднання: eth0=\"$ETH_CONN\", wlan0=\"$WLAN_CONN\""
+      echo ""
+      echo " Значення за замовчуванням (Enter, щоб прийняти):"
+
+      read -r -p "   IP для $ETH_IFACE [192.168.0.95/24]: " ETH_IP
+      ETH_IP="${ETH_IP:-192.168.0.95/24}"
+      read -r -p "   Gateway для $ETH_IFACE [192.168.0.1]: " ETH_GW
+      ETH_GW="${ETH_GW:-192.168.0.1}"
+
+      read -r -p "   IP для $WLAN_IFACE (Starlink WiFi) [192.168.1.95/24]: " WLAN_IP
+      WLAN_IP="${WLAN_IP:-192.168.1.95/24}"
+      read -r -p "   Gateway для $WLAN_IFACE (Starlink router) [192.168.1.1]: " WLAN_GW
+      WLAN_GW="${WLAN_GW:-192.168.1.1}"
+
+      # wlan0 з нижчим metric (вищий пріоритет) - трафік до dish/router
+      # Starlink (окрема підмережа 192.168.100.0/24, недосяжна інакше, ніж
+      # через дефолтний маршрут) завжди повинен йти через WiFi, не через
+      # домашню мережу.
+      nmcli connection modify "$ETH_CONN" \
+        ipv4.method manual ipv4.addresses "$ETH_IP" ipv4.gateway "$ETH_GW" \
+        ipv4.dns "$ETH_GW,8.8.8.8" ipv4.route-metric 1002
+      nmcli connection modify "$WLAN_CONN" \
+        ipv4.method manual ipv4.addresses "$WLAN_IP" ipv4.gateway "$WLAN_GW" \
+        ipv4.dns "1.1.1.1,8.8.8.8" ipv4.route-metric 50
+
+      # КРИТИЧНО: 192.168.100.0/24 (dish) не має власної підмережі на
+      # wlan0 (це router: 192.168.1.0/24) - трафік до dish іде лише
+      # через ДЕФОЛТНИЙ маршрут. Якщо колись пріоритет дефолтного
+      # маршруту wlan0 знижується (напр. starlink-wan-failover.timer
+      # при відсутньому інтернеті на Starlink), dish стає недосяжним
+      # для Pi, попри те що router (192.168.1.1) лишається доступним.
+      # Явний окремий маршрут - специфічніший за будь-який дефолтний,
+      # завжди пріоритетніший незалежно від metric.
+      nmcli connection modify "$WLAN_CONN" +ipv4.routes "192.168.100.0/24 $WLAN_GW"
+
+      # dhcpcd конфліктує з NetworkManager (перевидає власні DHCP-лізинги й
+      # маршрути незалежно від профілів nmcli, ігноруючи ipv4.method=manual).
+      if systemctl list-unit-files dhcpcd.service >/dev/null 2>&1; then
+        echo " ==> Вимикаю dhcpcd (конфліктує з NetworkManager)"
+        systemctl disable --now dhcpcd 2>/dev/null || true
+        systemctl mask dhcpcd 2>/dev/null || true
+      fi
+
+      echo " ==> Перезапускаю з'єднання..."
+      nmcli connection down "$ETH_CONN" 2>/dev/null || true
+      nmcli connection down "$WLAN_CONN" 2>/dev/null || true
+      ip addr flush dev "$ETH_IFACE" 2>/dev/null || true
+      ip addr flush dev "$WLAN_IFACE" 2>/dev/null || true
+      nmcli connection up "$ETH_CONN" || echo " !! Не вдалося підняти $ETH_CONN"
+      nmcli connection up "$WLAN_CONN" || echo " !! Не вдалося підняти $WLAN_CONN"
+
+      echo ""
+      echo " ==> Готово. Перевірка:"
+      ip -4 addr show "$ETH_IFACE" | grep inet || true
+      ip -4 addr show "$WLAN_IFACE" | grep inet || true
+      echo ""
+      echo " Якщо працюєте віддалено по SSH через $ETH_IFACE — з'єднання могло"
+      echo " щойно розірватись через зміну IP. Перепідключіться на нову адресу:"
+      echo "   ssh ${RUN_USER}@${ETH_IP%%/*}"
+    fi
+  else
+    echo " Пропущено. Налаштувати мережу пізніше вручну можна через nmcli"
+    echo " (див. секцію \"Важливо розуміти про мережу\" в README.md)."
+  fi
+  echo ""
+  echo "======================================================================"
+fi
+
+if [[ "$MODE" == "install" ]]; then
+  echo ""
+  echo "======================================================================"
+  echo " Зниження системного навантаження (опційно)"
+  echo "======================================================================"
+  echo " Деякі служби Raspberry Pi OS не потрібні для headless-моніторингу"
+  echo " (Bluetooth, mDNS/.local-резолюція, hotkey-демон) і лише споживають"
+  echo " RAM/CPU на Pi Zero 2W. Список нижче - ЛИШЕ ті, що реально активні"
+  echo " в цій системі; вимикаються (не видаляються) - легко повернути назад"
+  echo " через 'sudo systemctl enable --now <служба>'."
+  echo ""
+
+  # Кандидати перевіряються ІНДИВІДУАЛЬНО, не пропонуємо вимкнути те,
+  # чого немає - деякі images (напр. Lite) вже не мають частини з них.
+  # Мережеві служби (ssh/NetworkManager/wpa_supplicant/dhcpcd) та core
+  # systemd-юніти НІКОЛИ не пропонуються - headless-пристрій без
+  # фізичного доступу не можна ризикувати заблокувати від SSH.
+  DISABLE_CANDIDATES=()
+  for svc in bluetooth.service hciuart.service avahi-daemon.service avahi-daemon.socket triggerhappy.service ModemManager.service; do
+    if systemctl list-unit-files "$svc" 2>/dev/null | grep -q "^$svc"; then
+      if systemctl is-enabled "$svc" &>/dev/null || systemctl is-active "$svc" &>/dev/null; then
+        DISABLE_CANDIDATES+=("$svc")
+      fi
+    fi
+  done
+
+  if [[ ${#DISABLE_CANDIDATES[@]} -eq 0 ]]; then
+    echo " Жодної з відомих непотрібних служб не знайдено активною в цій"
+    echo " системі (можливо, вже вимкнені чи це мінімальний образ) - пропускаю."
+  else
+    echo " Знайдено активні служби-кандидати:"
+    for svc in "${DISABLE_CANDIDATES[@]}"; do
+      echo "   - $svc"
+    done
+    echo ""
+    if printf '%s\n' "${DISABLE_CANDIDATES[@]}" | grep -q "^avahi-daemon"; then
+      echo " УВАГА: avahi-daemon забезпечує доступ через 'raspberrypi.local'"
+      echo " (mDNS). Якщо підключаєтесь до цього Pi за такою адресою (не по"
+      echo " IP) - НЕ вимикайте avahi, інакше ця адреса перестане працювати."
+      echo ""
+    fi
+    read -r -p " Вимкнути ці служби зараз? [т/N]: " DISABLE_SVC
+    DISABLE_SVC="$(echo "$DISABLE_SVC" | tr -d '[:space:]')"
+    if [[ "$DISABLE_SVC" =~ ^[TtYyТт] ]]; then
+      for svc in "${DISABLE_CANDIDATES[@]}"; do
+        if systemctl disable --now "$svc" 2>/dev/null; then
+          echo " ==> Вимкнено: $svc"
+        else
+          echo " !! Не вдалося вимкнути: $svc (пропускаю)"
+        fi
+      done
+    else
+      echo " Пропущено. Вимкнути пізніше вручну можна через"
+      echo " 'sudo systemctl disable --now <служба>'."
+    fi
+  fi
+
+  echo ""
+  read -r -p " Прибрати кеш пакетів і сирітські залежності (apt autoremove/clean)? [т/N]: " APT_CLEAN
+  APT_CLEAN="$(echo "$APT_CLEAN" | tr -d '[:space:]')"
+  if [[ "$APT_CLEAN" =~ ^[TtYyТт] ]]; then
+    apt-get autoremove -y && apt-get clean
+    echo " ==> Готово."
+  else
+    echo " Пропущено."
+  fi
+  echo ""
+  echo "======================================================================"
+fi
+
+echo ""
+echo "======================================================================"
+if [[ "$MODE" == "update" ]]; then
+  echo " Оновлення завершено."
+else
+  echo " Базове встановлення завершено."
+fi
+echo ""
+echo " НАСТУПНІ КРОКИ:"
+echo ""
+echo " 1. Підключіть wlan0 до WiFi Starlink Mini (якщо ще не підключений):"
+echo "      sudo nmcli device wifi connect \"<SSID Starlink>\" password \"<пароль>\" ifname wlan0"
+echo ""
+echo " 2. starlink_grpc.py вже включений у проєкт (app/vendor/) - нічого"
+echo "    завантажувати не треба. Щоб оновити до найновішої upstream-"
+echo "    версії (опційно, не обов'язково): sudo systemctl start"
+echo "    starlink-grpc-fetch.service"
+echo ""
+PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -z "$PI_IP" ]]; then
+  PI_IP="<ip-пристрою>"
+fi
+echo " 3. Дашборд: http://$PI_IP:8080"
+echo ""
+if ! grep -qE "^dtparam=spi=on" /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then
+  echo " 4. Фізичний TFT-дисплей (опційно, вимкнено за замовчуванням):"
+  echo "    SPI зараз ВИМКНЕНИЙ у системі. Щоб використати дисплей:"
+  echo "      sudo raspi-config nonint do_spi 0"
+  echo "      sudo reboot"
+  echo "    Потім увімкни STARLINK_DISPLAY_ENABLED=1 на сторінці /settings"
+  echo "    і перевір/скоригуй піни під конкретну плату."
+  echo ""
+fi
+echo " Для наступних оновлень: покладіть новий starlink-monitor.tar.gz у"
+echo " домашній каталог ($RUN_USER_HOME/) і виконайте (з будь-якого каталогу):"
+echo "      sudo bash /opt/starlink-monitor/scripts/update.sh"
+echo "======================================================================"

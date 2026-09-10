@@ -1,0 +1,11 @@
+[Unit]
+Description=Періодична перевірка життєздатності watchdog-механізму, раз/хв
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+Unit=starlink-monitor-healthcheck.service
+AccuracySec=5
+
+[Install]
+WantedBy=timers.target
