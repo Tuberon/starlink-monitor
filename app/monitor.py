@@ -352,6 +352,11 @@ class Watchdog:
         # КОЖНОМУ старті сервісу (небажано - таймер має "стартувати"
         # з моменту запуску, не миттєво спрацьовувати).
         self.last_scheduled_reboot_ts = time.time()
+        # Той самий принцип, що last_scheduled_reboot_ts вище -
+        # поточний час, не 0.0, інакше кожен рестарт сервісу негайно
+        # надсилав би backup-файл у Telegram, навіть якщо
+        # TELEGRAM_BACKUP_INTERVAL_HOURS ще не минув.
+        self.last_telegram_backup_sent_ts = time.time()
         # Час першої невдалої спроби в поточному безперервному ланцюжку
         # відмов - None, поки dish online. Використовується, щоб приглушити
         # Telegram-сповіщення про auto-reboot при тривалій (>15 хв, за
@@ -771,6 +776,43 @@ class Watchdog:
             logger.warning("Плановий reboot провалився: %s", msg)
             db.insert_event("scheduled_reboot", f"Плановий reboot провалився: {msg}", success=False)
 
+    def _maybe_send_backup_to_telegram(self) -> None:
+        """Періодично надсилає ОСТАННІЙ (найновіший за mtime) backup-
+        файл із AUTO_BACKUP_DIR у Telegram як документ - страховка,
+        якщо єдина копія backup лишається на тій самій SD-картці, що
+        й сама БД (обидві могли б вийти з ладу одночасно). Окремий,
+        незалежний інтервал (TELEGRAM_BACKUP_INTERVAL_HOURS) від
+        AUTO_BACKUP_INTERVAL_SEC (створення файлу) - можна створювати
+        backup частіше, надсилати рідше, щоб не спамити Telegram
+        великими файлами."""
+        if not config.TELEGRAM_BACKUP_ENABLED:
+            return
+        now = time.time()
+        if now - self.last_telegram_backup_sent_ts < config.TELEGRAM_BACKUP_INTERVAL_HOURS * 3600:
+            return
+
+        # Оновлюємо ТАЙМЕР безумовно (до самої спроби) - той самий
+        # принцип, що last_scheduled_reboot_ts вище: провал відправки
+        # (напр. Telegram тимчасово недоступний) не має спричиняти
+        # повторні спроби щоцикл опитування (~10с), а чекати до
+        # наступного повного інтервалу.
+        self.last_telegram_backup_sent_ts = now
+
+        if not os.path.isdir(config.AUTO_BACKUP_DIR):
+            logger.info("Немає backup-файлів для відправки в Telegram (каталог ще не створений)")
+            return
+        backups = [f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.endswith(".json")]
+        if not backups:
+            logger.info("Немає backup-файлів для відправки в Telegram")
+            return
+        latest = max(backups, key=lambda f: os.path.getmtime(os.path.join(config.AUTO_BACKUP_DIR, f)))
+        path = os.path.join(config.AUTO_BACKUP_DIR, latest)
+
+        ok, msg = telegram_notify.send_document(path, caption=f"📦 Backup Starlink Monitor: {latest}")
+        db.insert_event("telegram_backup_sent", f"Backup у Telegram ({latest}): {msg}", success=ok)
+        if not ok:
+            logger.warning("Не вдалося надіслати backup у Telegram: %s", msg)
+
     def _maybe_reboot(self) -> None:
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
             return
@@ -936,6 +978,14 @@ class Watchdog:
                 except Exception:
                     logger.exception("Помилка автоматичного backup")
                 last_auto_backup = time.time()
+
+            # Окремий, незалежний таймер від створення backup вище -
+            # власна логіка (не try/except тут) вже обробляє помилки
+            # й оновлює власний таймер безумовно всередині методу.
+            try:
+                self._maybe_send_backup_to_telegram()
+            except Exception:
+                logger.exception("Помилка відправки backup у Telegram")
 
             time.sleep(config.POLL_INTERVAL_SEC)
 

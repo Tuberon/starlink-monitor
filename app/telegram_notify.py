@@ -4,6 +4,7 @@
 керуються з веб-інтерфейсу без перезапуску сервісу.
 """
 import logging
+import os
 import socket
 import time
 from typing import Any, Optional
@@ -249,6 +250,65 @@ def send_message(text: str) -> tuple[bool, str]:
         else:
             # Цикл for завершився БЕЗ break - усі спроби (включно з
             # повторними) дали мережеву помилку, жодної HTTP-відповіді.
+            errors.append(f"{chat_id}: {last_network_error}")
+
+    if any_ok and not errors:
+        return True, "надіслано"
+    if any_ok and errors:
+        return True, f"надіслано частково, помилки: {'; '.join(errors)}"
+    return False, "; ".join(errors) if errors else "невідома помилка"
+
+
+def send_document(file_path: str, caption: str = "") -> tuple[bool, str]:
+    """Надсилає файл (напр. backup JSON) усім налаштованим chat_id
+    через sendDocument (multipart/form-data, не JSON - на відміну
+    від sendMessage). Той самий retry/eth0-fallback підхід, що
+    send_message() - файл відкривається ЗАНОВО для кожної спроби й
+    кожного chat_id (file handle споживається один раз при
+    завантаженні, повторне використання того самого відкритого
+    файла для другого запиту дало б порожнє тіло)."""
+    token, chat_ids, enabled = get_telegram_config()
+
+    if not enabled:
+        return False, "Telegram сповіщення вимкнені"
+    if not token:
+        return False, "Не вказано bot token"
+    if not chat_ids:
+        return False, "Не вказано жодного chat_id"
+    if not os.path.isfile(file_path):
+        return False, f"Файл не знайдено: {file_path}"
+
+    filename = os.path.basename(file_path)
+    url = API_BASE.format(token=token, method="sendDocument")
+    errors = []
+    any_ok = False
+    for chat_id in chat_ids:
+        last_network_error: Optional[str] = None
+        for attempt in range(config.TELEGRAM_SEND_RETRIES + 1):
+            if attempt > 0:
+                time.sleep(config.TELEGRAM_SEND_RETRY_DELAY_SEC)
+                logger.info("Telegram sendDocument повторна спроба %d для %s", attempt, chat_id)
+            try:
+                with open(file_path, "rb") as f:
+                    resp = _request_with_eth0_fallback(
+                        "post",
+                        url,
+                        data={"chat_id": chat_id, "caption": caption},
+                        files={"document": (filename, f)},
+                        timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
+                    )
+                data = resp.json()
+                if resp.status_code == 200 and data.get("ok"):
+                    any_ok = True
+                else:
+                    err_desc = data.get("description", f"HTTP {resp.status_code}")
+                    errors.append(f"{chat_id}: {err_desc}")
+                    logger.warning("Telegram sendDocument помилка для %s: %s", chat_id, err_desc)
+                break
+            except requests.RequestException as e:
+                last_network_error = str(e)
+                logger.warning("Telegram sendDocument мережева помилка для %s (спроба %d): %s", chat_id, attempt + 1, e)
+        else:
             errors.append(f"{chat_id}: {last_network_error}")
 
     if any_ok and not errors:

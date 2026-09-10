@@ -1112,3 +1112,97 @@ def test_poll_once_obstruction_warning_logs_event(watchdog):
         watchdog.poll_once()
     events = db.get_recent_events(10)
     assert any(e["kind"] == "obstruction_warning" for e in events)
+
+
+# ---- _maybe_send_backup_to_telegram() ----
+
+def test_maybe_send_backup_disabled_does_nothing(watchdog, tmp_path):
+    config.TELEGRAM_BACKUP_ENABLED = False
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    with patch("app.telegram_notify.send_document") as mock_send:
+        watchdog._maybe_send_backup_to_telegram()
+    mock_send.assert_not_called()
+
+
+def test_maybe_send_backup_before_interval_does_nothing(watchdog, tmp_path):
+    config.TELEGRAM_BACKUP_ENABLED = True
+    config.TELEGRAM_BACKUP_INTERVAL_HOURS = 168
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    watchdog.last_telegram_backup_sent_ts = time.time()  # щойно
+    with patch("app.telegram_notify.send_document") as mock_send:
+        watchdog._maybe_send_backup_to_telegram()
+    mock_send.assert_not_called()
+
+
+def test_maybe_send_backup_no_directory_does_not_crash(watchdog, tmp_path):
+    config.TELEGRAM_BACKUP_ENABLED = True
+    config.AUTO_BACKUP_DIR = str(tmp_path / "nonexistent-backups")
+    watchdog.last_telegram_backup_sent_ts = 0
+    with patch("app.telegram_notify.send_document") as mock_send:
+        watchdog._maybe_send_backup_to_telegram()  # не мало кинути виняток
+    mock_send.assert_not_called()
+
+
+def test_maybe_send_backup_no_files_does_not_crash(watchdog, tmp_path):
+    config.TELEGRAM_BACKUP_ENABLED = True
+    config.AUTO_BACKUP_DIR = str(tmp_path / "empty-backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    watchdog.last_telegram_backup_sent_ts = 0
+    with patch("app.telegram_notify.send_document") as mock_send:
+        watchdog._maybe_send_backup_to_telegram()
+    mock_send.assert_not_called()
+
+
+def test_maybe_send_backup_sends_newest_file(watchdog, tmp_path):
+    config.TELEGRAM_BACKUP_ENABLED = True
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    watchdog.last_telegram_backup_sent_ts = 0
+
+    old_path = os.path.join(config.AUTO_BACKUP_DIR, "backup-1000.json")
+    new_path = os.path.join(config.AUTO_BACKUP_DIR, "backup-2000.json")
+    with open(old_path, "w") as f:
+        f.write("{}")
+    os.utime(old_path, (1000, 1000))
+    with open(new_path, "w") as f:
+        f.write("{}")
+    os.utime(new_path, (2000, 2000))
+
+    with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")) as mock_send:
+        watchdog._maybe_send_backup_to_telegram()
+
+    mock_send.assert_called_once()
+    assert mock_send.call_args[0][0] == new_path
+
+
+def test_maybe_send_backup_logs_event_on_success(watchdog, tmp_path):
+    config.TELEGRAM_BACKUP_ENABLED = True
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    watchdog.last_telegram_backup_sent_ts = 0
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+        f.write("{}")
+
+    with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")):
+        watchdog._maybe_send_backup_to_telegram()
+
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "telegram_backup_sent" for e in events)
+
+
+def test_maybe_send_backup_updates_timer_even_on_failure(watchdog, tmp_path):
+    """Реальна мета: провал відправки (напр. Telegram тимчасово
+    недоступний) НЕ має спричиняти повторні спроби щоцикл опитування
+    (~10с) - таймер оновлюється БЕЗУМОВНО, до самої спроби."""
+    config.TELEGRAM_BACKUP_ENABLED = True
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    watchdog.last_telegram_backup_sent_ts = 0
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+        f.write("{}")
+
+    before = watchdog.last_telegram_backup_sent_ts
+    with patch("app.telegram_notify.send_document", return_value=(False, "мережева помилка")):
+        watchdog._maybe_send_backup_to_telegram()
+
+    assert watchdog.last_telegram_backup_sent_ts > before

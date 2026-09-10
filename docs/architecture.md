@@ -473,6 +473,38 @@ dish/router_target_version, історія відомих Starlink-пристр�
 Bot token у файлі — у відкритому вигляді, файл backup потрібно
 берегти як secret.
 
+## Періодична відправка backup у Telegram (app/telegram_notify.py:send_document)
+
+`send_document()` — та сама retry/eth0-fallback інфраструктура, що
+`send_message()` (`_request_with_eth0_fallback()` з `**kwargs`,
+підтримує `files=` без змін), але через Telegram Bot API's
+`sendDocument`-endpoint (multipart/form-data, не JSON). Файл
+відкривається **заново** для кожного chat_id окремо (`with open(...)
+as f` усередині циклу) — file handle споживається один раз при
+завантаженні, повторне використання того самого відкритого файлового
+об'єкта для другого запиту дало б порожнє тіло другому отримувачу
+(перевірено живим тестом: обидва chat_id реально отримують файл
+повного розміру).
+
+`Watchdog._maybe_send_backup_to_telegram()` (`monitor.py`) — окремий,
+незалежний таймер від `AUTO_BACKUP_INTERVAL_SEC` (створення файлу) —
+`TELEGRAM_BACKUP_INTERVAL_HOURS` (типово тиждень). Знаходить
+**найновіший** (`max(..., key=os.path.getmtime)`) `.json`-файл у
+`AUTO_BACKUP_DIR`, надсилає його. Таймер (`last_telegram_backup_
+sent_ts`) ініціалізується `time.time()` у `__init__()` (не `0.0`) —
+той самий принцип, що вже застосований до `last_scheduled_reboot_ts`:
+інакше кожен рестарт сервісу негайно надсилав би файл, незалежно від
+реально минулого інтервалу. Таймер оновлюється **безумовно, до самої
+спроби відправки** (той самий принцип, що `_maybe_scheduled_reboot()`)
+— провал (напр. Telegram тимчасово недоступний) не має спричиняти
+повторні спроби щоцикл опитування (~10с), а чекати повного інтервалу.
+
+Викликається в `run_forever()` окремим `try/except`-блоком (не
+всередині `if AUTO_BACKUP_ENABLED and ...`-блоку створення backup) —
+метод сам обробляє власні помилки й оновлює власний таймер
+безумовно всередині себе, зовнішній `try/except` тут — лише
+додатковий запобіжник від зовсім неочікуваних винятків.
+
 ## Категоризація параметрів на /settings (app/config_editor.py)
 
 `EDITABLE_PARAMS` (54 записи) — кожен має `category`

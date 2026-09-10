@@ -35,6 +35,8 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_AUTO_BACKUP_ENABLED", "type": "bool", "default": "1", "label": "Автоматичний періодичний backup (0/1)", "category": "reliability"},
     {"key": "STARLINK_AUTO_BACKUP_INTERVAL_SEC", "type": "int", "default": "604800", "label": "Інтервал автоматичного backup, сек", "category": "reliability"},
     {"key": "STARLINK_AUTO_BACKUP_KEEP_COUNT", "type": "int", "default": "4", "label": "Скільки останніх backup-ів зберігати", "category": "reliability"},
+    {"key": "STARLINK_TELEGRAM_BACKUP_ENABLED", "type": "bool", "default": "0", "label": "Періодично надсилати backup у Telegram (0/1)", "category": "reliability"},
+    {"key": "STARLINK_TELEGRAM_BACKUP_INTERVAL_HOURS", "type": "float", "default": "168", "label": "Інтервал відправки backup у Telegram, годин", "category": "reliability"},
     {"key": "STARLINK_MAX_FAILURES", "type": "int", "default": "6", "label": "Невдалих опитувань перед watchdog-reboot", "category": "reliability"},
     {"key": "STARLINK_MIN_REBOOT_INTERVAL", "type": "int", "default": "180", "label": "Мін. інтервал між авто-ребутами, сек", "category": "reliability"},
     {"key": "STARLINK_AUTO_REBOOT_ON_UPDATE", "type": "bool", "default": "1", "label": "Авто-reboot при готовому оновленні", "category": "reliability"},

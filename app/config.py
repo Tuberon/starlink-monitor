@@ -122,6 +122,14 @@ DB_PATH = os.environ.get("STARLINK_DB_PATH", "/var/lib/starlink-monitor/history.
 AUTO_BACKUP_ENABLED = os.environ.get("STARLINK_AUTO_BACKUP_ENABLED", "1") == "1"
 AUTO_BACKUP_INTERVAL_SEC = int(os.environ.get("STARLINK_AUTO_BACKUP_INTERVAL_SEC", "604800"))  # тиждень
 AUTO_BACKUP_KEEP_COUNT = int(os.environ.get("STARLINK_AUTO_BACKUP_KEEP_COUNT", "4"))
+# Опційна періодична відправка ОСТАННЬОГО (найновішого) backup-файлу
+# в Telegram як документ - страховка, якщо AUTO_BACKUP_DIR лишається
+# лише на тій самій SD-картці, яка може вийти з ладу разом з БД.
+# Окремий, незалежний інтервал від AUTO_BACKUP_INTERVAL_SEC (створення
+# backup) - можна створювати частіше, надсилати рідше (щоб не спамити
+# Telegram великими файлами), чи навпаки.
+TELEGRAM_BACKUP_ENABLED = os.environ.get("STARLINK_TELEGRAM_BACKUP_ENABLED", "0") == "1"
+TELEGRAM_BACKUP_INTERVAL_HOURS = float(os.environ.get("STARLINK_TELEGRAM_BACKUP_INTERVAL_HOURS", "168"))
 AUTO_BACKUP_DIR = os.environ.get(
     "STARLINK_AUTO_BACKUP_DIR", os.path.join(os.path.dirname(DB_PATH), "backups")
 )

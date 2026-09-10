@@ -96,7 +96,7 @@
 | `test_pi_power.py` | DB-сигнал записується ДО systemctl-команди, провал прибирає сигнал, lazy notify_fn default |
 | `test_gpio_utils.py` | find_gpio_chip, ButtonPressTracker (short/long_press), open_input/output_line через fake gpiod v1/v2 |
 | `test_display_run_forever.py` | Повна ініціалізація дисплея через fake CircuitPython-модулі, stop_event, pending-shutdown, кнопка, auto-off |
-| `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити; retry лише для мережевих помилок, не HTTP-рівня |
+| `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити; retry лише для мережевих помилок; send_document (backup-файл, окреме відкриття для кожного chat_id) |
 | `test_telegram_bot.py` | /checkupdates команда - диспетчеризація, known_devices, target-версії |
 | `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |
 | `test_starlink_client.py` | Парсинг gRPC-відповіді dish (enum-мапінг, getattr-fallback'и, конвертація одиниць) і router (subprocess+JSON шлях, snake→camelCase, clients) |

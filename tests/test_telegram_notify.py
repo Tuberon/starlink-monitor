@@ -117,3 +117,73 @@ def test_retries_respect_configured_count(db_path):
         assert call_count[0] == 4, "1 початкова спроба + 3 повтори = 4 виклики"
     finally:
         config.TELEGRAM_SEND_RETRIES = 1
+
+
+# ---- send_document() ----
+
+def test_send_document_success(db_path, tmp_path):
+    _setup_telegram()
+    test_file = tmp_path / "backup-1000.json"
+    test_file.write_text('{"test": true}')
+
+    from unittest.mock import MagicMock
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["url"] = url
+        captured["data"] = kwargs.get("data")
+        captured["files"] = kwargs.get("files")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"ok": True}
+        return resp
+
+    with patch("app.telegram_notify._request_with_eth0_fallback", side_effect=fake_request):
+        ok, msg = telegram_notify.send_document(str(test_file), caption="Тестовий backup")
+
+    assert ok is True
+    assert "sendDocument" in captured["url"]
+    assert captured["data"]["caption"] == "Тестовий backup"
+    assert "document" in captured["files"]
+
+
+def test_send_document_missing_file_returns_false(db_path):
+    _setup_telegram()
+    ok, msg = telegram_notify.send_document("/nonexistent/backup.json")
+    assert ok is False
+    assert "не знайдено" in msg
+
+
+def test_send_document_disabled_does_not_attempt_request(db_path, tmp_path):
+    db.set_setting("telegram_enabled", "0")
+    test_file = tmp_path / "backup.json"
+    test_file.write_text("{}")
+    with patch("app.telegram_notify._request_with_eth0_fallback") as mock_req:
+        ok, msg = telegram_notify.send_document(str(test_file))
+    assert ok is False
+    mock_req.assert_not_called()
+
+
+def test_send_document_reopens_file_for_each_chat_id(db_path, tmp_path):
+    """Реальна мета: file handle споживається один раз при
+    завантаженні - файл МАЄ відкриватись ЗАНОВО для кожного chat_id,
+    інакше другий отримувач отримав би порожній документ."""
+    _setup_telegram(chat_id="111,222")
+    test_file = tmp_path / "backup.json"
+    test_file.write_text('{"data": "test"}')
+
+    from unittest.mock import MagicMock
+    file_sizes_seen = []
+
+    def fake_request(method, url, **kwargs):
+        f = kwargs["files"]["document"][1]
+        file_sizes_seen.append(len(f.read()))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"ok": True}
+        return resp
+
+    with patch("app.telegram_notify._request_with_eth0_fallback", side_effect=fake_request):
+        telegram_notify.send_document(str(test_file))
+
+    assert file_sizes_seen == [len('{"data": "test"}')] * 2, "обидва chat_id мали отримати ПОВНИЙ файл, не порожній"
