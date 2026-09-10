@@ -747,3 +747,368 @@ def test_check_db_integrity_corrupted_notifies_and_attempts_backup(watchdog, tmp
 
     assert len(watchdog.sent) >= 1
     assert "пошкодження" in watchdog.sent[0].lower()
+
+
+# ---- _notifications_muted() ----
+
+def test_notifications_not_muted_when_no_failures(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.first_failure_ts = None
+    assert watchdog._notifications_muted() is False
+
+
+def test_notifications_not_muted_before_threshold(watchdog):
+    from app.starlink_client import DishStatus
+    config.NOTIFICATIONS_MUTE_AFTER_SEC = 900
+    watchdog.first_failure_ts = time.time() - 100
+    assert watchdog._notifications_muted() is False
+
+
+def test_notifications_muted_after_threshold(watchdog):
+    from app.starlink_client import DishStatus
+    config.NOTIFICATIONS_MUTE_AFTER_SEC = 900
+    watchdog.first_failure_ts = time.time() - 1000
+    assert watchdog._notifications_muted() is True
+
+
+# ---- poll_system_metrics() ----
+
+def test_poll_system_metrics_writes_to_db(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.poll_system_metrics()
+    latest = db.get_latest_system_metric()
+    assert latest is not None
+
+
+def test_poll_system_metrics_error_does_not_raise(watchdog):
+    from app.starlink_client import DishStatus
+    with patch("app.monitor.get_system_metrics", side_effect=RuntimeError("psutil помилка")):
+        watchdog.poll_system_metrics()  # не мало кинути виняток
+
+
+# ---- _log_update_state_change() ----
+
+def test_log_update_state_change_first_call_idle_is_silent(watchdog):
+    from app.starlink_client import DishStatus
+    status = DishStatus(timestamp=time.time(), online=True, update_state="IDLE")
+    watchdog._log_update_state_change(status)
+    events = db.get_recent_events(10)
+    assert events == []
+
+
+def test_log_update_state_change_first_call_non_idle_is_logged(watchdog):
+    from app.starlink_client import DishStatus
+    status = DishStatus(timestamp=time.time(), online=True, update_state="FETCHING")
+    watchdog._log_update_state_change(status)
+    events = db.get_recent_events(10)
+    assert len(events) == 1
+
+
+def test_log_update_state_change_reboot_required_notifies(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_update_state = "PRE_CHECK"
+    status = DishStatus(timestamp=time.time(), online=True, update_state="REBOOT_REQUIRED")
+    watchdog._log_update_state_change(status)
+    assert any("готове" in s for s in watchdog.sent)
+
+
+def test_log_update_state_change_faulted_notifies(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_update_state = "WRITING"
+    status = DishStatus(timestamp=time.time(), online=True, update_state="FAULTED")
+    watchdog._log_update_state_change(status)
+    assert any("Помилка оновлення" in s for s in watchdog.sent)
+    events = db.get_recent_events(10)
+    assert events[0]["success"] == 0
+
+
+def test_log_update_state_change_download_started_notifies(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_update_state = "IDLE"
+    status = DishStatus(timestamp=time.time(), online=True, update_state="FETCHING", update_progress_pct=10.0)
+    watchdog._log_update_state_change(status)
+    assert any("Розпочато оновлення" in s for s in watchdog.sent)
+
+
+def test_log_update_state_change_completed_notifies(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_update_state = "WRITING"
+    status = DishStatus(timestamp=time.time(), online=True, update_state="IDLE")
+    watchdog._log_update_state_change(status)
+    assert any("завершено" in s for s in watchdog.sent)
+
+
+def test_log_update_state_change_same_state_is_silent(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_update_state = "FETCHING"
+    status = DishStatus(timestamp=time.time(), online=True, update_state="FETCHING")
+    watchdog._log_update_state_change(status)
+    events = db.get_recent_events(10)
+    assert events == []
+
+
+# ---- _log_alerts_change() ----
+
+def test_log_alerts_change_first_call_does_not_notify(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_alerts = None
+    status = DishStatus(timestamp=time.time(), online=True, active_alerts=["thermal_throttle"])
+    watchdog._log_alerts_change(status)
+    assert watchdog.sent == []
+    assert watchdog.prev_alerts == {"thermal_throttle"}
+
+
+def test_log_alerts_change_new_alert_notifies(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_alerts = set()
+    status = DishStatus(timestamp=time.time(), online=True, active_alerts=["thermal_throttle"])
+    watchdog._log_alerts_change(status)
+    assert any("Нове попередження" in s for s in watchdog.sent)
+
+
+def test_log_alerts_change_muted_alert_logs_but_no_notify(watchdog):
+    from app.starlink_client import DishStatus
+    """roaming - у MUTED_DISH_ALERTS: подія пишеться в журнал (для
+    дашборду), але Telegram-сповіщення НЕ надсилається (шумний
+    сценарій для звичайного використання)."""
+    watchdog.prev_alerts = set()
+    status = DishStatus(timestamp=time.time(), online=True, active_alerts=["roaming"])
+    watchdog._log_alerts_change(status)
+    assert watchdog.sent == []
+    events = db.get_recent_events(10)
+    assert len(events) == 1
+
+
+def test_log_alerts_change_resolved_alert_logs_event(watchdog):
+    from app.starlink_client import DishStatus
+    watchdog.prev_alerts = {"thermal_throttle"}
+    status = DishStatus(timestamp=time.time(), online=True, active_alerts=[])
+    watchdog._log_alerts_change(status)
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "dish_alert_resolved" for e in events)
+
+
+# ---- poll_router() ----
+
+def test_poll_router_online_updates_status(watchdog):
+    from app.starlink_client import RouterInfo
+    info = RouterInfo(timestamp=time.time(), online=True, software_version="r1")
+    with patch.object(watchdog.client, "get_router_info", return_value=info):
+        watchdog.poll_router()
+    assert db.get_router_status()["software_version"] == "r1"
+
+
+def test_poll_router_offline_does_not_raise(watchdog):
+    from app.starlink_client import RouterInfo
+    info = RouterInfo(timestamp=time.time(), online=False, error="timeout")
+    with patch.object(watchdog.client, "get_router_info", return_value=info):
+        watchdog.poll_router()  # не мало кинути виняток
+
+
+def test_poll_router_exception_does_not_raise(watchdog):
+    with patch.object(watchdog.client, "get_router_info", side_effect=RuntimeError("мережа впала")):
+        watchdog.poll_router()  # не мало кинути виняток
+
+
+def test_poll_router_filters_ignored_alerts(watchdog):
+    from app.starlink_client import RouterInfo
+    from app.monitor import IGNORED_ROUTER_ALERTS
+    ignored = next(iter(IGNORED_ROUTER_ALERTS))
+    info = RouterInfo(timestamp=time.time(), online=True, active_alerts=[ignored, "thermal_shutdown"])
+    with patch.object(watchdog.client, "get_router_info", return_value=info):
+        watchdog.poll_router()
+    stored = db.get_router_status()
+    assert ignored not in stored["active_alerts"]
+    assert "thermal_shutdown" in stored["active_alerts"]
+
+
+# ---- _log_router_update_state_change() ----
+
+def test_log_router_update_state_first_call_not_run_is_silent(watchdog):
+    from app.starlink_client import RouterInfo
+    info = RouterInfo(timestamp=time.time(), online=True, update_state=None)
+    watchdog._log_router_update_state_change(info)
+    assert db.get_recent_events(10) == []
+
+
+def test_log_router_update_state_reboot_pending_notifies(watchdog):
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_update_state = "DOWNLOADING_UPDATE_IMAGE"
+    info = RouterInfo(timestamp=time.time(), online=True, update_state="REBOOT_PENDING")
+    watchdog._log_router_update_state_change(info)
+    assert any("готове" in s for s in watchdog.sent)
+
+
+def test_log_router_update_state_failure_notifies_and_logs_failure(watchdog):
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_update_state = "FLASHING"
+    info = RouterInfo(timestamp=time.time(), online=True, update_state="DOWNLOADING_UPDATE_IMAGE_FAILED")
+    watchdog._log_router_update_state_change(info)
+    assert any("Помилка оновлення" in s for s in watchdog.sent)
+    events = db.get_recent_events(10)
+    assert events[0]["success"] == 0
+
+
+def test_log_router_update_state_muted_failure_does_not_notify(watchdog):
+    """GETTING_TARGET_VERSION_FAILED - у MUTED_ROUTER_UPDATE_STATES:
+    подія пишеться, але Telegram-сповіщення НЕ надсилається."""
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_update_state = "NOT_RUN"
+    info = RouterInfo(timestamp=time.time(), online=True, update_state="GETTING_TARGET_VERSION_FAILED")
+    watchdog._log_router_update_state_change(info)
+    assert watchdog.sent == []
+    assert len(db.get_recent_events(10)) == 1
+
+
+# ---- _log_router_alerts_change() ----
+
+def test_log_router_alerts_new_alert_notifies(watchdog):
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_alerts = set()
+    info = RouterInfo(timestamp=time.time(), online=True, active_alerts=["thermal_shutdown"])
+    watchdog._log_router_alerts_change(info)
+    assert any("Нове попередження роутера" in s for s in watchdog.sent)
+
+
+def test_log_router_alerts_muted_alert_no_notify(watchdog):
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_alerts = set()
+    info = RouterInfo(timestamp=time.time(), online=True, active_alerts=["install_pending"])
+    watchdog._log_router_alerts_change(info)
+    assert watchdog.sent == []
+    assert len(db.get_recent_events(10)) == 1
+
+
+def test_log_router_alerts_resolved_logs_event(watchdog):
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_alerts = {"thermal_shutdown"}
+    info = RouterInfo(timestamp=time.time(), online=True, active_alerts=[])
+    watchdog._log_router_alerts_change(info)
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "router_alert_resolved" for e in events)
+
+
+# ---- _reboot_for_update_ready() / _maybe_reboot_for_update() / _maybe_reboot_for_router_update() ----
+
+def test_reboot_for_update_ready_respects_min_interval(watchdog):
+    watchdog.last_reboot_ts = time.time()
+    config.MIN_REBOOT_INTERVAL_SEC = 180
+    with patch.object(watchdog.client, "reboot_dish") as mock_reboot:
+        watchdog._reboot_for_update_ready("dish", "REBOOT_REQUIRED")
+    mock_reboot.assert_not_called()
+
+
+def test_reboot_for_update_ready_success_notifies(watchdog):
+    watchdog.last_reboot_ts = 0
+    with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")):
+        watchdog._reboot_for_update_ready("dish", "REBOOT_REQUIRED")
+    assert any("автоматично перезавантажено" in s for s in watchdog.sent)
+
+
+def test_reboot_for_update_ready_failure_notifies_and_updates_ts():
+    """last_reboot_ts МАЄ оновитись НАВІТЬ при провалі reboot -
+    захист від reboot-loop (той самий принцип, що в _maybe_reboot)."""
+    from app.monitor import Watchdog
+    wd = Watchdog()
+    wd.sent = []
+    wd._notify = lambda t: wd.sent.append(t)
+    wd.last_reboot_ts = 0
+    with patch.object(wd.client, "reboot_dish", return_value=(False, "timeout")):
+        wd._reboot_for_update_ready("dish", "REBOOT_REQUIRED")
+    assert any("Не вдалося" in s for s in wd.sent)
+    assert wd.last_reboot_ts > 0
+
+
+def test_maybe_reboot_for_update_disabled_does_nothing(watchdog):
+    from app.starlink_client import DishStatus
+    db.set_auto_reboot_enabled(False)
+    status = DishStatus(timestamp=time.time(), online=True, update_state="REBOOT_REQUIRED")
+    with patch.object(watchdog, "_reboot_for_update_ready") as mock_reboot:
+        watchdog._maybe_reboot_for_update(status)
+    mock_reboot.assert_not_called()
+
+
+def test_maybe_reboot_for_update_triggers_when_ready(watchdog):
+    from app.starlink_client import DishStatus
+    db.set_auto_reboot_enabled(True)
+    status = DishStatus(timestamp=time.time(), online=True, update_state="REBOOT_REQUIRED")
+    with patch.object(watchdog, "_reboot_for_update_ready") as mock_reboot:
+        watchdog._maybe_reboot_for_update(status)
+    mock_reboot.assert_called_once_with("dish", "REBOOT_REQUIRED")
+
+
+def test_maybe_reboot_for_router_update_triggers_when_ready(watchdog):
+    from app.starlink_client import RouterInfo
+    db.set_auto_reboot_enabled(True)
+    info = RouterInfo(timestamp=time.time(), online=True, update_state="REBOOT_PENDING")
+    with patch.object(watchdog, "_reboot_for_update_ready") as mock_reboot:
+        watchdog._maybe_reboot_for_router_update(info)
+    mock_reboot.assert_called_once_with("роутера", "REBOOT_PENDING")
+
+
+def test_maybe_reboot_for_router_update_install_pending_triggers(watchdog):
+    from app.starlink_client import RouterInfo
+    db.set_auto_reboot_enabled(True)
+    info = RouterInfo(timestamp=time.time(), online=True, update_state=None, update_install_pending=True)
+    with patch.object(watchdog, "_reboot_for_update_ready") as mock_reboot:
+        watchdog._maybe_reboot_for_router_update(info)
+    mock_reboot.assert_called_once_with("роутера", "install_pending")
+
+
+# ---- poll_once() ----
+
+def test_poll_once_recovery_after_long_downtime_shows_duration(watchdog):
+    from app.starlink_client import DishStatus
+    config.NOTIFICATIONS_MUTE_AFTER_SEC = 900
+    watchdog.consecutive_failures = 5
+    watchdog.first_failure_ts = time.time() - 1000  # довше за MUTE_AFTER
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100)
+    with patch.object(watchdog.client, "get_status", return_value=status):
+        watchdog.poll_once()
+    assert any("хв" in s and "відновлено" in s for s in watchdog.sent)
+
+
+def test_poll_once_recovery_short_downtime_shows_attempt_count(watchdog):
+    config.NOTIFICATIONS_MUTE_AFTER_SEC = 900
+    from app.starlink_client import DishStatus
+    watchdog.consecutive_failures = 3
+    watchdog.first_failure_ts = time.time() - 10
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100)
+    with patch.object(watchdog.client, "get_status", return_value=status):
+        watchdog.poll_once()
+    assert any("невдалих спроб" in s for s in watchdog.sent)
+
+
+def test_poll_once_recovery_disabled_via_config(watchdog):
+    from app.starlink_client import DishStatus
+    config.NOTIFY_DISH_RECOVERY = False
+    watchdog.consecutive_failures = 3
+    watchdog.first_failure_ts = time.time() - 10
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100)
+    try:
+        with patch.object(watchdog.client, "get_status", return_value=status):
+            watchdog.poll_once()
+        assert watchdog.sent == []
+    finally:
+        config.NOTIFY_DISH_RECOVERY = True
+
+
+def test_poll_once_offline_increments_failures_and_calls_maybe_reboot(watchdog):
+    from app.starlink_client import DishStatus
+    status = DishStatus(timestamp=time.time(), online=False, error="timeout")
+    with patch.object(watchdog.client, "get_status", return_value=status), \
+         patch.object(watchdog, "_maybe_reboot") as mock_maybe_reboot:
+        watchdog.poll_once()
+    assert watchdog.consecutive_failures == 1
+    assert watchdog.first_failure_ts is not None
+    mock_maybe_reboot.assert_called_once()
+
+
+def test_poll_once_obstruction_warning_logs_event(watchdog):
+    from app.starlink_client import DishStatus
+    config.OBSTRUCTION_WARN_FRACTION = 0.05
+    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, obstruction_fraction=0.5)
+    with patch.object(watchdog.client, "get_status", return_value=status):
+        watchdog.poll_once()
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "obstruction_warning" for e in events)

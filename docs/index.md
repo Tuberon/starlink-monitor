@@ -87,7 +87,8 @@
 | Файл | Опис |
 |---|---|
 | `conftest.py` | Спільні fixtures: `db_path` (ізольована тимчасова БД), `watchdog` (з mock-ованим `_notify`) |
-| `test_monitor.py` | Групування reboot-спаму, дедублікація target-версій, `_maybe_reboot()` |
+| `test_monitor.py` | Reboot-спам, дедублікація target-версій, update-state/alerts (dish+router), auto-reboot логіка |
+| `test_monitor_run_forever.py` | Головний watchdog-цикл: periodичні prune/vacuum/integrity/backup, startup-сповіщення |
 | `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
 | `test_db.py` | Prune старих метрик, `check_integrity()`, callback-хук LED активності |
 | `test_display.py` | update_state/auto-off/power-message + _redraw, _load_font, _truncate_to_width, _set_backlight |
