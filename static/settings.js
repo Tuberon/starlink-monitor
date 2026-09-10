@@ -215,12 +215,12 @@ async function loadEnvConfig() {
     }
 
     form.innerHTML = Array.from(groups.entries()).map(([cat, params]) => {
-      const label = (data.category_labels && data.category_labels[cat]) || cat;
+      const label = escapeHtml((data.category_labels && data.category_labels[cat]) || cat);
       const fields = params.map(p => {
-        const value = p.overridden ? p.current : '';
-        const placeholder = `за замовчуванням: ${p.default}${p.overridden ? '' : ' (активне зараз)'}`;
+        const value = escapeHtml(p.overridden ? p.current : '');
+        const placeholder = escapeHtml(`за замовчуванням: ${p.default}${p.overridden ? '' : ' (активне зараз)'}`);
         return `
-          <label class="tg-label" for="env_${p.key}">${p.label}</label>
+          <label class="tg-label" for="env_${p.key}">${escapeHtml(p.label)}</label>
           <input class="tg-input" type="text" id="env_${p.key}" data-key="${p.key}"
                  value="${value}" placeholder="${placeholder}">
         `;

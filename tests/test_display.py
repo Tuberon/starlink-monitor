@@ -4,7 +4,7 @@
 дисплей не тестується (потребує фізичного заліза) - лише чиста,
 детерміністична логіка, винесена саме для тестованості.
 """
-from app.display import HIDDEN_ROUTER_STATES, _should_auto_off, _status_lines, _update_state_changed
+from app.display import HIDDEN_ROUTER_STATES, _fmt_uptime, _should_auto_off, _status_lines, _update_state_changed
 
 
 def _dish_metric(**overrides):
@@ -26,6 +26,26 @@ def _router_status(**overrides):
     )
     base.update(overrides)
     return base
+
+
+# ---- _fmt_uptime ----
+
+def test_fmt_uptime_none_returns_dash():
+    assert _fmt_uptime(None) == "—"
+
+
+def test_fmt_uptime_zero_returns_dash():
+    assert _fmt_uptime(0) == "—"
+
+
+def test_fmt_uptime_formats_hours_and_minutes():
+    assert _fmt_uptime(3661) == "1г 1хв"
+
+
+# ---- _status_lines - немає даних ----
+
+def test_status_lines_no_metric_shows_no_data():
+    assert _status_lines(None) == [{"kind": "status", "text": "Немає даних"}]
 
 
 # ---- _update_state_changed ----
@@ -179,3 +199,151 @@ def test_draw_power_action_message_respects_rotation():
         assert disp.last_image.size == (disp.width, disp.height)
     finally:
         config.DISPLAY_ROTATION = old_rotation
+
+
+# ---- _load_font() ----
+
+def test_load_font_finds_real_dejavu_font():
+    from app.display import _load_font
+    font = _load_font(18)
+    # Реальний PIL.ImageFont.FreeTypeFont, не bitmap-fallback
+    assert type(font).__name__ == "FreeTypeFont"
+
+
+def test_load_font_falls_back_when_no_font_found(caplog):
+    """Реальний edge case: жоден шлях з FONT_PATHS не існує (напр.
+    fonts-dejavu-core не встановлений) - МАЄ fallback на вбудований
+    PIL bitmap-шрифт, не кидати виняток."""
+    from app import display
+    old_paths = display.FONT_PATHS
+    try:
+        display.FONT_PATHS = ["/nonexistent/font1.ttf", "/nonexistent/font2.ttf"]
+        with caplog.at_level("WARNING"):
+            font = display._load_font(18)
+        assert "fonts-dejavu-core" in caplog.text
+        assert font is not None
+    finally:
+        display.FONT_PATHS = old_paths
+
+
+# ---- _truncate_to_width() ----
+
+def test_truncate_to_width_short_text_unchanged():
+    from PIL import Image, ImageDraw
+    from app.display import _truncate_to_width
+    draw = ImageDraw.Draw(Image.new("RGB", (170, 50)))
+    font = _real_font()
+    assert _truncate_to_width(draw, "v1.0", font, 170) == "v1.0"
+
+
+def test_truncate_to_width_long_text_gets_ellipsis():
+    from PIL import Image, ImageDraw
+    from app.display import _truncate_to_width
+    draw = ImageDraw.Draw(Image.new("RGB", (170, 50)))
+    font = _real_font()
+    long_text = "2026.09.10.mr99999.99-very-long-firmware-version-string"
+    result = _truncate_to_width(draw, long_text, font, 100)
+    assert result.endswith("…")
+    assert draw.textlength(result, font=font) <= 100
+
+
+def test_truncate_to_width_extremely_narrow_returns_just_ellipsis():
+    """Реальний edge case: max_width настільки малий, що навіть один
+    символ + '…' не влазить - МАЄ повернути хоча б '…', не порожній
+    рядок і не нескінченний цикл."""
+    from PIL import Image, ImageDraw
+    from app.display import _truncate_to_width
+    draw = ImageDraw.Draw(Image.new("RGB", (170, 50)))
+    font = _real_font()
+    result = _truncate_to_width(draw, "щось довге", font, 1)
+    assert result == "…"
+
+
+# ---- _set_backlight() ----
+
+def test_set_backlight_none_pin_does_nothing():
+    from app.display import _set_backlight
+    _set_backlight(None, True)  # не мало кинути виняток
+
+
+def test_set_backlight_sets_pin_value():
+    from app.display import _set_backlight
+
+    class FakePin:
+        value = None
+
+    pin = FakePin()
+    _set_backlight(pin, True)
+    assert pin.value is True
+    _set_backlight(pin, False)
+    assert pin.value is False
+
+
+# ---- _redraw() - реальний PIL-рендеринг + реальна БД (db_path fixture) ----
+
+def test_redraw_no_data_shows_message(db_path):
+    from PIL import Image, ImageDraw
+    from app.display import _redraw
+    disp = _FakeDisplay()
+    font = _real_font()
+    _redraw(disp, Image, ImageDraw, font, font, font)
+    assert disp.last_image is not None  # реально намалював щось (не впав на None-даних)
+
+
+def test_redraw_online_dish_renders(db_path):
+    from PIL import Image, ImageDraw
+    from app import db
+    from app.display import _redraw
+    from app.starlink_client import DishStatus
+
+    db.insert_metric(DishStatus(
+        timestamp=1000.0, online=True, uptime_s=3661, software_version="v1.0",
+    ).to_dict())
+
+    disp = _FakeDisplay()
+    font = _real_font()
+    _redraw(disp, Image, ImageDraw, font, font, font)
+    assert disp.last_image is not None
+
+
+def test_redraw_respects_rotation(db_path):
+    """Той самий транспонований-canvas принцип, що вже перевірено
+    для _draw_power_action_message() - _redraw() МАЄ ту саму логіку
+    незалежно (окремий код-шлях, не спільна функція)."""
+    from PIL import Image, ImageDraw
+    from app import config
+    from app.display import _redraw
+    disp = _FakeDisplay()
+    font = _real_font()
+    old_rotation = config.DISPLAY_ROTATION
+    try:
+        config.DISPLAY_ROTATION = 90
+        _redraw(disp, Image, ImageDraw, font, font, font)
+        assert disp.last_image.size == (disp.height, disp.width)
+
+        config.DISPLAY_ROTATION = 0
+        _redraw(disp, Image, ImageDraw, font, font, font)
+        assert disp.last_image.size == (disp.width, disp.height)
+    finally:
+        config.DISPLAY_ROTATION = old_rotation
+
+
+def test_redraw_update_progress_bar_renders(db_path):
+    """Реальний сценарій: router у процесі оновлення ПЗ - progress-bar
+    (окрема, умовна гілка коду для kind == "update") МАЄ реально
+    намалюватись без винятку."""
+    from PIL import Image, ImageDraw
+    from app import db
+    from app.display import _redraw
+    from app.starlink_client import DishStatus, RouterInfo
+
+    db.insert_metric(DishStatus(timestamp=1000.0, online=True).to_dict())
+    db.set_router_status(RouterInfo(
+        timestamp=1000.0, online=True, update_state="DOWNLOADING",
+        update_progress_pct=45.0,
+    ).to_dict())
+
+    disp = _FakeDisplay()
+    font = _real_font()
+    _redraw(disp, Image, ImageDraw, font, font, font)
+    assert disp.last_image is not None

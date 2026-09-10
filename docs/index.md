@@ -90,9 +90,11 @@
 | `test_monitor.py` | Групування reboot-спаму, дедублікація target-версій, `_maybe_reboot()` |
 | `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
 | `test_db.py` | Prune старих метрик, `check_integrity()`, callback-хук LED активності |
-| `test_display.py` | Виявлення зміни update_state (flash-підсвітка), auto-off логіка, повідомлення reboot/poweroff (rotation, перевірені гліфи) |
+| `test_display.py` | update_state/auto-off/power-message + _redraw, _load_font, _truncate_to_width, _set_backlight |
 | `test_activity_led.py` | Неблокуюче blink/close, послідовні виклики без блимання, callback-помилки не поширюються |
 | `test_pi_power.py` | DB-сигнал записується ДО systemctl-команди, провал прибирає сигнал, lazy notify_fn default |
+| `test_gpio_utils.py` | find_gpio_chip, ButtonPressTracker (short/long_press), open_input/output_line через fake gpiod v1/v2 |
+| `test_display_run_forever.py` | Повна ініціалізація дисплея через fake CircuitPython-модулі, stop_event, pending-shutdown, кнопка, auto-off |
 | `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити; retry лише для мережевих помилок, не HTTP-рівня |
 | `test_telegram_bot.py` | /checkupdates команда - диспетчеризація, known_devices, target-версії |
 | `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |

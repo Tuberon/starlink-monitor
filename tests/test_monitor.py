@@ -690,6 +690,22 @@ def test_perform_auto_backup_writes_valid_json(watchdog, tmp_path):
     assert content["format_version"] == db.BACKUP_FORMAT_VERSION
 
 
+def test_perform_auto_backup_restricts_file_permissions(watchdog, tmp_path):
+    """Security fix: backup-файл містить Telegram bot token у
+    відкритому вигляді - той самий secret, що вже захищений chmod 600
+    для /etc/starlink-monitor/env в install.sh. Без явного chmod тут
+    файл покладався б лише на системний umask (типово 0644 -
+    читабельний іншими локальними користувачами на тому самому Pi)."""
+    import stat
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    monitor.perform_auto_backup()
+
+    files = os.listdir(config.AUTO_BACKUP_DIR)
+    path = os.path.join(config.AUTO_BACKUP_DIR, files[0])
+    mode = stat.S_IMODE(os.stat(path).st_mode)
+    assert mode == 0o600
+
+
 def test_perform_auto_backup_rotation_keeps_newest_only(watchdog, tmp_path):
     """Реальна мета ротації: старі backup-и видаляються, залишаються
     саме НАЙНОВІШІ, не найстаріші чи довільні."""

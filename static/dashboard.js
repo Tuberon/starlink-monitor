@@ -236,7 +236,7 @@ function renderAlerts(latest) {
     return;
   }
   body.innerHTML = alerts
-    .map(a => `<span class="alert-chip">${ALERT_LABELS[a] || a}</span>`)
+    .map(a => `<span class="alert-chip">${escapeHtml(ALERT_LABELS[a] || a)}</span>`)
     .join('');
 }
 
@@ -324,9 +324,9 @@ function renderRouterClients(clients) {
   const filtered = (clients || []).filter(c => c.name !== 'Controller');
   const rows = filtered.map(c => `
     <div class="clients-row">
-      <span class="client-name">${c.name || c.mac || '—'}</span>
-      <span>${c.ip || '—'}</span>
-      <span>${(c.iface || '').replace('WIFI_', '').replace('GHZ', ' ГГц') || '—'}</span>
+      <span class="client-name">${escapeHtml(c.name || c.mac || '—')}</span>
+      <span>${escapeHtml(c.ip || '—')}</span>
+      <span>${escapeHtml((c.iface || '').replace('WIFI_', '').replace('GHZ', ' ГГц') || '—')}</span>
       <span class="clients-signal ${signalClass(c.signal)}">${c.signal != null ? c.signal + ' дБм' : '—'}</span>
       <span>${fmtDuration(c.connected_s)}</span>
     </div>
@@ -380,7 +380,7 @@ function renderRouterAlerts(latest) {
     return;
   }
   body.innerHTML = alerts
-    .map(a => `<span class="alert-chip">${ROUTER_ALERT_LABELS[a] || a}</span>`)
+    .map(a => `<span class="alert-chip">${escapeHtml(ROUTER_ALERT_LABELS[a] || a)}</span>`)
     .join('');
 }
 
@@ -399,8 +399,8 @@ async function refreshEvents() {
     log.innerHTML = events.map(ev => `
       <div class="log-row ${ev.success ? 'ok' : 'fail'}">
         <span class="time">${fmtTime(ev.ts)}</span>
-        <span class="kind">${ev.kind.replace(/_/g, ' ')}${ev.count > 1 ? ` ×${ev.count}` : ''}</span>
-        <span>${ev.message || ''}</span>
+        <span class="kind">${escapeHtml(ev.kind.replace(/_/g, ' '))}${ev.count > 1 ? ` ×${ev.count}` : ''}</span>
+        <span>${escapeHtml(ev.message || '')}</span>
       </div>
     `).join('');
   } catch (e) {

@@ -17,3 +17,18 @@ function fmtAgo(ts) {
   if (delta < 86400) return `${Math.floor(delta / 3600)} год тому`;
   return `${Math.floor(delta / 86400)} дн тому`;
 }
+
+// Екранування тексту перед вставкою в innerHTML - без цього довільний
+// текст із зовнішніх джерел (WiFi-client hostname, який будь-який
+// пристрій сам оголошує при підключенні до WiFi Starlink; невідомий
+// alert-код від Starlink API; error/event-повідомлення від
+// subprocess-команд) міг би виконати довільний JS у браузері того,
+// хто відкриває дашборд (stored XSS) - реальний attack vector, що не
+// потребує доступу до самого дашборду, лише знання WiFi-паролю.
+// Ручна map-заміна (не document.createElement().textContent) - той
+// самий принцип, що решта проєкту (offline-надійність, без зовнішніх
+// залежностей): не покладається на DOM API, легко тестується напряму.
+const _HTML_ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(text) {
+  return String(text ?? '').replace(/[&<>"']/g, (ch) => _HTML_ESCAPE_MAP[ch]);
+}

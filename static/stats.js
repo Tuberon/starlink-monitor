@@ -15,8 +15,8 @@ async function refreshEvents() {
     log.innerHTML = events.map(ev => `
       <div class="log-row ${ev.success ? 'ok' : 'fail'}">
         <span class="time">${fmtTime(ev.ts)}</span>
-        <span class="kind">${ev.kind.replace(/_/g, ' ')}${ev.count > 1 ? ` ×${ev.count}` : ''}</span>
-        <span>${ev.message || ''}</span>
+        <span class="kind">${escapeHtml(ev.kind.replace(/_/g, ' '))}${ev.count > 1 ? ` ×${ev.count}` : ''}</span>
+        <span>${escapeHtml(ev.message || '')}</span>
       </div>
     `).join('');
   } catch (e) {

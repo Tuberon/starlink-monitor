@@ -248,6 +248,12 @@ def perform_auto_backup() -> None:
     path = os.path.join(config.AUTO_BACKUP_DIR, f"backup-{ts}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(backup, f, ensure_ascii=False)
+    # Той самий Telegram bot token у відкритому вигляді, що вже
+    # захищений через chmod 600 у install.sh для /etc/starlink-
+    # monitor/env - без явного chmod тут файл покладався б лише на
+    # системний umask, потенційно читабельний іншими локальними
+    # користувачами на тому самому Pi (0644 - типовий umask-дефолт).
+    os.chmod(path, 0o600)
 
     existing = sorted(
         (f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json")),
