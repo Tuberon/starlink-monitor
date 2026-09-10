@@ -168,33 +168,28 @@ STARLINK_DISPLAY_OFFSET_LEFT=35
 Long polling (без webhook) у потоці `starlink-monitor.service`.
 
 **Особливості поведінки сповіщень:**
-- `STARLINK_NOTIFY_PI_STARTUP=0` вимикає сповіщення при запуску сервісу
-  після реального перезавантаження Pi (не спрацьовує на звичайний
+- `STARLINK_NOTIFY_PI_STARTUP=0` — вимикає сповіщення про запуск
+  сервісу після реального reboot Pi (не після звичайного
   `systemctl restart` під час оновлення коду)
 - `STARLINK_SCHEDULED_REBOOT_ENABLED=1` — плановий reboot Starlink
-  Mini (dish+router разом, той самий фізичний пристрій) по таймеру,
-  незалежно від реальних збоїв опитування; інтервал —
-  `STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS` (типово 24г). Вимкнено
-  за замовчуванням (opt-in)
+  Mini по таймеру (`_INTERVAL_HOURS`, типово 24г), незалежно від
+  реальних збоїв. Вимкнено за замовчуванням
 - Тиша при недоступності dish довше `STARLINK_NOTIFICATIONS_MUTE_AFTER`
-  (15 хв) — auto-reboot звіти призупиняються (журнал і далі пишеться),
-  відновлення повідомляється з тривалістю простою
-- `STARLINK_NOTIFY_DISH_RECOVERY=0` вимикає "✅ Dish знову online..."
-- Групування частих reboot (флап, не одна тривала відмова) —
-  `STARLINK_REBOOT_SPAM_THRESHOLD`/`_WINDOW_SEC`: одне попередження,
-  далі мовчки рахує до затишшя, потім підсумок
-- `STARLINK_MAX_LOGGED_FAILURES` (15) — журнал watchdog-спроб reboot
-  зупиняється після стількох послідовних невдач (спроби тривають,
-  лише запис припиняється)
+  (15 хв) — auto-reboot звіти призупиняються, відновлення
+  повідомляється з тривалістю простою
+- `STARLINK_NOTIFY_DISH_RECOVERY=0` — вимикає "✅ Dish знову online"
+- Часті reboot (флап) групуються — `STARLINK_REBOOT_SPAM_THRESHOLD`/
+  `_WINDOW_SEC`: одне попередження, далі мовчки рахує до затишшя,
+  потім підсумок
+- `STARLINK_MAX_LOGGED_FAILURES` (15) — журнал watchdog-спроб
+  зупиняється після стількох невдач поспіль (сам reboot триває)
 - Завжди приглушені: помилка перевірки оновлення роутера, "оновлення
   очікує встановлення", dish-роумінг
-- Зміна прошивки — "🔄 оновлена" (вперед) чи "⏪ відкочена (можливо,
-  SpaceX-side)" (назад — SpaceX інколи відкочує проблемні білди
-  глобально); `STARLINK_NOTIFY_FIRMWARE_ROLLBACK=0` вимикає лише
-  "⏪"-варіант
-- **Очікувані версії прошивок** (`/settings`) — версія чи кілька через
-  кому (різні апаратні ревізії), "✅"/"🎉" при збігу, лише новіші
-  приймаються (крім узгодження з фактично встановленою версією)
+- Зміна прошивки — "🔄 оновлена" чи "⏪ відкочена" (SpaceX інколи
+  відкочує проблемні білди глобально); `STARLINK_NOTIFY_FIRMWARE_
+  ROLLBACK=0` вимикає лише "⏪"
+- **Очікувані версії прошивок** (`/settings`) — кілька через кому
+  (різні апаратні ревізії), приймаються лише новіші за поточну
 
 ## 💾 Backup/restore налаштувань
 
@@ -382,66 +377,23 @@ Telegram-налаштування видаляє лише після окрем�
 
 ## ⚙️ Конфігурація
 
-Редагується на сторінці `/settings` (панель "Параметри моніторингу")
-або вручну в `/etc/starlink-monitor/env`. Повний список — у
-`app/config.py`. Найважливіші:
+Редагується на сторінці `/settings` (панель "Параметри моніторингу",
+54 параметри згруповані за категоріями: моніторинг/надійність/
+Telegram/GPIO) або вручну в `/etc/starlink-monitor/env`. Повний
+список з коментарями — у `app/config.py`.
+
+Найважливіші для першого налаштування:
 
 | Змінна | За замовчуванням | Опис |
 |---|---|---|
 | `STARLINK_DISH_ADDR` | `192.168.100.1:9200` | адреса тарілки |
-| `STARLINK_DISH_TIMEOUT` | `5` | timeout запиту до dish, сек |
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
-| `STARLINK_POLL_INTERVAL` | `10` | інтервал опитування dish, сек |
-| `STARLINK_ROUTER_POLL_INTERVAL_SEC` | `35` | інтервал опитування router, сек |
-| `STARLINK_SYSTEM_METRICS_INTERVAL_SEC` | `60` | інтервал запису CPU/пам'яті/температури, сек |
-| `STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC` | `30` | інтервал batch-запису dish-метрик, сек |
-| `STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC` | `86400` | інтервал перевірки цілісності БД, сек |
-| `STARLINK_AUTO_BACKUP_ENABLED` | `1` | автоматичний періодичний backup (0=вимк.) |
-| `STARLINK_AUTO_BACKUP_INTERVAL_SEC` | `604800` | інтервал автоматичного backup, сек |
-| `STARLINK_AUTO_BACKUP_KEEP_COUNT` | `4` | скільки останніх backup-ів зберігати |
-| `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
-| `STARLINK_MIN_REBOOT_INTERVAL` | `180` | мін. інтервал між авто-ребутами dish, сек |
-| `STARLINK_NOTIFICATIONS_MUTE_AFTER` | `900` | приглушити Telegram-звіти при безперервній недоступності dish, сек |
-| `STARLINK_NOTIFY_DISH_RECOVERY` | `1` | сповіщати "Dish знову online" (0=вимк.) |
-| `STARLINK_NOTIFY_FIRMWARE_ROLLBACK` | `1` | сповіщати про відкат прошивки, "⏪ відкочена" (0=вимк.) |
-| `STARLINK_NOTIFY_PI_STARTUP` | `1` | сповіщати про запуск Pi після перезавантаження (0=вимк.) |
-| `STARLINK_SCHEDULED_REBOOT_ENABLED` | `0` | плановий reboot Starlink Mini по таймеру (1=увімк.) |
-| `STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS` | `24` | інтервал планового reboot, годин |
-| `STARLINK_SHUTDOWN_BUTTON_POLL_INTERVAL_SEC` | `0.1` | опитування GPIO кнопки виключення, сек |
-| `STARLINK_DISPLAY_BUTTON_POLL_INTERVAL_SEC` | `0.1` | опитування GPIO кнопки дисплея, сек |
-| `STARLINK_TELEGRAM_SEND_TIMEOUT_SEC` | `10` | Telegram-бот: timeout надсилання, сек |
-| `STARLINK_TELEGRAM_POLL_TIMEOUT_SEC` | `30` | Telegram-бот: timeout long-polling, сек |
-| `STARLINK_TELEGRAM_CONFIRM_TTL_SEC` | `120` | Telegram-бот: TTL підтвердження команд, сек |
-| `STARLINK_TELEGRAM_NOTIFY_TIMEOUT_SEC` | `10` | Telegram-сповіщення: timeout запиту, сек |
-| `STARLINK_TELEGRAM_SEND_RETRIES` | `1` | Telegram: повторних спроб при мережевій помилці |
-| `STARLINK_TELEGRAM_SEND_RETRY_DELAY_SEC` | `2` | Telegram: затримка між повторами, сек |
-| `STARLINK_TELEGRAM_ID_LIST_MAX_ITEMS` | `40` | /id: макс. тарілок у списку без аргументу |
-| `STARLINK_REBOOT_SPAM_THRESHOLD` | `3` | група reboot-сповіщень: поріг кількості за вікно |
-| `STARLINK_REBOOT_SPAM_WINDOW_SEC` | `1800` | група reboot-сповіщень: вікно часу, сек |
-| `STARLINK_MAX_LOGGED_FAILURES` | `15` | макс. послідовних невдач опитування, що пишуться в журнал/БД |
-| `STARLINK_OBSTRUCTION_WARN` | `0.05` | поріг попередження про перешкоди (0-1) |
-| `STARLINK_AUTO_REBOOT_ON_UPDATE` | `1` | авто-reboot dish коли оновлення готове до встановлення |
-| `STARLINK_HISTORY_DAYS` | `30` | скільки днів зберігати історію метрик/подій |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
-| `STARLINK_SHUTDOWN_BUTTON_PIN` | `27` | GPIO-пін фізичної кнопки виключення (BCM), 0=вимкнено |
-| `STARLINK_SHUTDOWN_BUTTON_HOLD_SEC` | `3` | скільки секунд утримувати кнопку перед виключенням |
-| `STARLINK_ACTIVITY_LED_PIN` | `0` | GPIO-пін LED активності SD-картки (0=вимк.) |
-| `STARLINK_ACTIVITY_LED_BLINK_MS` | `50` | тривалість спалаху LED активності, мс |
-| `STARLINK_DISPLAY_ENABLED` | `0` | фізичний TFT-дисплей статусу (0/1) |
-| `STARLINK_DISPLAY_SPI_CS_PIN` | `8` | дисплей: GPIO-пін CS (bit-banged) |
-| `STARLINK_DISPLAY_DC_PIN` | `25` | дисплей: GPIO-пін DC |
-| `STARLINK_DISPLAY_RST_PIN` | `24` | дисплей: GPIO-пін RES |
-| `STARLINK_DISPLAY_BL_PIN` | `18` | дисплей: GPIO-пін підсвітки (0=не керувати) |
-| `STARLINK_DISPLAY_WIDTH` | `170` | дисплей: ширина, px |
-| `STARLINK_DISPLAY_HEIGHT` | `320` | дисплей: висота, px |
-| `STARLINK_DISPLAY_ROTATION` | `0` | дисплей: поворот, ° (0/90/180/270, для будь-якого aspect ratio) |
-| `STARLINK_DISPLAY_OFFSET_LEFT` | `35` | дисплей: зміщення X відносно GRAM, px |
-| `STARLINK_DISPLAY_OFFSET_TOP` | `0` | дисплей: зміщення Y відносно GRAM, px |
-| `STARLINK_DISPLAY_REFRESH_SEC` | `5` | дисплей: інтервал оновлення, сек |
-| `STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC` | `2` | дисплей: затримка перед reboot/poweroff, сек |
-| `STARLINK_DISPLAY_SPI_SPEED_HZ` | `40000000` | дисплей: швидкість SPI, Гц |
-| `STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC` | `60` | дисплей: автовимкнення підсвітки, сек (0=вимк.) |
-| `STARLINK_DISPLAY_UPDATE_FLASH_SEC` | `5` | дисплей: підсвітка при зміні статусу оновлення, сек (0=вимк.) |
+| `STARLINK_HISTORY_DAYS` | `30` | скільки днів зберігати історію метрик/подій |
+| `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
+
+GPIO-піни опційних фіч (кнопка/LED/дисплей) — див. відповідні секції
+вище, кожна опційна фіча описана окремо з power-схемою.
 
 Параметри читаються один раз при старті процесів — після збереження
 на `/settings` натисни "Зберегти й перезапустити сервіси" (кнопка
