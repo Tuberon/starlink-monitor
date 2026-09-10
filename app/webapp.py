@@ -8,7 +8,7 @@ from typing import Optional
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, monitor, pi_power, system_metrics, telegram_notify
+from app import config, config_editor, db, monitor, pi_power, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -119,7 +119,7 @@ def api_events() -> ResponseReturnValue:
 @app.route("/api/system-status")
 def api_system_status() -> ResponseReturnValue:
     latest = db.get_latest_system_metric()
-    return jsonify({"latest": latest, "apt": system_metrics.get_apt_updates_info()})
+    return jsonify({"latest": latest})
 
 
 @app.route("/api/router-status")
@@ -510,20 +510,6 @@ def api_system_shutdown() -> ResponseReturnValue:
         "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "вимкнути",
     )
     return jsonify({"success": ok, "message": msg})
-
-
-@app.route("/api/apt-check", methods=["POST"])
-def api_apt_check() -> ResponseReturnValue:
-    """Примусово запускає `sudo apt update` (оновлює локальний кеш
-    пакетів з репозиторіїв - без цього get_apt_updates_info() лише
-    читає кеш, оновлюваний системним apt-daily.timer раз/добу, тому
-    число на дашборді могло б бути застарілим до доби). timeout=30 -
-    apt update робить мережеві запити до репозиторіїв, довше за
-    швидкі reboot/shutdown-команди (типовий дефолт 10с замалий)."""
-    ok, msg = _run_system_command(["sudo", "/usr/bin/apt-get", "update"], timeout=30)
-    db.insert_event("apt_check", f"Ручна перевірка оновлень пакетів: {msg}", success=ok)
-    info = system_metrics.get_apt_updates_info(force=True)
-    return jsonify({"success": ok, "message": msg, "updates_count": info.get("updates_count")})
 
 
 def main() -> None:

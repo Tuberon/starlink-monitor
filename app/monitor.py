@@ -823,6 +823,16 @@ class Watchdog:
         if led.init():
             db.set_activity_callback(led.blink)
 
+        # Створюється тут (ДО реєстрації signal handler нижче, не
+        # пізніше поруч із .start()) - _handle_shutdown_signal()
+        # посилається на telegram_bot, тому SIGTERM/SIGINT, що прийшов
+        # би МІЖ реєстрацією й пізнішим створенням, спричинив би
+        # NameError. __init__() безпечний для раннього виклику - лише
+        # створює StarlinkClient()/ThreadPoolExecutor/порожні
+        # структури даних, без мережевих запитів.
+        from app.telegram_bot import TelegramBot
+        telegram_bot = TelegramBot()
+
         # Graceful shutdown: flush буфера dish-метрик ПЕРЕД завершенням
         # процесу - інакше звичайний "sudo systemctl restart" (напр.
         # під час update.sh) втрачав би до DISH_METRICS_BATCH_INTERVAL_
@@ -833,6 +843,7 @@ class Watchdog:
             logger.info("Отримано сигнал завершення (%d) - flush буфера метрик перед виходом", signum)
             self.flush_metrics_buffer()
             led.close()
+            telegram_bot.stop()
             raise SystemExit(0)
 
         signal.signal(signal.SIGTERM, _handle_shutdown_signal)
@@ -841,8 +852,6 @@ class Watchdog:
         if config.NOTIFY_PI_STARTUP and pi_just_booted():
             self._notify("🟢 Dish Watch запущено (Raspberry Pi перезавантажено)")
 
-        from app.telegram_bot import TelegramBot
-        telegram_bot = TelegramBot()
         telegram_bot.start()
 
         # "Прогрів" psutil.cpu_percent: перший виклик без базового заміру

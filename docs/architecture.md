@@ -29,7 +29,7 @@ router — різні enum з різними назвами станів).
 | `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py, без дублювання) |
-| `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення (кешовано) |
+| `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `pi_power.py` | Спільний reboot/poweroff для webapp.py/shutdown_button.py, DB-сигнал для повідомлення на дисплеї |
 | `activity_led.py` | Опційний LED активності SD-картки - блимає при кожному commit у БД (не окремий процес, частина monitor.py) |
@@ -507,29 +507,6 @@ category_labels`) перевіряють узгодженість у **обид�
 monitor` — навмисно вузько, конкретні команди, не blanket `ALL=(ALL)
 NOPASSWD: ALL`), записати подію в журнал, надіслати Telegram-
 сповіщення про результат.
-
-**Перевірка оновлень системних пакетів** — два незалежні шляхи:
-- **Пасивний** (`system_metrics.get_apt_updates_info()`) — читає
-  ЛИШЕ локальний кеш (`apt list --upgradable`, без мережевого
-  запиту), покладається на системний `apt-daily.timer` для свіжості
-  кешу (раз/добу). Кешується в пам'яті процесу webui на годину
-  (`_APT_CHECK_INTERVAL_SEC`) — не навантажує Pi Zero 2 W субпроцесом
-  на кожен запит дашборду.
-- **Активний** (кнопка "📦 Перевірити оновлення пакетів",
-  `/api/apt-check`) — примусовий `sudo /usr/bin/apt-get update`
-  (timeout 30с, довше за швидкі reboot/shutdown-команди — мережевий
-  запит до репозиторіїв), потім `get_apt_updates_info(force=True)`
-  обходить internal-кеш для СВІЖОГО числа одразу після оновлення.
-  Оновлює той самий `#sAptUpdates` елемент, що пасивний шлях —
-  без чекання на наступний цикл опитування системних метрик.
-  **Вимагає** `/var/lib/apt/lists` у `ReadWritePaths=` сервісу
-  `starlink-webui.service` — `ProtectSystem=strict` (systemd
-  hardening, вже застосований до цього сервісу) інакше блокує запис
-  туди для БУДЬ-ЯКОГО дочірнього процесу, включно з `sudo apt-get`
-  (mount namespace-обмеження успадковується незалежно від зміни UID
-  через sudo — знайдено на реальному Pi: "Read-only file system" для
-  `/var/lib/apt/lists/*`, хоча сама файлова система Pi змонтована
-  `rw`, не read-only взагалі).
 
 ## Фізична кнопка виключення (GPIO)
 

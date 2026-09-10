@@ -272,6 +272,19 @@ class TelegramBot:
         self._send(token, chat_id, "\n".join(lines))
 
     def _cmd_reboot_request(self, token: str, chat_id: str) -> None:
+        # Прибираємо застарілі pending-записи (TTL уже минув) з УСІХ
+        # chat_id, не лише поточного - без цього словник рахував би
+        # ЛИШЕ через _handle_callback() (реальне натискання inline-
+        # кнопки); якщо користувач просто ігнорує повідомлення (не
+        # тисне ні "підтвердити", ні "скасувати"), запис лишався б
+        # у пам'яті процесу назавжди - повільний, але реальний leak
+        # у довготривалому (місяці без рестарту) watchdog-процесі.
+        now = time.time()
+        expired = [cid for cid, ts in self._pending_reboot_confirm.items()
+                   if now - ts > config.TELEGRAM_CONFIRM_TTL_SEC]
+        for cid in expired:
+            del self._pending_reboot_confirm[cid]
+
         self._pending_reboot_confirm[chat_id] = time.time()
         text = "\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини."
         _api_call(

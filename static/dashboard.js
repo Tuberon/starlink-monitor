@@ -245,14 +245,6 @@ async function refreshSystemStatus() {
     const res = await fetch('/api/system-status');
     const data = await res.json();
 
-    const apt = data.apt;
-    if (apt && apt.updates_count != null) {
-      el('sAptUpdates').textContent = apt.updates_count;
-      setValueClass(el('sAptUpdates'), apt.updates_count, 1, 999999);
-    } else {
-      el('sAptUpdates').textContent = '—';
-    }
-
     const latest = data.latest;
     if (!latest) return;
 
@@ -501,40 +493,6 @@ async function handleCheckUpdates() {
   }
 }
 
-async function handleAptCheck() {
-  const btn = el('aptCheckBtn');
-  const hint = el('aptCheckHint');
-
-  btn.disabled = true;
-  btn.classList.add('spinning');
-  hint.textContent = 'Оновлюю кеш пакетів (sudo apt-get update)...';
-  try {
-    const res = await fetch('/api/apt-check', { method: 'POST' });
-    const data = await res.json();
-    if (data.success) {
-      const count = data.updates_count;
-      hint.textContent = count != null
-        ? `Готово. Доступно оновлень: ${count}`
-        : 'Готово, але кількість оновлень визначити не вдалось';
-      if (count != null) {
-        const el2 = el('sAptUpdates');
-        if (el2) {
-          el2.textContent = count;
-          setValueClass(el2, count, 1, 999999);
-        }
-      }
-    } else {
-      hint.textContent = `Помилка: ${data.message || 'невідома'}`;
-    }
-  } catch (e) {
-    hint.textContent = 'Помилка мережі при перевірці';
-    console.error('apt check failed', e);
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove('spinning');
-  }
-}
-
 async function loadConfigFlags() {
   try {
     const res = await fetch('/api/config');
@@ -588,7 +546,6 @@ document.addEventListener('DOMContentLoaded', () => {
   el('piShutdownBtn').addEventListener('click', handlePiShutdown);
   el('clearEventsBtn').addEventListener('click', handleClearEvents);
   el('checkUpdatesBtn').addEventListener('click', handleCheckUpdates);
-  el('aptCheckBtn').addEventListener('click', handleAptCheck);
   el('autoRebootToggle').addEventListener('change', handleAutoRebootToggle);
   loadConfigFlags();
   tick();

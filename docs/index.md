@@ -28,7 +28,7 @@
 | `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py) |
-| `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) + apt-оновлення |
+| `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `pi_power.py` | Спільний reboot/poweroff, DB-сигнал для дисплея |
 | `activity_led.py` | Опційний LED активності SD-картки, частина monitor.py (не окремий процес) |

@@ -472,3 +472,33 @@ def test_cmd_help_lists_all_commands(db_path):
         bot._cmd_help("FAKE_TOKEN", "123")
     for cmd in ("/status", "/checkupdates", "/reboot", "/id", "/help"):
         assert cmd in sent[0]
+
+
+# ---- Memory leak fix: застарілі pending_reboot_confirm записи ----
+
+def test_reboot_request_cleans_up_expired_pending_from_other_chats(db_path):
+    """Реальний memory leak, знайдений під час аудиту оптимізації:
+    якщо chat_id A робить /reboot і ІГНОРУЄ inline-кнопки (не тисне
+    ні "підтвердити", ні "скасувати") - запис лишався б у пам'яті
+    watchdog-процесу назавжди (лише _handle_callback() видаляв
+    запис, а без callback його ніхто не викликає). Новий /reboot
+    від БУДЬ-ЯКОГО chat_id тепер прибирає застарілі (TTL минув)
+    записи з УСІХ chat_id, не лише поточного."""
+    from app import config
+    bot = telegram_bot.TelegramBot()
+    with patch("app.telegram_bot._api_call"):
+        bot._pending_reboot_confirm["stale-user"] = time.time() - config.TELEGRAM_CONFIRM_TTL_SEC - 10
+        bot._cmd_reboot_request("FAKE_TOKEN", "new-user")
+    assert "stale-user" not in bot._pending_reboot_confirm
+    assert "new-user" in bot._pending_reboot_confirm
+
+
+def test_reboot_request_does_not_remove_still_valid_pending(db_path):
+    """Контрольний тест: pending-запис, для якого TTL ЩЕ не минув,
+    НЕ має видалятись новим /reboot-запитом від іншого chat_id."""
+    from app import config
+    bot = telegram_bot.TelegramBot()
+    with patch("app.telegram_bot._api_call"):
+        bot._pending_reboot_confirm["still-valid-user"] = time.time()
+        bot._cmd_reboot_request("FAKE_TOKEN", "new-user")
+    assert "still-valid-user" in bot._pending_reboot_confirm

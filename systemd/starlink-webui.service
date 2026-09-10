@@ -20,13 +20,8 @@ StandardError=journal
 # NoNewPrivileges НЕ встановлюємо: сервіс викликає sudo для керованих
 # NOPASSWD-команд (systemctl reboot/poweroff) - див.
 # /etc/sudoers.d/starlink-monitor, який і є основним бар'єром безпеки тут.
-# ReadWritePaths включає /var/lib/apt/lists - без нього ProtectSystem=strict
-# блокує запис ТУДИ навіть для sudo apt-get update (mount namespace
-# успадковується дочірнім процесом незалежно від зміни UID через sudo;
-# знайдено на реальному запуску - "Read-only file system" попередження
-# від apt, хоча сама файлова система Pi змонтована rw).
 ProtectSystem=strict
-ReadWritePaths=/var/lib/starlink-monitor /etc/starlink-monitor /var/lib/apt/lists
+ReadWritePaths=/var/lib/starlink-monitor /etc/starlink-monitor
 ProtectHome=true
 # CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback при
 # ручних reboot/shutdown-сповіщеннях, коли WiFi Starlink без інтернету) -
