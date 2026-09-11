@@ -511,10 +511,24 @@ backup у Telegram" на `/settings`) викликають цю саму фун�
 
 ## Категоризація параметрів на /settings (app/config_editor.py)
 
-`EDITABLE_PARAMS` (54 записи) — кожен має `category`
+`EDITABLE_PARAMS` (53 записи) — кожен має `category`
 (`monitoring`/`reliability`/`telegram`/`gpio`), `CATEGORY_LABELS`
 дає людський підпис для кожної. `/api/env-config` повертає обидва
 разом (`{"params": [...], "category_labels": {...}}`).
+
+2 реальні `STARLINK_`-env-змінні, які `config.py` читає, НАВМИСНО
+відсутні з `EDITABLE_PARAMS` (задокументовано коментарями поруч із
+кожним визначенням у `config.py`): `DB_PATH` (зміна шляху до БД
+через веб-UI, поки сервіс уже читає/пише в стару, вимагала б ручної
+міграції даних без явного попередження) і `WEBUI_HOST` (self-lockout
+ризик — зміна адреси прослуховування через сам веб-інтерфейс могла б
+відрізати користувача від `/settings` з іншого пристрою в мережі).
+Обидва тести (`test_all_config_env_vars_are_in_settings_except_
+documented_exceptions`, `test_intentionally_excluded_settings_are_
+still_read_by_config`) перевіряють це у обидва боки — жоден новий
+параметр не забутий у `/settings` без задокументованої причини, і
+ці 2 винятки лишаються реально читаними `config.py`, не випадково
+видаленими взагалі.
 `static/settings.js:loadEnvConfig()` групує параметри в `Map` за
 `category` (зберігаючи порядок першої появи — той самий, що в
 `EDITABLE_PARAMS`, не алфавітний), малює `<h3 class="env-category-

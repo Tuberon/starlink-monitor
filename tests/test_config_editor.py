@@ -247,3 +247,38 @@ def test_no_orphan_category_labels():
     used = {p["category"] for p in config_editor.EDITABLE_PARAMS}
     orphan_labels = set(config_editor.CATEGORY_LABELS) - used
     assert orphan_labels == set(), f"category_labels без жодного параметра: {orphan_labels}"
+
+
+def test_all_config_env_vars_are_in_settings_except_documented_exceptions():
+    """Кожна STARLINK_-env-змінна, яку реально читає config.py, МАЄ
+    бути редагованою через /settings (EDITABLE_PARAMS) - інакше зміна
+    цього параметра можлива лише вручну через /etc/starlink-monitor/
+    env, без видимості на дашборді. Єдині 2 навмисні винятки -
+    небезпечні для UI-редагування (задокументовані коментарями поруч
+    із визначенням у config.py): DB_PATH (зміна шляху до БД без
+    міграції даних) і WEBUI_HOST (self-lockout ризик - можна
+    відрізати себе від /settings). Якщо цей тест провалюється -
+    новий параметр реально забутий у /settings, а не навмисно
+    виключений."""
+    import re
+    config_source = open("app/config.py").read()
+    env_vars_read = set(re.findall(r'os\.environ\.get\("(STARLINK_[A-Z_]+)"', config_source))
+
+    INTENTIONALLY_EXCLUDED = {"STARLINK_DB_PATH", "STARLINK_WEBUI_HOST"}
+    editable_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
+
+    missing = env_vars_read - editable_keys - INTENTIONALLY_EXCLUDED
+    assert missing == set(), f"Параметри відсутні в /settings без документованої причини: {missing}"
+
+
+def test_intentionally_excluded_settings_are_still_read_by_config():
+    """Контрольний тест: DB_PATH/WEBUI_HOST реально виключені з
+    /settings НАВМИСНО (а не тому, що їх взагалі видалили) - вони й
+    далі реально читаються config.py, лише недоступні для UI-
+    редагування."""
+    config_source = open("app/config.py").read()
+    assert 'os.environ.get("STARLINK_DB_PATH"' in config_source
+    assert 'os.environ.get("STARLINK_WEBUI_HOST"' in config_source
+    editable_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
+    assert "STARLINK_DB_PATH" not in editable_keys
+    assert "STARLINK_WEBUI_HOST" not in editable_keys

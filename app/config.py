@@ -96,6 +96,12 @@ MAX_LOGGED_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_LOGGED_FAILUR
 # reboot при software_update_state==REBOOT_REQUIRED або alerts.install_pending
 AUTO_REBOOT_ON_UPDATE_READY = os.environ.get("STARLINK_AUTO_REBOOT_ON_UPDATE", "1") == "1"
 
+# Навмисно НЕ в /settings (EDITABLE_PARAMS) - зміна шляху до БД через
+# веб-UI, поки сервіс уже читає/пише в стару БД, вимагала б ручної
+# міграції даних; помилка тут (напр. друкарська, неіснуючий шлях)
+# могла б виглядати як "уся історія зникла". Редагування - лише
+# вручну в /etc/starlink-monitor/env, свідомий крок з розумінням
+# наслідків, не випадковий клік кнопки.
 DB_PATH = os.environ.get("STARLINK_DB_PATH", "/var/lib/starlink-monitor/history.db")
 # Автоматичний періодичний backup (страховка від втрати known_devices/
 # налаштувань при пошкодженні БД чи виходу SD-картки з ладу - на
@@ -123,6 +129,11 @@ AUTO_BACKUP_DIR = os.environ.get(
 DB_INTEGRITY_CHECK_INTERVAL_SEC = int(os.environ.get("STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC", "86400"))
 HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
 
+# Навмисно НЕ в /settings (EDITABLE_PARAMS) - self-lockout ризик:
+# зміна адреси прослуховування через сам веб-інтерфейс могла б
+# відрізати користувача від доступу до /settings з іншого пристрою
+# в мережі (напр. звуження на 127.0.0.1). Редагування - лише вручну
+# в /etc/starlink-monitor/env, з розумінням наслідків.
 WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")
 WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 
