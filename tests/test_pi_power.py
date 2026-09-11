@@ -141,3 +141,58 @@ def test_notify_callback_default_used_when_not_specified(db_path):
             "тест", "дефолтне сповіщення", "вимкнути",
         )
     mock_send.assert_called_once_with("дефолтне сповіщення")
+
+
+def test_run_system_command_exception_returns_false(db_path):
+    """Реальний edge case: subprocess.run() кидає виняток (напр. sudo
+    взагалі не знайдений у PATH) - МАЄ бути пійманий, повертати
+    (False, повідомлення), не поширюватись назовні."""
+    config.DISPLAY_ENABLED = False
+    with patch("subprocess.run", side_effect=FileNotFoundError("sudo не знайдено")), \
+         patch("app.telegram_notify.send_message"):
+        ok, msg = pi_power.execute_pi_power_action(
+            ["sudo", "systemctl", "poweroff"], "poweroff", "pi_shutdown",
+            "тест", "успіх", "вимкнути", notify_fn=lambda t: None,
+        )
+    assert ok is False
+    assert "sudo не знайдено" in msg
+
+
+def test_pending_signal_write_failure_does_not_block_real_action(db_path):
+    """Реальна мета: навіть якщо запис pending-сигналу для дисплея
+    провалюється (напр. БД тимчасово заблокована) - реальний reboot/
+    poweroff МАЄ все одно відбутись, це критичніше за сигнал екрана."""
+    config.DISPLAY_ENABLED = False
+    executed = []
+    with patch("app.db.set_setting", side_effect=RuntimeError("БД заблокована")), \
+         patch("subprocess.run", side_effect=lambda *a, **kw: (executed.append(1), _fake_run_success(*a, **kw))[1]):
+        ok, msg = pi_power.execute_pi_power_action(
+            ["sudo", "systemctl", "poweroff"], "poweroff", "pi_shutdown",
+            "тест", "успіх", "вимкнути", notify_fn=lambda t: None,
+        )
+    assert ok is True
+    assert executed == [1]
+
+
+def test_pending_signal_cleanup_failure_after_failed_action_does_not_raise(db_path):
+    """Реальний edge case: команда провалилась (потрібно прибрати
+    pending-сигнал), АЛЕ й саме прибирання сигналу теж провалюється -
+    не має поширювати виняток назовні (вже й так неуспішний випадок,
+    не варто робити його ще гіршим crash'ем)."""
+    config.DISPLAY_ENABLED = False
+    call_count = {"n": 0}
+
+    def flaky_set_setting(key, value):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return  # перший виклик (запис pending) - успішний
+        raise RuntimeError("БД заблокована при спробі очищення")
+
+    with patch("app.db.set_setting", side_effect=flaky_set_setting), \
+         patch("subprocess.run", side_effect=lambda *a, **kw: type("R", (), {"returncode": 1, "stderr": "провал"})()), \
+         patch("app.telegram_notify.send_message"):
+        ok, msg = pi_power.execute_pi_power_action(
+            ["sudo", "systemctl", "poweroff"], "poweroff", "pi_shutdown",
+            "тест", "успіх", "вимкнути", notify_fn=lambda t: None,
+        )  # не мало кинути виняток
+    assert ok is False

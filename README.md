@@ -327,11 +327,11 @@ mypy app/
 
 `tests/` покриває найкрихкішу, stateful-логіку: групування reboot-
 спаму (часове вікно), дедублікація сповіщень про target-версії
-прошивки, компаратор версій, downsampling метрик. Кожен тест —
+прошивки, компаратор версій, eth0-fallback для Telegram. Кожен тест —
 ізольована тимчасова БД (`tmp_path`), без побічних ефектів на реальні
 дані. Перевірка:
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 Покриття по модулях: `pytest --cov=app --cov-report=term-missing`.

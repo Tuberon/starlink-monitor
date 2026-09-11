@@ -6,6 +6,8 @@
 import time
 from unittest.mock import patch
 
+import pytest
+
 from app import db, telegram_bot
 from app.starlink_client import DishStatus, RouterInfo
 
@@ -502,3 +504,177 @@ def test_reboot_request_does_not_remove_still_valid_pending(db_path):
         bot._pending_reboot_confirm["still-valid-user"] = time.time()
         bot._cmd_reboot_request("FAKE_TOKEN", "new-user")
     assert "still-valid-user" in bot._pending_reboot_confirm
+
+
+# ---- _poll_once() - groups updates за chat_id, submit до executor ----
+
+def test_poll_once_no_data_sleeps_and_returns(db_path):
+    bot = telegram_bot.TelegramBot()
+    with patch("app.telegram_bot._api_call", return_value=None), \
+         patch("time.sleep") as mock_sleep:
+        bot._poll_once("TOKEN", {"123"})
+    mock_sleep.assert_called_once_with(3)
+
+
+def test_poll_once_api_not_ok_sleeps_and_returns(db_path):
+    bot = telegram_bot.TelegramBot()
+    with patch("app.telegram_bot._api_call", return_value={"ok": False}), \
+         patch("time.sleep") as mock_sleep:
+        bot._poll_once("TOKEN", {"123"})
+    mock_sleep.assert_called_once_with(3)
+
+
+def test_poll_once_updates_last_update_id(db_path):
+    bot = telegram_bot.TelegramBot()
+    data = {"ok": True, "result": [
+        {"update_id": 100, "message": {"chat": {"id": 123}, "text": "/status"}},
+        {"update_id": 105, "message": {"chat": {"id": 123}, "text": "/help"}},
+    ]}
+    with patch("app.telegram_bot._api_call", return_value=data), \
+         patch.object(bot._executor, "submit"):
+        bot._poll_once("TOKEN", {"123"})
+    assert bot._last_update_id == 105
+
+
+def test_poll_once_groups_updates_by_chat_id(db_path):
+    """Реальна мета групування: updates того самого чату обробляються
+    послідовно в ОДНОМУ виклику _handle_updates_sequential (гарантує
+    порядок), різні чати - окремими submit-викликами (паралельно)."""
+    bot = telegram_bot.TelegramBot()
+    data = {"ok": True, "result": [
+        {"update_id": 1, "message": {"chat": {"id": 111}, "text": "/status"}},
+        {"update_id": 2, "message": {"chat": {"id": 222}, "text": "/status"}},
+        {"update_id": 3, "message": {"chat": {"id": 111}, "text": "/help"}},
+    ]}
+    submitted = []
+    with patch("app.telegram_bot._api_call", return_value=data), \
+         patch.object(bot._executor, "submit", side_effect=lambda fn, token, chats, updates: submitted.append((fn, updates))):
+        bot._poll_once("TOKEN", {"111", "222"})
+
+    assert len(submitted) == 2  # 2 окремих чати - 2 окремих submit
+    chat_111_updates = next(u for fn, u in submitted if len(u) == 2)
+    assert len(chat_111_updates) == 2  # обидва update чату 111 разом, в одному виклику
+
+
+# ---- _handle_updates_sequential() ----
+
+def test_handle_updates_sequential_processes_all_updates_in_order(db_path):
+    bot = telegram_bot.TelegramBot()
+    processed = []
+    updates = [
+        {"message": {"chat": {"id": 123}, "text": "/status"}},
+        {"message": {"chat": {"id": 123}, "text": "/help"}},
+    ]
+    with patch.object(bot, "_handle_update", side_effect=lambda t, c, u: processed.append(u)):
+        bot._handle_updates_sequential("TOKEN", {"123"}, updates)
+    assert processed == updates
+
+
+def test_handle_updates_sequential_one_failure_does_not_stop_the_rest(db_path):
+    """Реальна мета: помилка обробки ОДНОГО update (напр. несподіваний
+    формат) НЕ має зупинити обробку решти updates у тій самій групі -
+    інакше одна погана команда заблокувала б усі наступні для того
+    самого chat_id."""
+    bot = telegram_bot.TelegramBot()
+    processed = []
+    updates = [
+        {"message": {"chat": {"id": 123}, "text": "/broken"}},
+        {"message": {"chat": {"id": 123}, "text": "/help"}},
+    ]
+
+    def flaky_handle(token, chats, update):
+        if update["message"]["text"] == "/broken":
+            raise RuntimeError("несподівана помилка")
+        processed.append(update)
+
+    with patch.object(bot, "_handle_update", side_effect=flaky_handle):
+        bot._handle_updates_sequential("TOKEN", {"123"}, updates)
+    assert len(processed) == 1  # /help реально оброблений, попри провал /broken
+
+
+# ---- _run_loop() - головний polling-цикл, зупиняється через SystemExit ----
+
+def test_run_loop_enabled_calls_poll_once(db_path):
+    bot = telegram_bot.TelegramBot()
+    poll_calls = []
+
+    def fake_poll_once(token, chats):
+        poll_calls.append((token, chats))
+        raise SystemExit()
+
+    with patch("app.telegram_notify.get_telegram_config", return_value=("TOKEN", ["123"], True)), \
+         patch.object(bot, "_poll_once", side_effect=fake_poll_once):
+        with pytest.raises(SystemExit):
+            bot._run_loop()
+
+    assert poll_calls == [("TOKEN", {"123"})]
+
+
+def test_run_loop_disabled_sleeps_without_polling(db_path):
+    """Реальна мета: бот вимкнений/не налаштований (немає token) -
+    НЕ опитує API даремно, лише періодично перевіряє, чи налаштування
+    з'явились."""
+    bot = telegram_bot.TelegramBot()
+    poll_calls = []
+
+    with patch("app.telegram_notify.get_telegram_config", return_value=("", [], False)), \
+         patch.object(bot, "_poll_once", side_effect=lambda t, c: poll_calls.append(1)), \
+         patch("time.sleep", side_effect=SystemExit()):
+        with pytest.raises(SystemExit):
+            bot._run_loop()
+
+    assert poll_calls == []
+
+
+def test_run_loop_poll_once_exception_is_caught_and_loop_continues(db_path):
+    """Реальна мета: неочікувана помилка всередині _poll_once() (напр.
+    Telegram API повернув щось несподіване) НЕ має завершити весь
+    бот-потік - цикл продовжується до наступної ітерації."""
+    bot = telegram_bot.TelegramBot()
+    call_count = {"n": 0}
+
+    def flaky_poll_once(token, chats):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("несподівана помилка Telegram API")
+        raise SystemExit()
+
+    with patch("app.telegram_notify.get_telegram_config", return_value=("TOKEN", ["123"], True)), \
+         patch.object(bot, "_poll_once", side_effect=flaky_poll_once), \
+         patch("time.sleep"):
+        with pytest.raises(SystemExit):
+            bot._run_loop()
+
+    assert call_count["n"] == 2  # цикл реально продовжився після помилки
+
+
+# ---- start()/stop() ----
+
+def test_start_creates_daemon_thread(db_path):
+    bot = telegram_bot.TelegramBot()
+    with patch.object(bot, "_run_loop"):
+        bot.start()
+    assert bot._thread is not None
+    assert bot._thread.daemon is True
+    bot.stop()
+
+
+def test_start_is_idempotent_does_not_create_second_thread(db_path):
+    """Реальна мета: повторний виклик start() (напр. помилковий
+    подвійний виклик) НЕ має створити другий потік - лише один
+    polling-цикл має працювати одночасно."""
+    bot = telegram_bot.TelegramBot()
+    with patch.object(bot, "_run_loop"):
+        bot.start()
+        first_thread = bot._thread
+        bot.start()
+    assert bot._thread is first_thread
+    bot.stop()
+
+
+def test_stop_sets_stop_event_and_shuts_down_executor(db_path):
+    bot = telegram_bot.TelegramBot()
+    with patch.object(bot._executor, "shutdown") as mock_shutdown:
+        bot.stop()
+    assert bot._stop_event.is_set()
+    mock_shutdown.assert_called_once_with(wait=False)

@@ -570,3 +570,127 @@ def test_env_config_post_validation_error_reports_failure(client):
     resp = client.post("/api/env-config", json={"values": {"STARLINK_POLL_INTERVAL": "not-a-number"}})
     data = resp.get_json()
     assert data["success"] is False
+
+
+# ---- /healthz - except-гілки (db/watchdog помилки) ----
+
+def test_healthz_db_exception_reports_degraded(client):
+    with patch("app.db.get_conn", side_effect=RuntimeError("БД заблокована")):
+        resp = client.get("/healthz")
+    data = resp.get_json()
+    assert resp.status_code == 503
+    assert "error" in data["checks"]["db"]
+
+
+def test_healthz_watchdog_check_exception_reports_degraded(client):
+    with patch("app.db.get_latest_metric", side_effect=RuntimeError("несподівана помилка")):
+        resp = client.get("/healthz")
+    data = resp.get_json()
+    assert resp.status_code == 503
+    assert "error" in data["checks"]["watchdog"]
+
+
+# ---- /api/telegram-test ----
+
+def test_telegram_test_success_sends_test_message(client):
+    with patch("app.telegram_notify.test_connection", return_value=(True, "OK")), \
+         patch("app.telegram_notify.send_message", return_value=(True, "надіслано")):
+        resp = client.post("/api/telegram-test")
+    data = resp.get_json()
+    assert data["success"] is True
+
+
+def test_telegram_test_invalid_token_does_not_attempt_send(client):
+    send_calls = []
+    with patch("app.telegram_notify.test_connection", return_value=(False, "Unauthorized")), \
+         patch("app.telegram_notify.send_message", side_effect=lambda *a: send_calls.append(1)):
+        resp = client.post("/api/telegram-test")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert send_calls == []
+
+
+def test_telegram_test_connection_ok_but_send_fails(client):
+    with patch("app.telegram_notify.test_connection", return_value=(True, "OK")), \
+         patch("app.telegram_notify.send_message", return_value=(False, "chat not found")):
+        resp = client.post("/api/telegram-test")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "chat not found" in data["message"]
+
+
+# ---- Основні status-endpoints дашборду (реально викликаються щосекунди через tick()) ----
+
+def test_api_status_returns_latest_metric_and_uptime(client):
+    from app.starlink_client import DishStatus
+    db.insert_metric(DishStatus(timestamp=time.time(), online=True, uptime_s=100).to_dict())
+    resp = client.get("/api/status")
+    data = resp.get_json()
+    assert data["latest"]["online"] == 1
+    assert "uptime_24h_pct" in data
+
+
+def test_api_status_no_data_returns_none_latest(client):
+    resp = client.get("/api/status")
+    data = resp.get_json()
+    assert data["latest"] is None
+
+
+def test_api_events_returns_recent_events(client):
+    db.insert_event("test", "тестова подія", success=True)
+    resp = client.get("/api/events")
+    events = resp.get_json()
+    assert len(events) == 1
+    assert events[0]["message"] == "тестова подія"
+
+
+def test_api_events_respects_limit_parameter(client):
+    for i in range(5):
+        db.insert_event("test", f"подія {i}", success=True)
+    resp = client.get("/api/events?limit=2")
+    events = resp.get_json()
+    assert len(events) == 2
+
+
+def test_api_events_caps_limit_at_500(client):
+    resp = client.get("/api/events?limit=999999")
+    assert resp.status_code == 200  # не мало кинути помилку через надто великий limit
+
+
+def test_api_system_status_returns_latest(client):
+    db.insert_system_metric({"timestamp": time.time(), "cpu_percent": 5.0})
+    resp = client.get("/api/system-status")
+    data = resp.get_json()
+    assert data["latest"]["cpu_percent"] == 5.0
+
+
+def test_api_router_status_returns_latest(client):
+    from app.starlink_client import RouterInfo
+    db.set_router_status(RouterInfo(timestamp=time.time(), online=True, software_version="r1").to_dict())
+    resp = client.get("/api/router-status")
+    data = resp.get_json()
+    assert data["latest"]["software_version"] == "r1"
+
+
+def test_api_router_status_no_data_returns_none(client):
+    resp = client.get("/api/router-status")
+    data = resp.get_json()
+    assert data["latest"] is None
+
+
+# ---- _static_v() - cache-busting ----
+
+def test_static_v_missing_file_falls_back_to_zero():
+    """Реальний edge case: файл видалений чи ще не існує - cache-
+    busting параметр МАЄ бути 0 (не кидати виняток, що зламало б
+    рендеринг усього шаблону)."""
+    from app.webapp import _static_v
+    result = _static_v("nonexistent-file-xyz.js")
+    assert result == "/static/nonexistent-file-xyz.js?v=0"
+
+
+def test_static_v_existing_file_uses_real_mtime():
+    from app.webapp import _static_v
+    result = _static_v("style.css")
+    assert result.startswith("/static/style.css?v=")
+    assert result != "/static/style.css?v=0"

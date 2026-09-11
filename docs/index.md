@@ -89,15 +89,16 @@
 | `conftest.py` | Спільні fixtures: `db_path` (ізольована тимчасова БД), `watchdog` (з mock-ованим `_notify`) |
 | `test_monitor.py` | Reboot-спам, дедублікація target-версій, update-state/alerts (dish+router), auto-reboot логіка |
 | `test_monitor_run_forever.py` | Головний watchdog-цикл: periodичні prune/vacuum/integrity/backup, startup-сповіщення |
-| `test_webapp.py` | Компаратор версій прошивки, валідація `/api/target-versions` |
+| `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
+| `test_system_metrics.py` | Кожна метрика (uptime/cpu/memory/disk/temp) незалежно, ніколи не кидає виняток навіть при повному провалі psutil |
+| `test_pi_power.py` | DB-сигнал ДО systemctl-команди, провал прибирає сигнал, lazy notify_fn default, edge cases (subprocess-виняток, DB-провал не блокує реальну дію) |
+| `test_telegram_notify.py` | HTTP-запити, retry; eth0-fallback (усі 3 рівні: звичайний/eth0/manual DNS через eth0); send_document (backup-файл) |
+| `test_telegram_bot.py` | /checkupdates диспетчеризація; _poll_once/групування за chat_id; _run_loop/start/stop (SystemExit-трюк) |
 | `test_db.py` | Prune старих метрик, `check_integrity()`, callback-хук LED активності |
 | `test_display.py` | update_state/auto-off/power-message + _redraw, _load_font, _truncate_to_width, _set_backlight |
 | `test_activity_led.py` | Неблокуюче blink/close, послідовні виклики без блимання, callback-помилки не поширюються |
-| `test_pi_power.py` | DB-сигнал записується ДО systemctl-команди, провал прибирає сигнал, lazy notify_fn default |
 | `test_gpio_utils.py` | find_gpio_chip, ButtonPressTracker (short/long_press), open_input/output_line через fake gpiod v1/v2 |
 | `test_display_run_forever.py` | Повна ініціалізація дисплея через fake CircuitPython-модулі, stop_event, pending-shutdown, кнопка, auto-off |
-| `test_telegram_notify.py` | config-параметри реально впливають на HTTP-запити; retry лише для мережевих помилок; send_document (backup-файл, окреме відкриття для кожного chat_id) |
-| `test_telegram_bot.py` | /checkupdates команда - диспетчеризація, known_devices, target-версії |
 | `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |
 | `test_starlink_client.py` | Парсинг gRPC-відповіді dish (enum-мапінг, getattr-fallback'и, конвертація одиниць) і router (subprocess+JSON шлях, snake→camelCase, clients) |
 
