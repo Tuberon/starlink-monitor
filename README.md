@@ -330,11 +330,15 @@ mypy app/
 
 ## ✅ Тести
 
-`tests/` покриває найкрихкішу, stateful-логіку: групування reboot-
-спаму (часове вікно), дедублікація сповіщень про target-версії
-прошивки, компаратор версій, eth0-fallback для Telegram. Кожен тест —
-ізольована тимчасова БД (`tmp_path`), без побічних ефектів на реальні
-дані. Перевірка:
+435 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
+файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
+дедублікація сповіщень про target-версії прошивки, компаратор версій,
+eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
+дисплей, кнопка виключення) тестується підміною `sys.modules` для
+`gpiod`/`board`/`digitalio`/`busio`/`adafruit_rgb_display` ще до
+виклику функції (ці бібліотеки самі імпортуються лише всередині
+функцій, не на рівні модуля). Кожен тест — ізольована тимчасова БД
+(`tmp_path`), без побічних ефектів на реальні дані. Перевірка:
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest
@@ -348,10 +352,12 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
+├── tests/          # 435 тестів (16 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
-└── requirements.txt
+├── requirements.txt      # production-залежності
+└── requirements-dev.txt  # mypy/pytest/pytest-cov
 ```
 
 Детальний опис кожного файлу — [`docs/index.md`](docs/index.md).
