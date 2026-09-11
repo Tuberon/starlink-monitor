@@ -46,18 +46,21 @@ def test_reboot_notify_below_threshold_sends_normally(watchdog):
     assert watchdog.sent == ["🔁 reboot 1", "🔁 reboot 2"]
 
 
-def test_reboot_notify_threshold_triggers_grouping_warning(watchdog):
-    """Досягнення порогу - ОДНЕ попередження про групування замість
-    звичайного тексту reboot-повідомлення."""
+def test_reboot_notify_threshold_reached_mutes_silently(watchdog):
+    """Досягнення порогу - подальші reboot-сповіщення приглушуються
+    МОВЧКИ, без окремого попередження про початок групування (щоб не
+    додавати ще одне сповіщення до вже частих)."""
     config.REBOOT_SPAM_THRESHOLD = 3
     config.REBOOT_SPAM_WINDOW_SEC = 1800
     now = 1000.0
     for i in range(3):
         with patch("time.time", return_value=now + i * 100):
             watchdog._notify_reboot(f"🔁 reboot {i}")
-    assert len(watchdog.sent) == 3
-    assert "Часті авто-reboot" in watchdog.sent[-1]
+    # Лише перші 2 (до порогу) реально надіслані - 3-й (що досяг
+    # порогу) НЕ надсилає жодного повідомлення взагалі.
+    assert watchdog.sent == ["🔁 reboot 0", "🔁 reboot 1"]
     assert watchdog.reboot_spam_muted is True
+    assert watchdog.muted_reboot_count == 1
 
 
 def test_reboot_notify_further_reboots_silently_counted(watchdog):

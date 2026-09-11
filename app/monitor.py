@@ -413,9 +413,10 @@ class Watchdog:
         це про ЧАСТОТУ: кілька окремих коротких reboot-циклів поспіль
         (флап), кожен з яких проходить MIN_REBOOT_INTERVAL_SEC і тому
         не приглушується тим механізмом. Коли за REBOOT_SPAM_WINDOW_SEC
-        назбирались REBOOT_SPAM_THRESHOLD+ такі сповіщення - один раз
-        попереджаємо про групування і замовкаємо до затишшя, коли
-        надсилаємо підсумок (див. _check_reboot_spam_recovery)."""
+        назбирались REBOOT_SPAM_THRESHOLD+ такі сповіщення - мовчки
+        групуємо (без окремого повідомлення про початок групування,
+        щоб не додавати ще одне сповіщення до вже частих) до затишшя,
+        коли надсилаємо підсумок (див. _check_reboot_spam_recovery)."""
         now = time.time()
         self.reboot_notify_ts = [t for t in self.reboot_notify_ts if now - t < config.REBOOT_SPAM_WINDOW_SEC]
         self.reboot_notify_ts.append(now)
@@ -427,11 +428,6 @@ class Watchdog:
         if not self.reboot_spam_muted:
             self.reboot_spam_muted = True
             self.muted_reboot_count = 1
-            window_min = config.REBOOT_SPAM_WINDOW_SEC // 60
-            self._notify(
-                f"⚠️ Часті авто-reboot ({len(self.reboot_notify_ts)} за останні {window_min} хв) — "
-                f"подальші повідомлення про reboot тимчасово згруповано, щоб не спамити"
-            )
         else:
             self.muted_reboot_count += 1
 
