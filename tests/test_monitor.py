@@ -33,62 +33,6 @@ def test_pi_just_booted_respects_custom_threshold():
         assert monitor.pi_just_booted(threshold_sec=300.0) is True
 
 
-# ---- Плановий reboot по таймеру (should_scheduled_reboot / _maybe_scheduled_reboot) ----
-
-def test_should_scheduled_reboot_false_when_disabled():
-    assert monitor.should_scheduled_reboot(0.0, 1000.0, interval_hours=0) is False
-
-
-def test_should_scheduled_reboot_false_before_interval():
-    now = 1000.0
-    last = now - 3600  # годину тому
-    assert monitor.should_scheduled_reboot(last, now, interval_hours=24) is False
-
-
-def test_should_scheduled_reboot_true_after_interval():
-    now = 1000.0
-    last = now - 25 * 3600  # 25 годин тому
-    assert monitor.should_scheduled_reboot(last, now, interval_hours=24) is True
-
-
-def test_maybe_scheduled_reboot_disabled_by_default(watchdog):
-    config.SCHEDULED_REBOOT_ENABLED = False
-    with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as mock_reboot:
-        watchdog._maybe_scheduled_reboot()
-        mock_reboot.assert_not_called()
-
-
-def test_maybe_scheduled_reboot_triggers_after_interval(watchdog):
-    config.SCHEDULED_REBOOT_ENABLED = True
-    config.SCHEDULED_REBOOT_INTERVAL_HOURS = 24
-    watchdog.last_scheduled_reboot_ts = time.time() - 25 * 3600
-    watchdog.last_reboot_ts = 0.0
-    try:
-        with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as mock_reboot:
-            watchdog._maybe_scheduled_reboot()
-            mock_reboot.assert_called_once()
-        assert len(watchdog.sent) == 1
-        assert "Плановий reboot" in watchdog.sent[0]
-    finally:
-        config.SCHEDULED_REBOOT_ENABLED = False
-
-
-def test_maybe_scheduled_reboot_respects_min_reboot_interval(watchdog):
-    """Якщо reboot вже стався нещодавно з ІНШОЇ причини (напр.
-    auto-reboot при невдачах), плановий reboot природно
-    відкладається - не подвоюється."""
-    config.SCHEDULED_REBOOT_ENABLED = True
-    config.SCHEDULED_REBOOT_INTERVAL_HOURS = 24
-    watchdog.last_scheduled_reboot_ts = time.time() - 25 * 3600
-    watchdog.last_reboot_ts = time.time() - 30  # 30с тому, менше MIN_REBOOT_INTERVAL_SEC
-    try:
-        with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as mock_reboot:
-            watchdog._maybe_scheduled_reboot()
-            mock_reboot.assert_not_called()
-    finally:
-        config.SCHEDULED_REBOOT_ENABLED = False
-
-
 # ---- Групування спаму reboot-сповіщень (_notify_reboot) ----
 
 def test_reboot_notify_below_threshold_sends_normally(watchdog):

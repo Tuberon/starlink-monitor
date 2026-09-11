@@ -398,6 +398,19 @@ def api_settings_backup() -> ResponseReturnValue:
     return jsonify(monitor.build_backup_dict())
 
 
+@app.route("/api/send-backup-telegram", methods=["POST"])
+def api_send_backup_telegram() -> ResponseReturnValue:
+    """Ручна кнопка на /settings - надсилає ОСТАННІЙ вже створений
+    auto-backup файл у Telegram негайно, незалежно від STARLINK_
+    TELEGRAM_BACKUP_ENABLED/_INTERVAL_HOURS (ті стосуються лише
+    періодичного, автоматичного надсилання). Не створює новий backup
+    - лише надсилає вже наявний найновіший; якщо жодного ще немає
+    (STARLINK_AUTO_BACKUP_ENABLED=0 чи щойно встановлено), повертає
+    зрозуміле повідомлення про це, не 500."""
+    ok, msg = monitor.send_latest_backup_to_telegram()
+    return jsonify({"success": ok, "message": msg})
+
+
 @app.route("/api/settings-restore", methods=["POST"])
 def api_settings_restore() -> ResponseReturnValue:
     """Відновлює налаштування з JSON, отриманого через /api/settings-backup.

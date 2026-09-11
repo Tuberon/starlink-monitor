@@ -37,17 +37,6 @@ def pi_just_booted(threshold_sec: float = 120.0) -> bool:
     return time.time() - psutil.boot_time() < threshold_sec
 
 
-def should_scheduled_reboot(last_scheduled_reboot_ts: float, now: float, interval_hours: float) -> bool:
-    """Чи час для планового reboot Starlink Mini (незалежно від
-    реальних збоїв опитування - деякі користувачі практикують
-    періодичний reboot для профілактики). Чиста функція, легко
-    тестується. interval_hours<=0 - фіча вимкнена (завжди False,
-    той самий паттерн, що _should_auto_off() у display.py)."""
-    if interval_hours <= 0:
-        return False
-    return (now - last_scheduled_reboot_ts) >= interval_hours * 3600
-
-
 def version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
     """Чи current_version входить у target_raw - список версій через
     кому (db.parse_version_list). Module-level (не метод класу) - щоб
@@ -265,6 +254,27 @@ def perform_auto_backup() -> None:
             logger.warning("Не вдалося видалити старий backup %s: %s", old_name, e)
 
 
+def send_latest_backup_to_telegram() -> tuple[bool, str]:
+    """Знаходить ОСТАННІЙ (найновіший за mtime) backup-файл із
+    AUTO_BACKUP_DIR і надсилає його в Telegram як документ. Спільна
+    логіка для двох викликачів: Watchdog._maybe_send_backup_to_
+    telegram() (періодичний, з перевіркою інтервалу) і webapp.py
+    /api/send-backup-telegram (ручна кнопка на /settings, без
+    перевірки інтервалу - користувач явно натиснув, робити негайно).
+    Записує подію в журнал незалежно від результату."""
+    if not os.path.isdir(config.AUTO_BACKUP_DIR):
+        return False, "Каталог backup ще не створений - зробіть перший backup"
+    backups = [f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.endswith(".json")]
+    if not backups:
+        return False, "Немає жодного backup-файлу для відправки"
+    latest = max(backups, key=lambda f: os.path.getmtime(os.path.join(config.AUTO_BACKUP_DIR, f)))
+    path = os.path.join(config.AUTO_BACKUP_DIR, latest)
+
+    ok, msg = telegram_notify.send_document(path, caption=f"📦 Backup Starlink Monitor: {latest}")
+    db.insert_event("telegram_backup_sent", f"Backup у Telegram ({latest}): {msg}", success=ok)
+    return ok, f"{latest}: {msg}"
+
+
 def check_db_integrity_and_notify(notify_fn: Callable[[str], None]) -> None:
     """PRAGMA quick_check раз на добу (той самий цикл, що VACUUM) -
     виявляє мовчазну деградацію БД ДО того, як вона стане критичною.
@@ -348,14 +358,10 @@ class Watchdog:
         # На відміну від last_reboot_ts (0.0 - "дозволити reboot
         # одразу", свідомо для auto-reboot-при-невдачах), тут
         # ІНІЦІАЛІЗУЄМО поточним часом - інакше "now - 0.0" завжди
-        # величезне число, спричиняючи НЕГАЙНИЙ плановий reboot при
-        # КОЖНОМУ старті сервісу (небажано - таймер має "стартувати"
-        # з моменту запуску, не миттєво спрацьовувати).
-        self.last_scheduled_reboot_ts = time.time()
-        # Той самий принцип, що last_scheduled_reboot_ts вище -
-        # поточний час, не 0.0, інакше кожен рестарт сервісу негайно
-        # надсилав би backup-файл у Telegram, навіть якщо
-        # TELEGRAM_BACKUP_INTERVAL_HOURS ще не минув.
+        # величезне число, спричиняючи НЕГАЙНЕ надсилання backup-
+        # файлу в Telegram при КОЖНОМУ старті сервісу (небажано -
+        # таймер має "стартувати" з моменту запуску, не миттєво
+        # спрацьовувати).
         self.last_telegram_backup_sent_ts = time.time()
         # Час першої невдалої спроби в поточному безперервному ланцюжку
         # відмов - None, поки dish online. Використовується, щоб приглушити
@@ -482,7 +488,6 @@ class Watchdog:
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
-            self._maybe_scheduled_reboot()
         else:
             if self.first_failure_ts is None:
                 self.first_failure_ts = time.time()
@@ -740,42 +745,6 @@ class Watchdog:
         reason = status.update_state if status.update_state == "REBOOT_REQUIRED" else "install_pending"
         self._reboot_for_update_ready("dish", reason)
 
-    def _maybe_scheduled_reboot(self) -> None:
-        """Плановий reboot Starlink Mini по таймеру, незалежно від
-        реальних збоїв опитування (деякі користувачі практикують
-        періодичний reboot для профілактики). reboot_dish() -
-        єдина доступна reboot-команда (окремої router-reboot немає),
-        перезавантажує ВЕСЬ фізичний Mini (dish+router - той самий
-        пристрій, той самий hardware/живлення). Поважає MIN_REBOOT_
-        INTERVAL_SEC через last_reboot_ts (спільний з auto-reboot-
-        при-невдачах) - якщо reboot ВЖЕ стався нещодавно з ІНШОЇ
-        причини, плановий природно "відкладеться", не подвоюється."""
-        if not config.SCHEDULED_REBOOT_ENABLED:
-            return
-        now = time.time()
-        if not should_scheduled_reboot(self.last_scheduled_reboot_ts, now, config.SCHEDULED_REBOOT_INTERVAL_HOURS):
-            return
-        if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
-            logger.info(
-                "Плановий reboot відкладено - reboot вже був %.0f с тому (мін. інтервал %d с)",
-                now - self.last_reboot_ts, config.MIN_REBOOT_INTERVAL_SEC,
-            )
-            return
-
-        # Оновлюємо ТАЙМЕР безумовно (до самої спроби) - інакше
-        # провал команди спричинив би повторні спроби щоцикл
-        # опитування (~10с), не чекаючи наступного повного інтервалу.
-        self.last_scheduled_reboot_ts = now
-        logger.info("Ініціюю плановий reboot Starlink Mini (інтервал %.0fг)", config.SCHEDULED_REBOOT_INTERVAL_HOURS)
-        ok, msg = self.client.reboot_dish()
-        if ok:
-            self.last_reboot_ts = now
-            db.insert_event("scheduled_reboot", f"Плановий reboot Starlink Mini (кожні {config.SCHEDULED_REBOOT_INTERVAL_HOURS:.0f}г)", success=True)
-            self._notify(f"⏰ Плановий reboot Starlink Mini виконано (кожні {config.SCHEDULED_REBOOT_INTERVAL_HOURS:.0f}г)")
-        else:
-            logger.warning("Плановий reboot провалився: %s", msg)
-            db.insert_event("scheduled_reboot", f"Плановий reboot провалився: {msg}", success=False)
-
     def _maybe_send_backup_to_telegram(self) -> None:
         """Періодично надсилає ОСТАННІЙ (найновіший за mtime) backup-
         файл із AUTO_BACKUP_DIR у Telegram як документ - страховка,
@@ -791,25 +760,13 @@ class Watchdog:
         if now - self.last_telegram_backup_sent_ts < config.TELEGRAM_BACKUP_INTERVAL_HOURS * 3600:
             return
 
-        # Оновлюємо ТАЙМЕР безумовно (до самої спроби) - той самий
-        # принцип, що last_scheduled_reboot_ts вище: провал відправки
-        # (напр. Telegram тимчасово недоступний) не має спричиняти
-        # повторні спроби щоцикл опитування (~10с), а чекати до
-        # наступного повного інтервалу.
+        # Оновлюємо ТАЙМЕР безумовно (до самої спроби) - провал
+        # відправки (напр. Telegram тимчасово недоступний) не має
+        # спричиняти повторні спроби щоцикл опитування (~10с), а
+        # чекати до наступного повного інтервалу.
         self.last_telegram_backup_sent_ts = now
 
-        if not os.path.isdir(config.AUTO_BACKUP_DIR):
-            logger.info("Немає backup-файлів для відправки в Telegram (каталог ще не створений)")
-            return
-        backups = [f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.endswith(".json")]
-        if not backups:
-            logger.info("Немає backup-файлів для відправки в Telegram")
-            return
-        latest = max(backups, key=lambda f: os.path.getmtime(os.path.join(config.AUTO_BACKUP_DIR, f)))
-        path = os.path.join(config.AUTO_BACKUP_DIR, latest)
-
-        ok, msg = telegram_notify.send_document(path, caption=f"📦 Backup Starlink Monitor: {latest}")
-        db.insert_event("telegram_backup_sent", f"Backup у Telegram ({latest}): {msg}", success=ok)
+        ok, msg = send_latest_backup_to_telegram()
         if not ok:
             logger.warning("Не вдалося надіслати backup у Telegram: %s", msg)
 

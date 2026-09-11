@@ -61,15 +61,6 @@ NOTIFY_FIRMWARE_ROLLBACK = os.environ.get("STARLINK_NOTIFY_FIRMWARE_ROLLBACK", "
 # оновлення коду - інакше сповіщало б набагато частіше, ніж "Pi
 # увімкнувся/перезавантажився").
 NOTIFY_PI_STARTUP = os.environ.get("STARLINK_NOTIFY_PI_STARTUP", "1") == "1"
-# Плановий reboot Starlink Mini (dish+router - той самий фізичний
-# пристрій, окремої router-reboot команди немає, reboot_dish()
-# перезавантажує весь Mini) незалежно від того, чи є реальні збої
-# опитування - деякі користувачі практикують періодичний reboot для
-# профілактики. Вимкнено за замовчуванням (opt-in) - потенційно
-# розриває з'єднання на кілька хвилин, свідомий вибір користувача.
-SCHEDULED_REBOOT_ENABLED = os.environ.get("STARLINK_SCHEDULED_REBOOT_ENABLED", "0") == "1"
-SCHEDULED_REBOOT_INTERVAL_HOURS = float(os.environ.get("STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS", "24"))
-
 # Технічні timeout/TTL для Telegram-бота (app/telegram_bot.py, обробка
 # вхідних команд) - раніше hardcoded module-level константи, винесено
 # для консистентності з рештою "усе через env" паттерну проєкту.
@@ -116,9 +107,9 @@ DB_PATH = os.environ.get("STARLINK_DB_PATH", "/var/lib/starlink-monitor/history.
 # Автоматичний періодичний backup (страховка від втрати known_devices/
 # налаштувань при пошкодженні БД чи виходу SD-картки з ладу - на
 # відміну від ручного через веб-кнопку, який user міг не робити
-# місяцями). Дефолт увімкнено - на відміну від SCHEDULED_REBOOT_
-# ENABLED (яка реально перезавантажує Mini), backup - чисто корисна
-# дія без побічних ефектів на моніторинг.
+# місяцями). Дефолт увімкнено - на відміну від опційних дій, що
+# впливають на сам моніторинг чи обладнання, backup - чисто корисна
+# дія без побічних ефектів.
 AUTO_BACKUP_ENABLED = os.environ.get("STARLINK_AUTO_BACKUP_ENABLED", "1") == "1"
 AUTO_BACKUP_INTERVAL_SEC = int(os.environ.get("STARLINK_AUTO_BACKUP_INTERVAL_SEC", "604800"))  # тиждень
 AUTO_BACKUP_KEEP_COUNT = int(os.environ.get("STARLINK_AUTO_BACKUP_KEEP_COUNT", "4"))

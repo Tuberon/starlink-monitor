@@ -40,8 +40,6 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_MAX_FAILURES", "type": "int", "default": "6", "label": "Невдалих опитувань перед watchdog-reboot", "category": "reliability"},
     {"key": "STARLINK_MIN_REBOOT_INTERVAL", "type": "int", "default": "180", "label": "Мін. інтервал між авто-ребутами, сек", "category": "reliability"},
     {"key": "STARLINK_AUTO_REBOOT_ON_UPDATE", "type": "bool", "default": "1", "label": "Авто-reboot при готовому оновленні", "category": "reliability"},
-    {"key": "STARLINK_SCHEDULED_REBOOT_ENABLED", "type": "bool", "default": "0", "label": "Плановий reboot Starlink Mini по таймеру (0/1)", "category": "reliability"},
-    {"key": "STARLINK_SCHEDULED_REBOOT_INTERVAL_HOURS", "type": "float", "default": "24", "label": "Інтервал планового reboot, годин", "category": "reliability"},
     {"key": "STARLINK_MAX_LOGGED_FAILURES", "type": "int", "default": "15", "label": "Макс. послідовних невдач у журналі перед припиненням запису", "category": "reliability"},
     {"key": "STARLINK_REBOOT_SPAM_THRESHOLD", "type": "int", "default": "3", "label": "Група reboot-сповіщень: поріг кількості за вікно", "category": "reliability"},
     {"key": "STARLINK_REBOOT_SPAM_WINDOW_SEC", "type": "int", "default": "1800", "label": "Група reboot-сповіщень: вікно часу, сек", "category": "reliability"},

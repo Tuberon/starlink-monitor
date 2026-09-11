@@ -164,6 +164,27 @@ function handleSettingsRestoreClick() {
   el('settingsRestoreFile').click();
 }
 
+async function handleSendBackupTelegram() {
+  const btn = el('sendBackupTelegramBtn');
+  const hint = el('settingsBackupHint');
+  btn.disabled = true;
+  const originalHint = hint.textContent;
+  hint.textContent = 'Надсилаю backup у Telegram...';
+  try {
+    const res = await fetch('/api/send-backup-telegram', { method: 'POST' });
+    const data = await res.json();
+    hint.textContent = data.success
+      ? `✅ Backup надіслано: ${data.message}`
+      : `❌ ${data.message}`;
+  } catch (e) {
+    hint.textContent = 'Помилка мережі при відправці backup';
+    console.error('send backup to telegram failed', e);
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { hint.textContent = originalHint; }, 8000);
+  }
+}
+
 async function handleSettingsRestoreFile(e) {
   const hint = el('settingsBackupHint');
   const file = e.target.files[0];
@@ -301,6 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('telegramSaveBtn').addEventListener('click', handleTelegramSave);
   el('telegramTestBtn').addEventListener('click', handleTelegramTest);
   el('settingsBackupBtn').addEventListener('click', handleSettingsBackup);
+  el('sendBackupTelegramBtn').addEventListener('click', handleSendBackupTelegram);
   el('settingsRestoreBtn').addEventListener('click', handleSettingsRestoreClick);
   el('settingsRestoreFile').addEventListener('change', handleSettingsRestoreFile);
   el('envConfigSaveBtn').addEventListener('click', handleEnvConfigSave);

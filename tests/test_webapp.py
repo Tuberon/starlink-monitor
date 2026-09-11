@@ -3,12 +3,13 @@
 app/webapp.py (валідація /api/target-versions - "лише новіші").
 """
 import json
+import os
 import time
 from unittest.mock import patch
 
 import pytest
 
-from app import db
+from app import config, db
 from app.webapp import app as flask_app
 
 
@@ -694,3 +695,66 @@ def test_static_v_existing_file_uses_real_mtime():
     result = _static_v("style.css")
     assert result.startswith("/static/style.css?v=")
     assert result != "/static/style.css?v=0"
+
+
+# ---- /api/send-backup-telegram - ручна кнопка на /settings ----
+
+def test_send_backup_telegram_success(client, tmp_path):
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1000.json"), "w") as f:
+        f.write("{}")
+
+    with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")):
+        resp = client.post("/api/send-backup-telegram")
+    data = resp.get_json()
+    assert data["success"] is True
+    assert "backup-1000.json" in data["message"]
+
+
+def test_send_backup_telegram_no_directory_returns_clear_message(client, tmp_path):
+    config.AUTO_BACKUP_DIR = str(tmp_path / "nonexistent")
+    resp = client.post("/api/send-backup-telegram")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "не створений" in data["message"]
+
+
+def test_send_backup_telegram_empty_directory_returns_clear_message(client, tmp_path):
+    config.AUTO_BACKUP_DIR = str(tmp_path / "empty")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    resp = client.post("/api/send-backup-telegram")
+    data = resp.get_json()
+    assert data["success"] is False
+    assert "Немає жодного" in data["message"]
+
+
+def test_send_backup_telegram_works_regardless_of_periodic_config(client, tmp_path):
+    """Реальна мета кнопки: ручна відправка МАЄ працювати незалежно
+    від STARLINK_TELEGRAM_BACKUP_ENABLED (той параметр стосується
+    лише автоматичного, періодичного надсилання) - користувач явно
+    натиснув кнопку, очікує негайну дію."""
+    config.TELEGRAM_BACKUP_ENABLED = False
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+        f.write("{}")
+
+    with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")) as mock_send:
+        resp = client.post("/api/send-backup-telegram")
+    data = resp.get_json()
+    assert data["success"] is True
+    mock_send.assert_called_once()
+
+
+def test_send_backup_telegram_logs_event(client, tmp_path):
+    config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
+    os.makedirs(config.AUTO_BACKUP_DIR)
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+        f.write("{}")
+
+    with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")):
+        client.post("/api/send-backup-telegram")
+
+    events = db.get_recent_events(10)
+    assert any(e["kind"] == "telegram_backup_sent" for e in events)
