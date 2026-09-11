@@ -46,7 +46,6 @@ EDITABLE_PARAMS = [
 
     {"key": "STARLINK_NOTIFICATIONS_MUTE_AFTER", "type": "int", "default": "900", "label": "Приглушити Telegram після недоступності dish, сек", "category": "telegram"},
     {"key": "STARLINK_NOTIFY_DISH_RECOVERY", "type": "bool", "default": "1", "label": "Сповіщати 'Dish знову online' (0/1)", "category": "telegram"},
-    {"key": "STARLINK_NOTIFY_FIRMWARE_ROLLBACK", "type": "bool", "default": "1", "label": "Сповіщати про відкат прошивки (0/1)", "category": "telegram"},
     {"key": "STARLINK_NOTIFY_PI_STARTUP", "type": "bool", "default": "1", "label": "Сповіщати про запуск Pi після перезавантаження (0/1)", "category": "telegram"},
     {"key": "STARLINK_TELEGRAM_SEND_TIMEOUT_SEC", "type": "float", "default": "10", "label": "Telegram-бот: timeout надсилання, сек", "category": "telegram"},
     {"key": "STARLINK_TELEGRAM_POLL_TIMEOUT_SEC", "type": "float", "default": "30", "label": "Telegram-бот: timeout long-polling, сек", "category": "telegram"},

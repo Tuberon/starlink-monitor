@@ -48,13 +48,6 @@ NOTIFICATIONS_MUTE_AFTER_SEC = int(os.environ.get("STARLINK_NOTIFICATIONS_MUTE_A
 # flap-відновлення не інформативні особисто для нього. Журнал подій
 # і далі пишеться незалежно від цього параметра.
 NOTIFY_DISH_RECOVERY = os.environ.get("STARLINK_NOTIFY_DISH_RECOVERY", "1") == "1"
-# "⏪ Прошивка X відкочена (можливо, SpaceX-side)" - за бажанням
-# користувача можна вимкнути окремо від звичайного "🔄 оновлена"
-# (SpaceX-side rollback - не помилка нашого моніторингу, лише
-# інформаційне сповіщення про факт, який іноді не інформативний
-# особисто для користувача). Спільний для dish і router (обидва йдуть
-# через ту саму _format_firmware_change_message()).
-NOTIFY_FIRMWARE_ROLLBACK = os.environ.get("STARLINK_NOTIFY_FIRMWARE_ROLLBACK", "1") == "1"
 # "🟢 Dish Watch запущено (Raspberry Pi перезавантажено)" - лише при
 # РЕАЛЬНОМУ завантаженні Pi (питання psutil.boot_time(), не при
 # кожному sudo systemctl restart starlink-monitor.service під час

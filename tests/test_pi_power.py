@@ -102,6 +102,30 @@ def test_failure_clears_pending_signal(db_path):
     assert db.get_setting(pi_power.PENDING_ACTION_SETTING_KEY) == ""
 
 
+def test_success_also_clears_pending_signal(db_path):
+    """Реальний баг, знайдений користувачем на практиці: сигнал
+    раніше очищався ЛИШЕ при провалі команди - при УСПІШНОМУ reboot/
+    poweroff він лишався в БД назавжди (systemctl reboot не миттєвий,
+    subprocess.run() повертається одразу після ІНІЦІЮВАННЯ команди,
+    лишаючи реальні кілька секунд до фактичного вимкнення - достатньо
+    часу виконати цей рядок коду). Наслідок: після реального
+    перезавантаження display.py стартував заново, бачив цей самий
+    застарілий сигнал, малював повідомлення повторно і завершувався
+    (return) - а Restart=on-failure НЕ перезапускає процес після
+    чистого завершення, тому сервіс лишався inactive назавжди.
+    Наступний reboot/poweroff тоді взагалі нічого не малював (сервіс
+    уже мертвий), а екран фізично зберігав останній кадр у власному
+    framebuffer TFT-дисплея - виглядало як "текст висить безкінечно"."""
+    config.DISPLAY_ENABLED = False
+    with patch("subprocess.run", side_effect=_fake_run_success):
+        pi_power.execute_pi_power_action(
+            ["sudo", "systemctl", "reboot"], "reboot", "pi_reboot",
+            "тест", "успіх", "перезавантажити", notify_fn=lambda t: None,
+        )
+
+    assert db.get_setting(pi_power.PENDING_ACTION_SETTING_KEY) == ""
+
+
 def test_display_disabled_does_not_sleep(db_path):
     """DISPLAY_ENABLED=0 - немає сенсу чекати DISPLAY_SHUTDOWN_
     MESSAGE_DELAY_SEC, немає екрана, який міг би побачити сигнал."""

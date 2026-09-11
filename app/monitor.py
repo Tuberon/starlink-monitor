@@ -121,22 +121,15 @@ def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Cal
 
 
 def _format_firmware_change_message(component_label: str, old_version: str, new_version: str) -> Optional[str]:
-    """Формує повідомлення про зміну прошивки з ПРАВИЛЬНИМ дієсловом
-    залежно від напрямку - без цього "🔄 оновлена" вводило б в оману,
-    коли реальна зміна versions - це ВІДКАТ (SpaceX інколи відкочує
-    проблемні білди глобально; ручний reboot, як з'ясувалось на
-    реальному запиті користувача, може "спіймати" момент, коли
-    команда відкату вже чекала). db.is_older_version() (толерантний
+    """Формує повідомлення про зміну прошивки - лише для реального
+    ОНОВЛЕННЯ (нова версія новіша). db.is_older_version() (толерантний
     компаратор, вже перевірений на реалістичних версіях) визначає
-    напрямок - слово й emoji підбираються відповідно, дані (X → Y)
-    завжди ті самі, чесно показують РЕАЛЬНИЙ факт, лише словесне
-    формулювання змінюється. Повертає None, якщо це rollback і
-    NOTIFY_FIRMWARE_ROLLBACK=0 (окремий від звичайного "оновлена"
-    перемикач - той теж лишається завжди активним)."""
+    напрямок зміни: якщо це насправді ВІДКАТ (SpaceX інколи відкочує
+    проблемні білди глобально) - навмисно НЕ сповіщаємо (`known_
+    devices` все одно оновлюється незалежно, лише Telegram-сповіщення
+    пропускається для цього напрямку)."""
     if db.is_older_version(new_version, old_version):
-        if not config.NOTIFY_FIRMWARE_ROLLBACK:
-            return None
-        return f"⏪ Прошивка {component_label} відкочена (можливо, SpaceX-side): {old_version} → {new_version}"
+        return None
     return f"🔄 Прошивка {component_label} оновлена: {old_version} → {new_version}"
 
 
@@ -567,6 +560,12 @@ class Watchdog:
                 if alert not in self.MUTED_DISH_ALERTS:
                     self._notify(f"⚠️ Нове попередження dish: {label}")
             for alert in sorted(resolved):
+                # obstruction_map_reset - Starlink періодично скидає
+                # карту перешкод сам по собі як частину нормальної
+                # роботи (не аварійна подія) - навмисно не журналюється
+                # взагалі, на відміну від решти resolved-алертів.
+                if alert == "obstruction_map_reset":
+                    continue
                 label = ALERT_LABELS.get(alert, alert)
                 db.insert_event(
                     "dish_alert_resolved",

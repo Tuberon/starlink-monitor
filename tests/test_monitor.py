@@ -436,10 +436,11 @@ def test_firmware_forward_change_says_updated(db_path):
     assert "відкочена" not in sent[0]
 
 
-def test_firmware_backward_change_says_rolled_back(db_path):
-    """Реальний сценарій, знайдений користувачем на практиці: SpaceX
-    інколи відкочує прошивку - без розрізнення напрямку повідомлення
-    "🔄 оновлена: НОВІША → СТАРІША" вводило б в оману."""
+def test_firmware_backward_change_does_not_notify(db_path):
+    """Запит користувача: не сповіщати про відкат прошивки взагалі -
+    реальний сценарій, знайдений раніше на практиці (SpaceX інколи
+    відкочує прошивку), тепер НЕ генерує жодного Telegram-сповіщення,
+    лише мовчки оновлює known_devices реальною поточною версією."""
     from app.starlink_client import DishStatus
     sent = []
     db.upsert_known_device_dish("dish1", "rev3", "2026.07.16.mr82459.1")
@@ -448,16 +449,14 @@ def test_firmware_backward_change_says_rolled_back(db_path):
         dish_id="dish1", hardware_version="rev3", software_version="2026.05.13.mr80201",
     )
     monitor.upsert_dish_and_notify(status, lambda t: sent.append(t))
-    assert len(sent) >= 1
-    msg = sent[0]
-    assert "⏪" in msg and "відкочена" in msg
-    assert "оновлена" not in msg
-    assert "2026.07.16.mr82459.1" in msg and "2026.05.13.mr80201" in msg
+    assert sent == []
+    assert db.get_known_device("dish1")["dish_software_version"] == "2026.05.13.mr80201"
 
 
-def test_firmware_router_backward_change_exact_user_scenario(db_path):
-    """Точний сценарій із реального повідомлення користувача: router
-    2026.07.23.mr82306 -> 2025.10.03.mr61821."""
+def test_firmware_router_backward_change_does_not_notify(db_path):
+    """Той самий точний сценарій із реального повідомлення
+    користувача (router 2026.07.23.mr82306 -> 2025.10.03.mr61821),
+    тепер без сповіщення."""
     from app.starlink_client import RouterInfo
     sent = []
     db.upsert_known_device_router("dish1", "rev2", "2026.07.23.mr82306")
@@ -466,48 +465,7 @@ def test_firmware_router_backward_change_exact_user_scenario(db_path):
         hardware_version="rev2", software_version="2025.10.03.mr61821",
     )
     monitor.upsert_router_and_notify(info, "dish1", lambda t: sent.append(t))
-    msg = sent[0]
-    assert "⏪" in msg and "відкочена" in msg
-    assert "2026.07.23.mr82306 → 2025.10.03.mr61821" in msg
-
-
-def test_firmware_rollback_notification_disabled_via_config(db_path):
-    """Запит користувача: не надсилати "Прошивка роутера відкочена".
-    NOTIFY_FIRMWARE_ROLLBACK=False повністю пригнічує "⏪"-сповіщення,
-    незалежно від dish/router (спільна _format_firmware_change_
-    message())."""
-    from app.starlink_client import RouterInfo
-    config.NOTIFY_FIRMWARE_ROLLBACK = False
-    try:
-        db.upsert_known_device_router("dish1", "rev2", "2026.07.23.mr82306")
-        sent = []
-        info = RouterInfo(
-            timestamp=time.time(), online=True,
-            hardware_version="rev2", software_version="2025.10.03.mr61821",
-        )
-        monitor.upsert_router_and_notify(info, "dish1", lambda t: sent.append(t))
-        assert sent == []
-    finally:
-        config.NOTIFY_FIRMWARE_ROLLBACK = True  # не "протікати" в інші тести
-
-
-def test_firmware_forward_notification_unaffected_by_rollback_toggle(db_path):
-    """Контрольний тест: NOTIFY_FIRMWARE_ROLLBACK=False НЕ зачіпає
-    звичайні forward-оновлення ("🔄 оновлена") - лише "⏪ відкочена"."""
-    from app.starlink_client import DishStatus
-    config.NOTIFY_FIRMWARE_ROLLBACK = False
-    try:
-        db.upsert_known_device_dish("dish1", "rev3", "v1.0")
-        sent = []
-        status = DishStatus(
-            timestamp=time.time(), online=True, uptime_s=100,
-            dish_id="dish1", hardware_version="rev3", software_version="v2.0",
-        )
-        monitor.upsert_dish_and_notify(status, lambda t: sent.append(t))
-        assert len(sent) == 1
-        assert "🔄" in sent[0] and "оновлена" in sent[0]
-    finally:
-        config.NOTIFY_FIRMWARE_ROLLBACK = True
+    assert sent == []
 
 
 # ---- check_updates_now() фільтрує IGNORED_ROUTER_ALERTS (реальний баг, знайдений на запиті користувача) ----
@@ -833,6 +791,33 @@ def test_log_alerts_change_resolved_alert_logs_event(watchdog):
     watchdog._log_alerts_change(status)
     events = db.get_recent_events(10)
     assert any(e["kind"] == "dish_alert_resolved" for e in events)
+
+
+def test_log_alerts_change_obstruction_map_reset_resolved_not_logged(watchdog):
+    """Реальна мета: Starlink періодично скидає карту перешкод сам по
+    собі як частину нормальної роботи (не аварійна подія) - зникнення
+    цього конкретного alert'а НЕ має створювати запис у журналі,
+    на відміну від решти resolved-алертів."""
+    from app.starlink_client import DishStatus
+    watchdog.prev_alerts = {"obstruction_map_reset"}
+    status = DishStatus(timestamp=time.time(), online=True, active_alerts=[])
+    watchdog._log_alerts_change(status)
+    events = db.get_recent_events(10)
+    assert events == []
+
+
+def test_log_alerts_change_obstruction_map_reset_does_not_block_other_alerts(watchdog):
+    """Контрольний тест: точкове виключення obstruction_map_reset НЕ
+    має вплинути на журналювання ІНШИХ resolved-алертів у тій самій
+    групі змін."""
+    from app.starlink_client import DishStatus
+    watchdog.prev_alerts = {"obstruction_map_reset", "thermal_throttle"}
+    status = DishStatus(timestamp=time.time(), online=True, active_alerts=[])
+    watchdog._log_alerts_change(status)
+    events = db.get_recent_events(10)
+    assert len(events) == 1
+    assert "обмеження через перегрів" in events[0]["message"]
+    assert not any("карта перешкод" in e["message"] for e in events)
 
 
 # ---- poll_router() ----
