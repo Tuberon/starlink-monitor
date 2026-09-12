@@ -1,7 +1,6 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, журнал подій, ручний reboot."""
 import logging
 import os
-import subprocess
 import time
 from typing import Optional
 
@@ -486,23 +485,10 @@ def api_restart_after_env_change() -> ResponseReturnValue:
     застосувати щойно змінені env-параметри (читаються один раз при старті).
     webui.service перезапускає й самого себе - відповідь клієнту може не
     дійти, це очікувано."""
-    ok1, msg1 = _run_system_command(["sudo", "systemctl", "restart", "starlink-monitor.service"])
+    ok1, msg1 = pi_power.run_system_command(["sudo", "systemctl", "restart", "starlink-monitor.service"])
     db.insert_event("service_restart", f"starlink-monitor.service: {msg1}", success=ok1)
-    ok2, msg2 = _run_system_command(["sudo", "systemctl", "restart", "starlink-webui.service"])
+    ok2, msg2 = pi_power.run_system_command(["sudo", "systemctl", "restart", "starlink-webui.service"])
     return jsonify({"success": ok1 and ok2, "message": f"monitor: {msg1}; webui: {msg2}"})
-
-
-def _run_system_command(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        if result.returncode != 0:
-            err = (result.stderr or result.stdout or "unknown error").strip()
-            return False, err[:500]
-        return True, "виконано"
-    except subprocess.TimeoutExpired:
-        return False, "timeout"
-    except Exception as e:
-        return False, str(e)
 
 
 @app.route("/api/system-reboot", methods=["POST"])

@@ -31,12 +31,21 @@ logger = logging.getLogger("pi_power")
 PENDING_ACTION_SETTING_KEY = "pi_power_action_pending"
 
 
-def _run_system_command(cmd: list[str]) -> tuple[bool, str]:
+def run_system_command(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
+    """Спільна для pi_power.py (reboot/poweroff Pi) і webapp.py
+    (restart сервісів) - раніше була продубльована в обох файлах
+    майже ідентично, з дрібними відмінностями (timeout, обрізання
+    помилки, TimeoutExpired-обробка); об'єднано в одну, найповнішу
+    версію. Публічна (без `_`) - реально використовується з іншого
+    модуля, не лише внутрішньо."""
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        if result.returncode == 0:
-            return True, "виконано"
-        return False, result.stderr.strip() or f"exit code {result.returncode}"
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "unknown error").strip()
+            return False, err[:500]
+        return True, "виконано"
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
     except Exception as e:
         return False, str(e)
 
@@ -70,7 +79,7 @@ def execute_pi_power_action(
     if config.DISPLAY_ENABLED:
         time.sleep(config.DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC)
 
-    ok, msg = _run_system_command(cmd)
+    ok, msg = run_system_command(cmd, timeout=15)
     db.insert_event(event_kind, f"{event_label}: {msg}", success=ok)
     # Очищаємо pending-сигнал ЗАВЖДИ (успіх чи провал) - systemctl
     # reboot/poweroff НЕ миттєвий: subprocess.run() повертається одразу
