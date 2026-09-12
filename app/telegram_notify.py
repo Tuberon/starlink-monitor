@@ -7,7 +7,7 @@ import logging
 import os
 import socket
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -200,23 +200,12 @@ def set_telegram_config(
         db.set_setting("telegram_enabled", "1" if enabled else "0")
 
 
-def send_message(text: str) -> tuple[bool, str]:
-    """Надсилає text усім налаштованим chat_id. Ніколи не кидає виняток
-    назовні - повертає (успіх, повідомлення). Якщо Telegram вимкнено
-    або не налаштовано - тихо повертає (False, причина), не заважаючи
-    основному циклу моніторингу."""
-    token, chat_ids, enabled = get_telegram_config()
-
-    if not enabled:
-        return False, "Telegram сповіщення вимкнені"
-    if not token:
-        return False, "Не вказано bot token"
-    if not chat_ids:
-        return False, "Не вказано жодного chat_id"
-
-    full_text = text
-
-    url = API_BASE.format(token=token, method="sendMessage")
+def _send_to_all_chats(chat_ids: list[str], method_label: str, make_request: Callable[[str], requests.Response]) -> tuple[bool, str]:
+    """Спільна retry/error-handling логіка для send_message()/
+    send_document() - раніше продубльована в обох майже ідентично.
+    `make_request(chat_id)` виконує РЕАЛЬНИЙ HTTP-запит (json-body для
+    sendMessage, multipart-файл для sendDocument) - єдина відмінність
+    між викликачами."""
     errors = []
     any_ok = False
     for chat_id in chat_ids:
@@ -228,25 +217,20 @@ def send_message(text: str) -> tuple[bool, str]:
         for attempt in range(config.TELEGRAM_SEND_RETRIES + 1):
             if attempt > 0:
                 time.sleep(config.TELEGRAM_SEND_RETRY_DELAY_SEC)
-                logger.info("Telegram sendMessage повторна спроба %d для %s", attempt, chat_id)
+                logger.info("Telegram %s повторна спроба %d для %s", method_label, attempt, chat_id)
             try:
-                resp = _request_with_eth0_fallback(
-                    "post",
-                    url,
-                    json={"chat_id": chat_id, "text": full_text, "parse_mode": "HTML"},
-                    timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
-                )
+                resp = make_request(chat_id)
                 data = resp.json()
                 if resp.status_code == 200 and data.get("ok"):
                     any_ok = True
                 else:
                     err_desc = data.get("description", f"HTTP {resp.status_code}")
                     errors.append(f"{chat_id}: {err_desc}")
-                    logger.warning("Telegram sendMessage помилка для %s: %s", chat_id, err_desc)
+                    logger.warning("Telegram %s помилка для %s: %s", method_label, chat_id, err_desc)
                 break  # HTTP-рівня відповідь отримана (успіх чи ні) - повтор не допоможе, не пробуємо знову
             except requests.RequestException as e:
                 last_network_error = str(e)
-                logger.warning("Telegram sendMessage мережева помилка для %s (спроба %d): %s", chat_id, attempt + 1, e)
+                logger.warning("Telegram %s мережева помилка для %s (спроба %d): %s", method_label, chat_id, attempt + 1, e)
         else:
             # Цикл for завершився БЕЗ break - усі спроби (включно з
             # повторними) дали мережеву помилку, жодної HTTP-відповіді.
@@ -259,63 +243,68 @@ def send_message(text: str) -> tuple[bool, str]:
     return False, "; ".join(errors) if errors else "невідома помилка"
 
 
+def _validate_telegram_config() -> tuple[Optional[str], Optional[list[str]], Optional[str]]:
+    """Спільна перевірка увімкнено/token/chat_ids для send_message()/
+    send_document() - раніше продубльована в обох. Повертає (token,
+    chat_ids, error) - error непустий рядок, якщо конфігурація
+    невалідна (token/chat_ids тоді None, ігноруються викликачем)."""
+    token, chat_ids, enabled = get_telegram_config()
+    if not enabled:
+        return None, None, "Telegram сповіщення вимкнені"
+    if not token:
+        return None, None, "Не вказано bot token"
+    if not chat_ids:
+        return None, None, "Не вказано жодного chat_id"
+    return token, chat_ids, None
+
+
+def send_message(text: str) -> tuple[bool, str]:
+    """Надсилає text усім налаштованим chat_id. Ніколи не кидає виняток
+    назовні - повертає (успіх, повідомлення). Якщо Telegram вимкнено
+    або не налаштовано - тихо повертає (False, причина), не заважаючи
+    основному циклу моніторингу."""
+    token, chat_ids, error = _validate_telegram_config()
+    if error:
+        return False, error
+    assert token is not None and chat_ids is not None  # для mypy - error=None гарантує обидва
+
+    url = API_BASE.format(token=token, method="sendMessage")
+    return _send_to_all_chats(chat_ids, "sendMessage", lambda chat_id: _request_with_eth0_fallback(
+        "post", url,
+        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+        timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
+    ))
+
+
 def send_document(file_path: str, caption: str = "") -> tuple[bool, str]:
     """Надсилає файл (напр. backup JSON) усім налаштованим chat_id
     через sendDocument (multipart/form-data, не JSON - на відміну
     від sendMessage). Той самий retry/eth0-fallback підхід, що
-    send_message() - файл відкривається ЗАНОВО для кожної спроби й
-    кожного chat_id (file handle споживається один раз при
-    завантаженні, повторне використання того самого відкритого
-    файла для другого запиту дало б порожнє тіло)."""
-    token, chat_ids, enabled = get_telegram_config()
-
-    if not enabled:
-        return False, "Telegram сповіщення вимкнені"
-    if not token:
-        return False, "Не вказано bot token"
-    if not chat_ids:
-        return False, "Не вказано жодного chat_id"
+    send_message() (через спільний _send_to_all_chats()) - файл
+    відкривається ЗАНОВО для кожної спроби й кожного chat_id (file
+    handle споживається один раз при завантаженні, повторне
+    використання того самого відкритого файла для другого запиту
+    дало б порожнє тіло)."""
+    token, chat_ids, error = _validate_telegram_config()
+    if error:
+        return False, error
+    assert token is not None and chat_ids is not None
     if not os.path.isfile(file_path):
         return False, f"Файл не знайдено: {file_path}"
 
     filename = os.path.basename(file_path)
     url = API_BASE.format(token=token, method="sendDocument")
-    errors = []
-    any_ok = False
-    for chat_id in chat_ids:
-        last_network_error: Optional[str] = None
-        for attempt in range(config.TELEGRAM_SEND_RETRIES + 1):
-            if attempt > 0:
-                time.sleep(config.TELEGRAM_SEND_RETRY_DELAY_SEC)
-                logger.info("Telegram sendDocument повторна спроба %d для %s", attempt, chat_id)
-            try:
-                with open(file_path, "rb") as f:
-                    resp = _request_with_eth0_fallback(
-                        "post",
-                        url,
-                        data={"chat_id": chat_id, "caption": caption},
-                        files={"document": (filename, f)},
-                        timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
-                    )
-                data = resp.json()
-                if resp.status_code == 200 and data.get("ok"):
-                    any_ok = True
-                else:
-                    err_desc = data.get("description", f"HTTP {resp.status_code}")
-                    errors.append(f"{chat_id}: {err_desc}")
-                    logger.warning("Telegram sendDocument помилка для %s: %s", chat_id, err_desc)
-                break
-            except requests.RequestException as e:
-                last_network_error = str(e)
-                logger.warning("Telegram sendDocument мережева помилка для %s (спроба %d): %s", chat_id, attempt + 1, e)
-        else:
-            errors.append(f"{chat_id}: {last_network_error}")
 
-    if any_ok and not errors:
-        return True, "надіслано"
-    if any_ok and errors:
-        return True, f"надіслано частково, помилки: {'; '.join(errors)}"
-    return False, "; ".join(errors) if errors else "невідома помилка"
+    def _make_request(chat_id: str) -> requests.Response:
+        with open(file_path, "rb") as f:
+            return _request_with_eth0_fallback(
+                "post", url,
+                data={"chat_id": chat_id, "caption": caption},
+                files={"document": (filename, f)},
+                timeout=config.TELEGRAM_NOTIFY_TIMEOUT_SEC,
+            )
+
+    return _send_to_all_chats(chat_ids, "sendDocument", _make_request)
 
 
 def test_connection() -> tuple[bool, str]:
