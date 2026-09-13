@@ -318,31 +318,39 @@ class TelegramBot:
 
     def _cmd_id(self, token: str, chat_id: str, arg: str) -> None:
         if not arg:
-            devices = db.get_all_known_devices()
-            if not devices:
-                self._send(token, chat_id, "Ще жодної тарілки не підключено.")
-                return
-            # Telegram обмежує повідомлення 4096 символами - без цього
-            # захисту довгий список (десятки відомих тарілок за час
-            # роботи) міг би бути ВІДХИЛЕНИЙ Telegram API цілком, і
-            # відповідь мовчки не приходила б (реальний баг, знайдений
-            # на запиті користувача - виправлено разом із явною
-            # перевіркою "ok"-поля в _api_call() вище). get_all_known_
-            # devices() уже сортує за last_seen_ts DESC - найновіші
-            # (найактуальніші) показуються першими.
-            shown = devices[:config.TELEGRAM_ID_LIST_MAX_ITEMS]
-            lines = [f"<b>Відомі тарілки ({len(devices)})</b>", ""]
-            for d in shown:
-                last_seen = self._fmt_ago(d["last_seen_ts"])
-                lines.append(f"<code>{d['dish_id']}</code> — востаннє в мережі {last_seen}")
-            if len(devices) > len(shown):
-                lines.append("")
-                lines.append(f"…і ще {len(devices) - len(shown)}. Уточніть /id &lt;ID або частина ID&gt;.")
-            lines.append("")
-            lines.append("Деталі: /id &lt;ID або частина ID&gt;")
-            self._send(token, chat_id, "\n".join(lines))
-            return
+            self._reply_id_list(token, chat_id)
+        else:
+            self._reply_id_detail(token, chat_id, arg)
 
+    def _reply_id_list(self, token: str, chat_id: str) -> None:
+        """Список УСІХ відомих тарілок - викликається при /id без аргументу."""
+        devices = db.get_all_known_devices()
+        if not devices:
+            self._send(token, chat_id, "Ще жодної тарілки не підключено.")
+            return
+        # Telegram обмежує повідомлення 4096 символами - без цього
+        # захисту довгий список (десятки відомих тарілок за час
+        # роботи) міг би бути ВІДХИЛЕНИЙ Telegram API цілком, і
+        # відповідь мовчки не приходила б (реальний баг, знайдений
+        # на запиті користувача - виправлено разом із явною
+        # перевіркою "ok"-поля в _api_call() вище). get_all_known_
+        # devices() уже сортує за last_seen_ts DESC - найновіші
+        # (найактуальніші) показуються першими.
+        shown = devices[:config.TELEGRAM_ID_LIST_MAX_ITEMS]
+        lines = [f"<b>Відомі тарілки ({len(devices)})</b>", ""]
+        for d in shown:
+            last_seen = self._fmt_ago(d["last_seen_ts"])
+            lines.append(f"<code>{d['dish_id']}</code> — востаннє в мережі {last_seen}")
+        if len(devices) > len(shown):
+            lines.append("")
+            lines.append(f"…і ще {len(devices) - len(shown)}. Уточніть /id &lt;ID або частина ID&gt;.")
+        lines.append("")
+        lines.append("Деталі: /id &lt;ID або частина ID&gt;")
+        self._send(token, chat_id, "\n".join(lines))
+
+    def _reply_id_detail(self, token: str, chat_id: str, arg: str) -> None:
+        """Деталі КОНКРЕТНОЇ тарілки за точним ID чи частковим збігом -
+        викликається при /id <arg>."""
         device = db.get_known_device(arg)
         if device is None:
             # Пошук за частковим збігом - зручно, щоб не вводити довгий ID повністю

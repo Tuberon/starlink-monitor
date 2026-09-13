@@ -25,7 +25,6 @@ logging.basicConfig(
 logger = logging.getLogger("shutdown_button")
 
 
-
 def watch_button() -> None:
     pin = config.SHUTDOWN_BUTTON_GPIO_PIN
     if not pin or pin <= 0:

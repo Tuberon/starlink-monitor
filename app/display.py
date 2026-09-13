@@ -199,25 +199,30 @@ def _set_backlight(bl_pin: Any, value: bool) -> None:
         bl_pin.value = value
 
 
+def _create_canvas(display: Any, Image: Any, ImageDraw: Any) -> tuple[tuple[int, int], Any, Any]:
+    """Створює чорне PIL-полотно правильного розміру для поточного
+    DISPLAY_ROTATION - бібліотека Adafruit застосовує rotation через
+    img.rotate() ПІСЛЯ малювання, тому для 90/270 полотно МАЄ бути
+    транспонованим (height x width), інакше після повороту не
+    впишеться в display.width/height (самі не змінюються параметром
+    rotation). Спільно для _redraw()/_draw_power_action_message() -
+    раніше продубльовано в обох."""
+    if config.DISPLAY_ROTATION in (90, 270):
+        canvas_size = (display.height, display.width)
+    else:
+        canvas_size = (display.width, display.height)
+    img = Image.new("RGB", canvas_size, "black")
+    draw = ImageDraw.Draw(img)
+    return canvas_size, img, draw
+
+
 def _redraw(display: Any, Image: Any, ImageDraw: Any, font_status: Any, font_update: Any, font_tiny: Any) -> None:
     latest = db.get_latest_metric()
     router_status = db.get_router_status()
     lines = _status_lines(latest, router_status)
     online = bool(latest and latest.get("online"))
 
-    # Бібліотека Adafruit застосовує rotation через img.rotate(),
-    # ПІСЛЯ чого перевіряє розмір результату проти display.width/
-    # display.height (які самі НЕ змінюються параметром rotation).
-    # Для 90/270 треба створювати полотно з транспонованими
-    # розмірами (height x width) - після повороту воно стане
-    # width x height і коректно впишеться в дисплей.
-    if config.DISPLAY_ROTATION in (90, 270):
-        canvas_size = (display.height, display.width)
-    else:
-        canvas_size = (display.width, display.height)
-
-    img = Image.new("RGB", canvas_size, "black")
-    draw = ImageDraw.Draw(img)
+    canvas_size, img, draw = _create_canvas(display, Image, ImageDraw)
     max_width = canvas_size[0] - 20  # відступи по 10px з кожного боку
     y = 10
     for line in lines:
@@ -251,13 +256,7 @@ def _draw_power_action_message(display: Any, Image: Any, ImageDraw: Any, font: A
     вбитий через SIGTERM від systemctl reboot/poweroff (див.
     app/pi_power.py: затримка ПЕРЕД реальним викликом команди дає
     час цьому кадру реально відобразитись на екрані)."""
-    if config.DISPLAY_ROTATION in (90, 270):
-        canvas_size = (display.height, display.width)
-    else:
-        canvas_size = (display.width, display.height)
-
-    img = Image.new("RGB", canvas_size, "black")
-    draw = ImageDraw.Draw(img)
+    canvas_size, img, draw = _create_canvas(display, Image, ImageDraw)
     text = "● Вимикається..." if action == "poweroff" else "● Перезавантажується..."
     bbox = draw.textbbox((0, 0), text, font=font)
     text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]

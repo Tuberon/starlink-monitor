@@ -440,6 +440,45 @@ def uptime_stats_24h() -> Optional[float]:
         return round(100.0 * (row["up"] or 0) / row["total"], 2)
 
 
+def _upsert_known_device(dish_id: str, component: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
+    """Спільна логіка для upsert_known_device_dish()/_router() -
+    обидві були продубльовані майже ідентично, відрізняючись лише
+    column-префіксом (dish_/router_). SQLite не дозволяє параметризувати
+    НАЗВИ колонок через `?`-placeholder (лише значення), тому вони
+    підставляються через f-string - `component` МАЄ бути internal
+    literal ("dish"/"router"), НЕ user input; явний `assert` тут -
+    останній захист навіть для internal-виклику."""
+    assert component in ("dish", "router"), f"невідомий компонент: {component!r}"
+    if not dish_id:
+        return False, None
+    now = time.time()
+    hw_col = f"{component}_hardware_version"
+    sw_col = f"{component}_software_version"
+    ts_col = f"{component}_software_updated_ts"
+    with get_conn() as conn:
+        existing = conn.execute(
+            f"SELECT {sw_col} FROM known_devices WHERE dish_id = ?", (dish_id,)
+        ).fetchone()
+        old_version = existing[sw_col] if existing else None
+        version_changed = existing is None or old_version != software_version
+        real_change = old_version is not None and old_version != software_version
+
+        conn.execute(
+            f"""INSERT INTO known_devices
+               (dish_id, first_seen_ts, last_seen_ts, {hw_col}, {sw_col}, {ts_col})
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(dish_id) DO UPDATE SET
+                 last_seen_ts = excluded.last_seen_ts,
+                 {hw_col} = excluded.{hw_col},
+                 {sw_col} = excluded.{sw_col},
+                 {ts_col} = CASE WHEN ? THEN excluded.{ts_col}
+                                  ELSE known_devices.{ts_col} END""",
+            (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
+             int(version_changed)),
+        )
+    return real_change, old_version
+
+
 def upsert_known_device_dish(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
     """Записує/оновлює відому інформацію про dish для конкретного dish_id.
     dish_software_updated_ts оновлюється лише коли software_version реально
@@ -450,32 +489,7 @@ def upsert_known_device_dish(dish_id: str, hardware_version: str, software_versi
     Повертає (real_change, old_version): real_change=True лише коли
     dish_id вже був відомий РАНІШЕ і версія відрізняється (перший
     запис для нового dish_id - НЕ "зміна", просто перше знайомство)."""
-    if not dish_id:
-        return False, None
-    now = time.time()
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT dish_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
-        ).fetchone()
-        old_version = existing["dish_software_version"] if existing else None
-        version_changed = existing is None or old_version != software_version
-        real_change = old_version is not None and old_version != software_version
-
-        conn.execute(
-            """INSERT INTO known_devices
-               (dish_id, first_seen_ts, last_seen_ts, dish_hardware_version,
-                dish_software_version, dish_software_updated_ts)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(dish_id) DO UPDATE SET
-                 last_seen_ts = excluded.last_seen_ts,
-                 dish_hardware_version = excluded.dish_hardware_version,
-                 dish_software_version = excluded.dish_software_version,
-                 dish_software_updated_ts = CASE WHEN ? THEN excluded.dish_software_updated_ts
-                                                  ELSE known_devices.dish_software_updated_ts END""",
-            (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
-             int(version_changed)),
-        )
-    return real_change, old_version
+    return _upsert_known_device(dish_id, "dish", hardware_version, software_version)
 
 
 def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
@@ -486,32 +500,7 @@ def upsert_known_device_router(dish_id: str, hardware_version: str, software_ver
     створюється з порожніми dish-полями.
 
     Повертає (real_change, old_version) - див. upsert_known_device_dish."""
-    if not dish_id:
-        return False, None
-    now = time.time()
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT router_software_version FROM known_devices WHERE dish_id = ?", (dish_id,)
-        ).fetchone()
-        old_version = existing["router_software_version"] if existing else None
-        version_changed = existing is None or old_version != software_version
-        real_change = old_version is not None and old_version != software_version
-
-        conn.execute(
-            """INSERT INTO known_devices
-               (dish_id, first_seen_ts, last_seen_ts, router_hardware_version,
-                router_software_version, router_software_updated_ts)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(dish_id) DO UPDATE SET
-                 last_seen_ts = excluded.last_seen_ts,
-                 router_hardware_version = excluded.router_hardware_version,
-                 router_software_version = excluded.router_software_version,
-                 router_software_updated_ts = CASE WHEN ? THEN excluded.router_software_updated_ts
-                                                    ELSE known_devices.router_software_updated_ts END""",
-            (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
-             int(version_changed)),
-        )
-    return real_change, old_version
+    return _upsert_known_device(dish_id, "router", hardware_version, software_version)
 
 
 def get_known_device(dish_id: str) -> Optional[dict[str, Any]]:
