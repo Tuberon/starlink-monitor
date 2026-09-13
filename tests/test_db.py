@@ -38,6 +38,20 @@ def test_prune_old_removes_expired_raw_metrics_keeps_recent(db_path):
     assert count_after == 50
 
 
+def test_prune_old_days_zero_is_not_silently_replaced_by_default(db_path):
+    """Реальний баг: `days = days or config.HISTORY_RETENTION_DAYS`
+    робив явно передане 0 (falsy в Python) нерозрізненим від
+    "аргумент не переданий" - prune_old(days=0) мовчки підмінявся
+    дефолтним config.HISTORY_RETENTION_DAYS замість реального
+    видалення всієї історії."""
+    config.HISTORY_RETENTION_DAYS = 30
+    db.insert_event("test", "щойно вставлена подія", success=True)
+
+    db.prune_old(days=0)
+
+    assert db.get_recent_events(10) == []
+
+
 # ---- known_devices - історія відомих Starlink-пристроїв (backup/restore) ----
 
 def test_merge_known_devices_adds_new_on_empty_db(db_path):

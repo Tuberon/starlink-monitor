@@ -373,7 +373,11 @@ def get_latest_metric() -> Optional[dict[str, Any]]:
 
 
 def prune_old(days: Optional[int] = None) -> None:
-    days = days or config.HISTORY_RETENTION_DAYS
+    # Явна перевірка на None, не `days or config.X` - 0 є легітимним
+    # (хоч і нетиповим) значенням days, яке `or`-патерн мовчки
+    # ігнорував би (0 falsy в Python), підміняючи дефолтом.
+    if days is None:
+        days = config.HISTORY_RETENTION_DAYS
     cutoff = time.time() - days * 86400
     with get_conn() as conn:
         conn.execute("DELETE FROM metrics WHERE ts < ?", (cutoff,))
