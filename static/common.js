@@ -6,6 +6,21 @@ function fmtTime(ts) {
   return d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// Заголовок дня для групування журналу подій - "Сьогодні"/"Вчора"
+// для двох найближчих днів (найчастіший випадок при регулярному
+// перегляді), повна дата для решти. Порівняння за календарним днем
+// у ЛОКАЛЬНОМУ часі браузера (не UTC) - як і решта дашборду.
+function fmtDateHeader(ts) {
+  const d = new Date(ts * 1000);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (isSameDay(d, today)) return 'Сьогодні';
+  if (isSameDay(d, yesterday)) return 'Вчора';
+  return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 // ts - Unix-timestamp у СЕКУНДАХ (як усюди в проєкті, не мілісекунди
 // Date.now()). Той самий формат, що app/telegram_bot.py._fmt_ago() -
 // консистентність між Telegram-повідомленнями й веб-UI.
