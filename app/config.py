@@ -127,7 +127,7 @@ AUTO_BACKUP_DIR = os.environ.get(
 # деградацію ДО того, як вона стане критичною. Той самий щоденний
 # цикл, що VACUUM - не частіше, не потребує.
 DB_INTEGRITY_CHECK_INTERVAL_SEC = int(os.environ.get("STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC", "86400"))
-HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "30"))
+HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "14"))
 
 # Навмисно НЕ в /settings (EDITABLE_PARAMS) - self-lockout ризик:
 # зміна адреси прослуховування через сам веб-інтерфейс могла б

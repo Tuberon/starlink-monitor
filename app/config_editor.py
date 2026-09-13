@@ -28,7 +28,7 @@ EDITABLE_PARAMS = [
     {"key": "STARLINK_SYSTEM_METRICS_INTERVAL_SEC", "type": "int", "default": "60", "label": "Інтервал запису CPU/пам'яті/температури, сек", "category": "monitoring"},
     {"key": "STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC", "type": "int", "default": "30", "label": "Інтервал batch-запису dish-метрик, сек", "category": "monitoring"},
     {"key": "STARLINK_OBSTRUCTION_WARN", "type": "float", "default": "0.05", "label": "Поріг попередження про перешкоди (0-1)", "category": "monitoring"},
-    {"key": "STARLINK_HISTORY_DAYS", "type": "int", "default": "30", "label": "Зберігати історію, днів", "category": "monitoring"},
+    {"key": "STARLINK_HISTORY_DAYS", "type": "int", "default": "14", "label": "Зберігати історію, днів", "category": "monitoring"},
     {"key": "STARLINK_WEBUI_PORT", "type": "int", "default": "8080", "label": "Порт веб-інтерфейсу", "category": "monitoring"},
 
     {"key": "STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC", "type": "int", "default": "86400", "label": "Інтервал перевірки цілісності БД, сек", "category": "reliability"},

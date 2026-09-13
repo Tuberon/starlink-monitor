@@ -354,7 +354,7 @@ Telegram/GPIO) або вручну в `/etc/starlink-monitor/env`. Повний
 | `STARLINK_DISH_ADDR` | `192.168.100.1:9200` | адреса тарілки |
 | `STARLINK_ROUTER_ADDR` | `192.168.1.1:9000` | адреса роутерного компонента Mini |
 | `STARLINK_WEBUI_PORT` | `8080` | порт веб-інтерфейсу |
-| `STARLINK_HISTORY_DAYS` | `30` | скільки днів зберігати історію метрик/подій |
+| `STARLINK_HISTORY_DAYS` | `14` | скільки днів зберігати історію метрик/подій |
 | `STARLINK_MAX_FAILURES` | `6` | скільки невдалих опитувань перед watchdog-reboot |
 
 GPIO-піни опційних фіч (кнопка/LED/дисплей) — див. відповідні секції
