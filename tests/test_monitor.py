@@ -937,7 +937,7 @@ def test_reboot_for_update_ready_success_notifies(watchdog):
     assert any("автоматично перезавантажено" in s for s in watchdog.sent)
 
 
-def test_reboot_for_update_ready_failure_notifies_and_updates_ts():
+def test_reboot_for_update_ready_failure_notifies_and_updates_ts(db_path):
     """last_reboot_ts МАЄ оновитись НАВІТЬ при провалі reboot -
     захист від reboot-loop (той самий принцип, що в _maybe_reboot)."""
     from app.monitor import Watchdog
