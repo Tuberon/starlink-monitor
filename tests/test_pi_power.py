@@ -19,10 +19,19 @@ def _fake_run_failure(*args, **kwargs):
     return MagicMock(returncode=1, stderr="команда провалилась")
 
 
-def test_signal_written_before_command_executes(db_path):
-    """Головний сценарій: у момент виклику systemctl-команди сигнал
-    для дисплея МАЄ бути вже записаний у БД - інакше display.py не
-    встигне побачити його до того, як SIGTERM вб'є процес."""
+def test_signal_cleared_before_command_executes(db_path):
+    """Реальний баг, знайдений користувачем на практиці: раніше
+    сигнал очищався ПІСЛЯ run_system_command() - якщо цю функцію
+    викликає webapp.py, вона виконується всередині процесу
+    starlink-webui.service; коли САМЕ ЦЕЙ процес ініціює systemctl
+    reboot, systemd починає ГЛОБАЛЬНУ зупинку всіх сервісів, включно
+    з тим самим starlink-webui.service. SIGTERM міг прийти раніше,
+    ніж код після команди встигав очистити сигнал - той лишався в
+    БД, і після реального перезавантаження display.py бачив цей
+    застарілий сигнал і малював повідомлення ПІСЛЯ, а не до/під час
+    reboot. На момент виконання команди сигнал уже виконав свою
+    єдину мету (display.py встиг побачити його під час затримки) -
+    тому МАЄ бути вже очищеним, не 'poweroff'."""
     signal_at_call_time = []
 
     def fake_run(*args, **kwargs):
@@ -36,10 +45,12 @@ def test_signal_written_before_command_executes(db_path):
             "тест", "успіх", "вимкнути", notify_fn=lambda t: None,
         )
 
-    assert signal_at_call_time == ["poweroff"]
+    assert signal_at_call_time == [""]
 
 
-def test_reboot_action_writes_reboot_signal(db_path):
+def test_reboot_action_signal_cleared_before_command(db_path):
+    """Той самий принцип, що test_signal_cleared_before_command_
+    executes, для reboot-дії."""
     signal_at_call_time = []
 
     def fake_run(*args, **kwargs):
@@ -53,7 +64,26 @@ def test_reboot_action_writes_reboot_signal(db_path):
             "тест", "успіх", "перезавантажити", notify_fn=lambda t: None,
         )
 
-    assert signal_at_call_time == ["reboot"]
+    assert signal_at_call_time == [""]
+
+
+def test_signal_written_before_delay_when_display_enabled(db_path):
+    """Контрольний тест: коли DISPLAY_ENABLED=True, сигнал МАЄ бути
+    записаний ("reboot"/"poweroff") ще ДО затримки (щоб display.py
+    реально мав що побачити протягом неї) - перевіряється напряму
+    між записом сигналу і сном, обходячи time.sleep()."""
+    config.DISPLAY_ENABLED = True
+    config.DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC = 0.01
+    with patch("time.sleep") as mock_sleep:
+        def check_signal_during_sleep(*args, **kwargs):
+            assert db.get_setting(pi_power.PENDING_ACTION_SETTING_KEY) == "reboot"
+        mock_sleep.side_effect = check_signal_during_sleep
+        with patch("subprocess.run", return_value=MagicMock(returncode=0, stderr="")):
+            pi_power.execute_pi_power_action(
+                ["sudo", "systemctl", "reboot"], "reboot", "pi_reboot",
+                "тест", "успіх", "перезавантажити", notify_fn=lambda t: None,
+            )
+    config.DISPLAY_ENABLED = False
 
 
 def test_success_sends_success_text_and_logs_event(db_path):
