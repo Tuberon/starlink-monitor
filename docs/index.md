@@ -24,9 +24,9 @@
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, `reboot_dish()` |
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
 | `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
-| `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
+| `db.py` | SQLite: metrics, events, system_metrics, router_status, known_devices, settings |
 | `telegram_notify.py` | Вихідні сповіщення |
-| `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` |
+| `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
@@ -42,7 +42,7 @@
 
 | Файл | Опис |
 |---|---|
-| `common.js` | Спільні для dashboard.js/stats.js: `fmtTime`, `fmtAgo` |
+| `common.js` | Спільні для dashboard.js/stats.js: `fmtTime`, `fmtAgo`, `fmtDateHeader` |
 | `theme.js` | Темна/світла тема - toggle на /settings, підключено на всіх 3 сторінках |
 | `dashboard.js` | Логіка головної сторінки (`/`) |
 | `settings.js` | Логіка сторінки налаштувань (`/settings`) |
@@ -91,7 +91,7 @@
 | `test_monitor_run_forever.py` | Головний watchdog-цикл: periodичні prune/vacuum/integrity/backup, startup-сповіщення |
 | `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
 | `test_system_metrics.py` | Кожна метрика (uptime/cpu/memory/disk/temp) незалежно, ніколи не кидає виняток навіть при повному провалі psutil |
-| `test_pi_power.py` | DB-сигнал ДО systemctl-команди, провал прибирає сигнал, lazy notify_fn default, edge cases (subprocess-виняток, DB-провал не блокує реальну дію) |
+| `test_pi_power.py` | DB-сигнал записаний ДО затримки, очищений ДО systemctl-команди (успіх і провал однаково); lazy notify_fn default, edge cases (subprocess-виняток, DB-провал не блокує реальну дію) |
 | `test_telegram_notify.py` | HTTP-запити, retry; eth0-fallback (усі 3 рівні: звичайний/eth0/manual DNS через eth0); send_document (backup-файл) |
 | `test_telegram_bot.py` | /checkupdates диспетчеризація; _poll_once/групування за chat_id; _run_loop/start/stop (SystemExit-трюк) |
 | `test_db.py` | Prune старих метрик, `check_integrity()`, callback-хук LED активності |
