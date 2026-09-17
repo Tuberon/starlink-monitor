@@ -150,7 +150,7 @@ WAL journal_mode — паралельне читання (webui) і запис (
 - `metrics` — історія опитувань dish (latency, dish_id, update_state, ...)
 - `events` — журнал подій (reboot, зміни стану, попередження, підключення
   нової тарілки). Повтори того самого `kind`+`message` підряд стискаються
-  в один рядок (`count`, `last_ts` замість нового запису щоразу)
+  в один рядок (`count` замість нового запису щоразу)
 - `system_metrics` — CPU/RAM/диск/температура Pi
 - `router_status` — останній відомий стан роутера, включно зі списком
   під'єднаних WiFi-клієнтів (`clients`: ім'я/MAC, IP, діапазон, сигнал,
@@ -158,6 +158,14 @@ WAL journal_mode — паралельне читання (webui) і запис (
 - `settings` — runtime key-value (auto_reboot_enabled, telegram config,
   known_dish_ids, dish_target_version/router_target_version + їхні
   `*_notified` пари — див. нижче)
+
+**Write-only колонки, залишені в схемі без запису** (аудит показав, що
+ніде не читаються - `metrics.currently_obstructed` дублює `obstruction_
+fraction`, `router_status.bootcount` ніколи не відображався, `events.
+last_ts` дублював `ts` в одному й тому самому UPDATE): значення `NULL`
+для нових рядків, старі рядки не чіпались. Схема НЕ змінена (без `DROP
+COLUMN`) - менший ризик для вже існуючих БД на реальних пристроях, ніж
+міграція.
 - `known_devices` — по одному рядку на dish_id: версії ПЗ dish/router
   і час останньої зміни кожної. Джерело для `/id <dish_id>` у Telegram-боті.
   `upsert_known_device_dish()`/`upsert_known_device_router()` повертають

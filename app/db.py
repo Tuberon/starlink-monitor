@@ -204,7 +204,6 @@ def _metric_row_params(status_dict: dict[str, Any]) -> tuple[Any, ...]:
         status_dict.get("ping_latency_ms", 0),
         status_dict.get("ping_drop_ratio", 0),
         status_dict.get("obstruction_fraction", 0),
-        int(status_dict.get("currently_obstructed", False)),
         status_dict.get("software_version", ""),
         status_dict.get("hardware_version", ""),
         status_dict.get("dish_id", ""),
@@ -217,13 +216,19 @@ def _metric_row_params(status_dict: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+# currently_obstructed НАВМИСНО не заповнюється (лишається NULL для
+# нових рядків) - аудит показав, що ця колонка ніколи не читається
+# ніде (дашборд показує лише obstruction_fraction, реальний відсоток
+# обструкції); write-only колонка без користі. Схема лишається як є
+# (без DROP COLUMN) - менший ризик для вже існуючих БД на реальних
+# пристроях, ніж зміна схеми.
 _INSERT_METRIC_SQL = """INSERT INTO metrics
    (ts, online, state, uptime_s, downlink_mbps, uplink_mbps,
     ping_latency_ms, ping_drop_ratio, obstruction_fraction,
-    currently_obstructed, software_version, hardware_version, dish_id, error,
+    software_version, hardware_version, dish_id, error,
     update_state, update_progress_pct, update_requires_reboot,
     update_install_pending, active_alerts)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
 
 def insert_metric(status_dict: dict[str, Any]) -> None:
@@ -259,8 +264,11 @@ def _json_field(raw: Any) -> list[Any]:
 def insert_event(kind: str, message: str, success: bool = True) -> None:
     """Записує подію в журнал. Якщо остання подія має той самий
     kind і message (типово - серія однакових попереджень підряд),
-    замість нового рядка інкрементує count і оновлює last_ts/ts
-    існуючого запису - журнал не засмічується повторами."""
+    замість нового рядка інкрементує count і оновлює ts існуючого
+    запису - журнал не засмічується повторами. last_ts НАВМИСНО не
+    оновлюється (лишається NULL) - аудит показав, що ця колонка
+    ніколи не читалась ніде, і навіть якби читалась, дублювала б ts
+    (обидві завжди отримували те саме значення now в одному UPDATE)."""
     now = time.time()
     with get_conn() as conn:
         last = conn.execute(
@@ -268,8 +276,8 @@ def insert_event(kind: str, message: str, success: bool = True) -> None:
         ).fetchone()
         if last is not None and last["kind"] == kind and last["message"] == message:
             conn.execute(
-                "UPDATE events SET ts = ?, last_ts = ?, count = count + 1, success = ? WHERE id = ?",
-                (now, now, int(success), last["id"]),
+                "UPDATE events SET ts = ?, count = count + 1, success = ? WHERE id = ?",
+                (now, int(success), last["id"]),
             )
         else:
             conn.execute(
@@ -302,18 +310,23 @@ def insert_system_metric(m: dict[str, Any]) -> None:
 
 def set_router_status(r: dict[str, Any]) -> None:
     """Записує останній відомий стан роутера. Таблиця завжди містить
-    рівно один рядок (id=1) - історія не потрібна, лише поточний стан."""
+    рівно один рядок (id=1) - історія не потрібна, лише поточний стан.
+    bootcount НАВМИСНО не заповнюється (лишається NULL) - аудит показав,
+    що ця колонка ніколи не читається ніде (не відображається на
+    дашборді); write-only колонка без користі. Схема лишається як є
+    (без DROP COLUMN) - менший ризик для вже існуючих БД на реальних
+    пристроях, ніж зміна схеми."""
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO router_status
-               (id, ts, online, software_version, hardware_version, bootcount, error,
+               (id, ts, online, software_version, hardware_version, error,
                 update_state, update_progress_pct, update_install_pending, active_alerts, clients)
-               VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                  ts=excluded.ts, online=excluded.online,
                  software_version=excluded.software_version,
                  hardware_version=excluded.hardware_version,
-                 bootcount=excluded.bootcount, error=excluded.error,
+                 error=excluded.error,
                  update_state=excluded.update_state,
                  update_progress_pct=excluded.update_progress_pct,
                  update_install_pending=excluded.update_install_pending,
@@ -324,7 +337,6 @@ def set_router_status(r: dict[str, Any]) -> None:
                 int(r["online"]),
                 r.get("software_version", ""),
                 r.get("hardware_version", ""),
-                r.get("bootcount", 0),
                 r.get("error", ""),
                 r.get("update_state", ""),
                 r.get("update_progress_pct", 0),
