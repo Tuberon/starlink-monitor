@@ -37,7 +37,7 @@ async function handleTargetVersionsSave() {
   const routerTarget = el('routerTargetVersionInput').value.trim();
 
   btn.disabled = true;
-  hint.textContent = 'Зберігаю...';
+  hint.textContent = t('saving_ellipsis');
   try {
     const res = await fetch('/api/target-versions', {
       method: 'POST',
@@ -45,9 +45,9 @@ async function handleTargetVersionsSave() {
       body: JSON.stringify({ dish_target: dishTarget, router_target: routerTarget }),
     });
     const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Збережено' : 'Помилка збереження');
+    hint.textContent = data.message || (data.success ? t('saved') : t('save_error'));
   } catch (e) {
-    hint.textContent = 'Помилка мережі при збереженні';
+    hint.textContent = t('network_error_saving');
     console.error('target versions save failed', e);
   } finally {
     btn.disabled = false;
@@ -58,7 +58,7 @@ function updateTelegramUI(enabled) {
   const toggle = el('telegramEnabledToggle');
   const badge = el('telegramStatusBadge');
   toggle.checked = enabled;
-  badge.textContent = enabled ? 'увімкнено' : 'вимкнено';
+  badge.textContent = enabled ? t('enabled') : t('disabled_word');
   badge.classList.remove('state-idle', 'state-reboot');
   badge.classList.add(enabled ? 'state-idle' : 'state-reboot');
 }
@@ -99,7 +99,7 @@ async function handleTelegramSave() {
   }
 
   btn.disabled = true;
-  hint.textContent = 'Зберігаю...';
+  hint.textContent = t('saving_ellipsis');
   try {
     const res = await fetch('/api/telegram-config', {
       method: 'POST',
@@ -107,13 +107,13 @@ async function handleTelegramSave() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    hint.textContent = data.success ? 'Збережено' : 'Помилка збереження';
+    hint.textContent = data.success ? t('saved') : t('save_error');
     if (data.success && tokenInput.value.trim()) {
       tokenInput.value = '';
       loadTelegramConfig();
     }
   } catch (e) {
-    hint.textContent = 'Помилка мережі при збереженні';
+    hint.textContent = t('network_error_saving');
     console.error('telegram save failed', e);
   } finally {
     btn.disabled = false;
@@ -125,13 +125,13 @@ async function handleTelegramTest() {
   const hint = el('telegramHint');
 
   btn.disabled = true;
-  hint.textContent = 'Надсилаю тестове повідомлення...';
+  hint.textContent = t('sending_test_message');
   try {
     const res = await fetch('/api/telegram-test', { method: 'POST' });
     const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Успішно' : 'Помилка');
+    hint.textContent = data.message || (data.success ? t('success_word') : t('error_word'));
   } catch (e) {
-    hint.textContent = 'Помилка мережі при тестуванні';
+    hint.textContent = t('network_error_testing');
     console.error('telegram test failed', e);
   } finally {
     btn.disabled = false;
@@ -155,7 +155,7 @@ async function handleSettingsBackup() {
     URL.revokeObjectURL(url);
     hint.textContent = 'Backup завантажено';
   } catch (e) {
-    hint.textContent = 'Помилка завантаження backup';
+    hint.textContent = t('backup_load_error');
     console.error('settings backup failed', e);
   }
 }
@@ -169,15 +169,15 @@ async function handleSendBackupTelegram() {
   const hint = el('settingsBackupHint');
   btn.disabled = true;
   const originalHint = hint.textContent;
-  hint.textContent = 'Надсилаю backup у Telegram...';
+  hint.textContent = t('sending_backup_telegram');
   try {
     const res = await fetch('/api/send-backup-telegram', { method: 'POST' });
     const data = await res.json();
     hint.textContent = data.success
-      ? `✅ Backup надіслано: ${data.message}`
+      ? t('backup_sent_ok', {msg: data.message})
       : `❌ ${data.message}`;
   } catch (e) {
-    hint.textContent = 'Помилка мережі при відправці backup';
+    hint.textContent = t('network_error_sending_backup');
     console.error('send backup to telegram failed', e);
   } finally {
     btn.disabled = false;
@@ -190,7 +190,7 @@ async function handleSettingsRestoreFile(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  if (!confirm('Відновити налаштування з цього файлу? Поточні Telegram-налаштування, перемикач auto-reboot і перевизначені параметри моніторингу будуть перезаписані.')) {
+  if (!confirm(t('confirm_restore_settings'))) {
     e.target.value = '';
     return;
   }
@@ -204,13 +204,13 @@ async function handleSettingsRestoreFile(e) {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    hint.textContent = data.message || (data.success ? 'Відновлено' : 'Помилка');
+    hint.textContent = data.message || (data.success ? t('restored') : t('error_word'));
     if (data.success) {
       loadTelegramConfig();
       loadEnvConfig();
     }
   } catch (err) {
-    hint.textContent = 'Некоректний файл backup';
+    hint.textContent = t('invalid_backup_file');
     console.error('settings restore failed', err);
   } finally {
     e.target.value = '';
@@ -230,7 +230,7 @@ async function loadEnvConfig() {
     // telegram, gpio).
     const groups = new Map();
     for (const p of data.params) {
-      const cat = p.category || 'інше';
+      const cat = p.category || t('category_other');
       if (!groups.has(cat)) groups.set(cat, []);
       groups.get(cat).push(p);
     }
@@ -239,7 +239,7 @@ async function loadEnvConfig() {
       const label = escapeHtml((data.category_labels && data.category_labels[cat]) || cat);
       const fields = params.map(p => {
         const value = escapeHtml(p.overridden ? p.current : '');
-        const placeholder = escapeHtml(`за замовчуванням: ${p.default}${p.overridden ? '' : ' (активне зараз)'}`);
+        const placeholder = escapeHtml(t('default_value_hint', {default: p.default, active: p.overridden ? '' : t('active_now_suffix')}));
         return `
           <label class="tg-label" for="env_${p.key}">${escapeHtml(p.label)}</label>
           <input class="tg-input" type="text" id="env_${p.key}" data-key="${p.key}"
@@ -267,7 +267,7 @@ async function handleEnvConfigSave() {
   const btn = el('envConfigSaveBtn');
   const hint = el('envConfigHint');
   btn.disabled = true;
-  hint.textContent = 'Зберігаю...';
+  hint.textContent = t('saving_ellipsis');
   try {
     const res = await fetch('/api/env-config', {
       method: 'POST',
@@ -276,11 +276,11 @@ async function handleEnvConfigSave() {
     });
     const data = await res.json();
     hint.textContent = data.success
-      ? 'Збережено. Щоб застосувати — перезапустіть сервіси (кнопка поруч) або вручну на Pi.'
-      : `Помилка: ${data.message}`;
+      ? t('saved_apply_hint')
+      : `${t('error_prefix')}: ${data.message}`;
     if (data.success) loadEnvConfig();
   } catch (e) {
-    hint.textContent = 'Помилка мережі при збереженні';
+    hint.textContent = t('network_error_saving');
     console.error('env config save failed', e);
   } finally {
     btn.disabled = false;
@@ -290,10 +290,10 @@ async function handleEnvConfigSave() {
 async function handleEnvConfigRestart() {
   const btn = el('envConfigRestartBtn');
   const hint = el('envConfigHint');
-  if (!confirm('Зберегти параметри і перезапустити сервіси моніторингу та веб-інтерфейсу? Дашборд буде недоступний кілька секунд.')) return;
+  if (!confirm(t('confirm_save_restart'))) return;
 
   btn.disabled = true;
-  hint.textContent = 'Зберігаю...';
+  hint.textContent = t('saving_ellipsis');
   try {
     const saveRes = await fetch('/api/env-config', {
       method: 'POST',
@@ -302,18 +302,38 @@ async function handleEnvConfigRestart() {
     });
     const saveData = await saveRes.json();
     if (!saveData.success) {
-      hint.textContent = `Помилка: ${saveData.message}`;
+      hint.textContent = `${t('error_prefix')}: ${saveData.message}`;
       btn.disabled = false;
       return;
     }
-    hint.textContent = 'Перезапускаю сервіси...';
+    hint.textContent = t('restarting_services');
     await fetch('/api/env-config-restart', { method: 'POST' });
-    hint.textContent = 'Сервіси перезапущено.';
+    hint.textContent = t('services_restarted');
   } catch (e) {
-    hint.textContent = 'Команду надіслано (з\'єднання могло розірватись під час рестарту)';
+    hint.textContent = t('cmd_sent_restart_disconnect');
     console.error('env config restart failed', e);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function handleLanguageChange(e) {
+  // Мова визначає SERVER-SIDE рендеринг (Jinja2 t()) - на відміну від
+  // теми (чисто client-side, applyTheme() у theme.js), збереження
+  // саме по собі нічого на екрані не змінює. Перезавантаження
+  // сторінки після успішного збереження - найпростіший спосіб
+  // отримати вже перекладений HTML з backend, без дублювання логіки
+  // перекладу на JS-стороні для статичного тексту шаблону.
+  const lang = e.target.value;
+  try {
+    const res = await fetch('/api/set-language', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang }),
+    });
+    if (res.ok) location.reload();
+  } catch (err) {
+    console.error('language change failed', err);
   }
 }
 
@@ -328,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('envConfigSaveBtn').addEventListener('click', handleEnvConfigSave);
   el('envConfigRestartBtn').addEventListener('click', handleEnvConfigRestart);
   el('targetVersionsSaveBtn').addEventListener('click', handleTargetVersionsSave);
+  el('languageSelect').addEventListener('change', handleLanguageChange);
   loadTelegramConfig();
   loadEnvConfig();
   loadTargetVersions();

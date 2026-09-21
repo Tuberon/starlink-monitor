@@ -610,10 +610,12 @@ metrics в одному циклі) скасовують попередній т
 відповідає). Не пише подій у журнал — придатний для частого
 зовнішнього опитування.
 
-PWA: `static/manifest.json` + `static/sw.js` (service worker) +
-`static/pwa.js` (реєстрація SW, підключена в обох HTML-шаблонах).
-Іконки `icon-192.png`/`icon-512.png` згенеровані з `logo.png` (вписані
-в квадрат на `--sky-900` фоні). Service worker кешує лише `/static/*`
+PWA: `/manifest.json` (динамічний Flask-endpoint, не статичний файл -
+name/description перекладаються поточною мовою через `app/i18n.py`)
++ `static/sw.js` (service worker) + `static/pwa.js` (реєстрація SW,
+підключена в усіх 3 HTML-шаблонах). Іконки `icon-192.png`/
+`icon-512.png` згенеровані з `logo.png` (вписані в квадрат на
+`--sky-900` фоні). Service worker кешує лише `/static/*`
 (network-first, cache fallback) — принцип "не кешувати API-відповіді
 на рівні SW" не змінився (застарілі дані без чіткого маркування були
 б оманливими).

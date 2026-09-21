@@ -12,9 +12,9 @@ function fmtUptime(seconds) {
   const m = Math.floor((seconds % 3600) / 60);
   if (h > 24) {
     const d = Math.floor(h / 24);
-    return `${d}д ${h % 24}г`;
+    return `${d}${t('unit_days_short')} ${h % 24}${t('unit_hours_short')}`;
   }
-  return `${h}г ${m}хв`;
+  return `${h}${t('unit_hours_short')} ${m}${t('unit_minutes_short')}`;
 }
 
 function setValueClass(node, value, warnAt, critAt, higherIsBad = true) {
@@ -29,58 +29,75 @@ function setValueClass(node, value, warnAt, critAt, higherIsBad = true) {
   }
 }
 
-const UPDATE_STATE_LABELS = {
-  'SOFTWARE_UPDATE_STATE_UNKNOWN': 'невідомо',
-  'IDLE': 'немає оновлень',
-  'FETCHING': 'завантаження',
-  'PRE_CHECK': 'перевірка перед встановленням',
-  'WRITING': 'встановлення',
-  'POST_CHECK': 'перевірка після встановлення',
-  'REBOOT_REQUIRED': 'очікує перезавантаження',
-  'DISABLED': 'вимкнено',
-  'FAULTED': 'помилка оновлення',
-};
+// Побудовані ЛІНИВО (функцією, не статичним object-літералом) - на
+// момент завантаження цього файлу window.I18N може ще не бути
+// готовим (порядок <script>-тегів), а мова інтерфейсу однаково не
+// змінюється без перезавантаження сторінки, тому кешування після
+// першого виклику безпечне й дешевше за виклик t() на кожен lookup.
+let _UPDATE_STATE_LABELS = null;
+function UPDATE_STATE_LABELS_get(code) {
+  if (!_UPDATE_STATE_LABELS) _UPDATE_STATE_LABELS = {
+    'SOFTWARE_UPDATE_STATE_UNKNOWN': t('us_unknown'),
+    'IDLE': t('us_idle'),
+    'FETCHING': t('us_fetching'),
+    'PRE_CHECK': t('us_pre_check'),
+    'WRITING': t('us_writing'),
+    'POST_CHECK': t('us_post_check'),
+    'REBOOT_REQUIRED': t('us_reboot_required'),
+    'DISABLED': t('us_disabled'),
+    'FAULTED': t('us_faulted'),
+  };
+  return _UPDATE_STATE_LABELS[code];
+}
 
-const ALERT_LABELS = {
-  'motors_stuck': 'двигуни заклинило',
-  'thermal_shutdown': 'аварійне вимкнення через перегрів',
-  'thermal_throttle': 'обмеження через перегрів',
-  'unexpected_location': 'неочікуване розташування',
-  'mast_not_near_vertical': 'мачта не вертикальна',
-  'slow_ethernet_speeds': 'низька швидкість Ethernet',
-  'roaming': 'роумінг',
-  'install_pending': 'очікує встановлення',
-  'is_heating': 'обігрів увімкнено',
-  'power_supply_thermal_throttle': 'обмеження блока живлення через перегрів',
-  'is_power_save_idle': 'режим енергозбереження',
-  'dbf_telem_stale': 'застарілі дані телеметрії',
-  'low_motor_current': 'низький струм двигунів',
-  'lower_signal_than_predicted': 'сигнал слабший за прогнозований',
-  'slow_ethernet_speeds_100': 'швидкість Ethernet нижче 100 Мбіт/с',
-  'obstruction_map_reset': 'карта перешкод скинута',
-  'dish_water_detected': 'виявлено воду на dish',
-  'router_water_detected': 'виявлено воду на роутері',
-  'upsu_router_port_slow': 'повільний порт роутера UPSU',
-  'no_ethernet_link': 'немає з\'єднання Ethernet',
-};
+let _ALERT_LABELS = null;
+function ALERT_LABELS_get(code) {
+  if (!_ALERT_LABELS) _ALERT_LABELS = {
+    'motors_stuck': t('alert_motors_stuck'),
+    'thermal_shutdown': t('alert_thermal_shutdown'),
+    'thermal_throttle': t('alert_thermal_throttle'),
+    'unexpected_location': t('alert_unexpected_location'),
+    'mast_not_near_vertical': t('alert_mast_not_near_vertical'),
+    'slow_ethernet_speeds': t('alert_slow_ethernet_speeds'),
+    'roaming': t('alert_roaming'),
+    'install_pending': t('alert_install_pending'),
+    'is_heating': t('alert_is_heating'),
+    'power_supply_thermal_throttle': t('alert_power_supply_thermal_throttle'),
+    'is_power_save_idle': t('alert_is_power_save_idle'),
+    'dbf_telem_stale': t('alert_dbf_telem_stale'),
+    'low_motor_current': t('alert_low_motor_current'),
+    'lower_signal_than_predicted': t('alert_lower_signal_than_predicted'),
+    'slow_ethernet_speeds_100': t('alert_slow_ethernet_speeds_100'),
+    'obstruction_map_reset': t('alert_obstruction_map_reset'),
+    'dish_water_detected': t('alert_dish_water_detected'),
+    'router_water_detected': t('alert_router_water_detected'),
+    'upsu_router_port_slow': t('alert_upsu_router_port_slow'),
+    'no_ethernet_link': t('alert_no_ethernet_link'),
+  };
+  return _ALERT_LABELS[code];
+}
 
-const ROUTER_UPDATE_STATE_LABELS = {
-  'NOT_RUN': 'немає оновлень',
-  'GETTING_TARGET_VERSION': 'перевірка наявності оновлення',
-  'DOWNLOADING_UPDATE_IMAGE': 'завантаження оновлення',
-  'FLASHING': 'встановлення оновлення',
-  'NO_UPDATE_REQUIRED': 'оновлення не потрібне',
-  'REBOOT_PENDING': 'очікує перезавантаження',
-  // GETTING_TARGET_VERSION_FAILED і DOWNLOADING_UPDATE_IMAGE_FAILED
-  // свідомо відсутні - обидва замінюються на 'NOT_RUN' перед цим
-  // lookup'ом (HIDDEN_ROUTER_STATES нижче), тому запис тут ніколи б
-  // не використовувався напряму.
-  'GETTING_TARGET_VERSION_EXHAUSTED': 'не вдалося перевірити оновлення',
-  'NO_VALID_ARTIFACT': 'відсутній коректний файл оновлення',
-  'ILLEGAL_ARTIFACT': 'некоректний файл оновлення',
-  'DOWNLOADING_UPDATE_IMAGE_EXHAUSTED': 'не вдалося завантажити оновлення',
-  'FLASHING_FAILED': 'помилка встановлення оновлення',
-};
+let _ROUTER_UPDATE_STATE_LABELS = null;
+function ROUTER_UPDATE_STATE_LABELS_get(code) {
+  if (!_ROUTER_UPDATE_STATE_LABELS) _ROUTER_UPDATE_STATE_LABELS = {
+    'NOT_RUN': t('rus_not_run'),
+    'GETTING_TARGET_VERSION': t('rus_getting_target_version'),
+    'DOWNLOADING_UPDATE_IMAGE': t('rus_downloading_update_image'),
+    'FLASHING': t('rus_flashing'),
+    'NO_UPDATE_REQUIRED': t('rus_no_update_required'),
+    'REBOOT_PENDING': t('rus_reboot_pending'),
+    // GETTING_TARGET_VERSION_FAILED і DOWNLOADING_UPDATE_IMAGE_FAILED
+    // свідомо відсутні - обидва замінюються на 'NOT_RUN' перед цим
+    // lookup'ом (HIDDEN_ROUTER_STATES нижче), тому запис тут ніколи б
+    // не використовувався напряму.
+    'GETTING_TARGET_VERSION_EXHAUSTED': t('rus_getting_target_version_exhausted'),
+    'NO_VALID_ARTIFACT': t('rus_no_valid_artifact'),
+    'ILLEGAL_ARTIFACT': t('rus_illegal_artifact'),
+    'DOWNLOADING_UPDATE_IMAGE_EXHAUSTED': t('rus_downloading_update_image_exhausted'),
+    'FLASHING_FAILED': t('rus_flashing_failed'),
+  };
+  return _ROUTER_UPDATE_STATE_LABELS[code];
+}
 
 // Стани, повністю приховані з дашборду (не лише текст мітки, а й сам
 // стан замінюється на 'NOT_RUN') - "тимчасова хмарна помилка
@@ -89,29 +106,33 @@ const ROUTER_UPDATE_STATE_LABELS = {
 // app/display.py.
 const HIDDEN_ROUTER_STATES = ['DOWNLOADING_UPDATE_IMAGE_FAILED', 'GETTING_TARGET_VERSION_FAILED'];
 
-const ROUTER_ALERT_LABELS = {
-  'thermal_throttle': 'обмеження через перегрів',
-  'install_pending': 'очікує встановлення',
-  'freshly_fused': 'щойно активовано',
-  'lan_eth_slow_link_10': 'повільне LAN Ethernet (10 Мбіт/с)',
-  'lan_eth_slow_link_100': 'повільне LAN Ethernet (100 Мбіт/с)',
-  'wan_eth_poor_connection': 'погане WAN Ethernet з\'єднання',
-  'mesh_topology_changing_often': 'топологія mesh часто змінюється',
-  'mesh_unreliable_backhaul': 'ненадійний mesh-канал',
-  'radius_missing_process': 'відсутній процес RADIUS',
-  'eth_switch_error': 'помилка Ethernet-комутатора',
-  'poe_on_dish_unreachable': 'PoE на dish недоступне',
-  'poe_fuse_blown': 'перегорів запобіжник PoE',
-  'poe_router_overcurrent': 'перевищення струму PoE роутера',
-  'poe_off_current_nominal': 'PoE вимкнено (номінальний струм)',
-  'poe_vin_overvoltage': 'перевищення напруги живлення PoE',
-  'poe_vin_undervoltage': 'занижена напруга живлення PoE',
-  'high_cable_ping_drop_rate': 'високі втрати пакетів на кабелі',
-  'sandbox_disabled': 'sandbox вимкнено',
-  'only_overflight_blocked': 'заблоковано лише прольотний режим',
-  'offline_networks_disabled': 'офлайн-мережі вимкнено',
-  'wired_mesh_not_using_wan_iface': 'дротовий mesh не використовує WAN',
-};
+let _ROUTER_ALERT_LABELS = null;
+function ROUTER_ALERT_LABELS_get(code) {
+  if (!_ROUTER_ALERT_LABELS) _ROUTER_ALERT_LABELS = {
+    'thermal_throttle': t('alert_thermal_throttle'),
+    'install_pending': t('alert_install_pending'),
+    'freshly_fused': t('ralert_freshly_fused'),
+    'lan_eth_slow_link_10': t('ralert_lan_eth_slow_link_10'),
+    'lan_eth_slow_link_100': t('ralert_lan_eth_slow_link_100'),
+    'wan_eth_poor_connection': t('ralert_wan_eth_poor_connection'),
+    'mesh_topology_changing_often': t('ralert_mesh_topology_changing_often'),
+    'mesh_unreliable_backhaul': t('ralert_mesh_unreliable_backhaul'),
+    'radius_missing_process': t('ralert_radius_missing_process'),
+    'eth_switch_error': t('ralert_eth_switch_error'),
+    'poe_on_dish_unreachable': t('ralert_poe_on_dish_unreachable'),
+    'poe_fuse_blown': t('ralert_poe_fuse_blown'),
+    'poe_router_overcurrent': t('ralert_poe_router_overcurrent'),
+    'poe_off_current_nominal': t('ralert_poe_off_current_nominal'),
+    'poe_vin_overvoltage': t('ralert_poe_vin_overvoltage'),
+    'poe_vin_undervoltage': t('ralert_poe_vin_undervoltage'),
+    'high_cable_ping_drop_rate': t('ralert_high_cable_ping_drop_rate'),
+    'sandbox_disabled': t('ralert_sandbox_disabled'),
+    'only_overflight_blocked': t('ralert_only_overflight_blocked'),
+    'offline_networks_disabled': t('ralert_offline_networks_disabled'),
+    'wired_mesh_not_using_wan_iface': t('ralert_wired_mesh_not_using_wan_iface'),
+  };
+  return _ROUTER_ALERT_LABELS[code];
+}
 
 const OFFLINE_CACHE_KEY = 'starlink_last_status_v1';
 
@@ -182,11 +203,11 @@ function _renderStatusData(latest) {
       ring.style.setProperty('--ring-pct', '15%');
     }
 
-    const stateLabel = UPDATE_STATE_LABELS[latest.update_state] || latest.update_state || latest.state || '—';
+    const stateLabel = UPDATE_STATE_LABELS_get(latest.update_state) || latest.update_state || latest.state || '—';
     el('mState').textContent = stateLabel;
-    el('mDown').innerHTML = `${latest.downlink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
-    el('mUp').innerHTML = `${latest.uplink_mbps ?? '—'}<span class="unit">Мбіт/с</span>`;
-    el('mPing').innerHTML = `${latest.ping_latency_ms ?? '—'}<span class="unit">мс</span>`;
+    el('mDown').innerHTML = `${latest.downlink_mbps ?? '—'}<span class="unit">${t('unit_mbps')}</span>`;
+    el('mUp').innerHTML = `${latest.uplink_mbps ?? '—'}<span class="unit">${t('unit_mbps')}</span>`;
+    el('mPing').innerHTML = `${latest.ping_latency_ms ?? '—'}<span class="unit">${t('unit_ms')}</span>`;
 
     const dropPct = latest.ping_drop_ratio != null ? (latest.ping_drop_ratio * 100).toFixed(1) : null;
     el('mDrop').innerHTML = `${dropPct ?? '—'}<span class="unit">%</span>`;
@@ -201,7 +222,7 @@ function _renderStatusData(latest) {
     const sw = latest.software_version || '—';
     const hw = latest.hardware_version || '—';
     el('mDishId').textContent = latest.dish_id || '—';
-    el('mFirmwareDish').textContent = `ПЗ: ${sw}  ·  Апаратна версія: ${hw}`;
+    el('mFirmwareDish').textContent = t('fw_hw_line', {sw, hw});
 
     renderUpdateStatus(latest);
     renderAlerts(latest);
@@ -210,7 +231,7 @@ function _renderStatusData(latest) {
 function renderUpdateStatus(latest) {
   const badge = el('updateStateBadge');
   const state = latest.update_state || 'SOFTWARE_UPDATE_STATE_UNKNOWN';
-  badge.textContent = UPDATE_STATE_LABELS[state] || state;
+  badge.textContent = UPDATE_STATE_LABELS_get(state) || state;
 
   badge.classList.remove('state-idle', 'state-active', 'state-reboot');
   if (state === 'IDLE') {
@@ -240,7 +261,7 @@ function renderAlerts(latest) {
     return;
   }
   body.innerHTML = alerts
-    .map(a => `<span class="alert-chip">${escapeHtml(ALERT_LABELS[a] || a)}</span>`)
+    .map(a => `<span class="alert-chip">${escapeHtml(ALERT_LABELS_get(a) || a)}</span>`)
     .join('');
 }
 
@@ -281,21 +302,21 @@ async function refreshRouterStatus() {
     const latest = data.latest;
     const el2 = el('mFirmwareRouter');
     if (!latest) {
-      el2.textContent = 'ще не опитано';
+      el2.textContent = t('not_polled_yet');
       el('routerUpdateStateBadge').textContent = '—';
-      el('routerAlertsBody').innerHTML = '<span class="alerts-none">ще не опитано</span>';
+      el('routerAlertsBody').innerHTML = `<span class="alerts-none">${t('not_polled_yet')}</span>`;
       renderRouterClients(null);
       return;
     }
     if (!latest.online) {
-      el2.textContent = `недоступний (${latest.error || 'немає відповіді'})`;
+      el2.textContent = t('unavailable_reason', {reason: latest.error || t('no_response')});
       el('routerUpdateStateBadge').textContent = '—';
       renderRouterClients(latest.clients);
       return;
     }
     const sw = latest.software_version || '—';
     const hw = latest.hardware_version || '—';
-    el2.textContent = `ПЗ: ${sw}  ·  Апаратна версія: ${hw}`;
+    el2.textContent = t('fw_hw_line', {sw, hw});
 
     renderRouterUpdateStatus(latest);
     renderRouterAlerts(latest);
@@ -309,8 +330,8 @@ function fmtDuration(seconds) {
   if (seconds === null || seconds === undefined) return '—';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}г ${m}хв`;
-  return `${m}хв`;
+  if (h > 0) return `${h}${t('unit_hours_short')} ${m}${t('unit_minutes_short')}`;
+  return `${m}${t('unit_minutes_short')}`;
 }
 
 function signalClass(dbm) {
@@ -345,7 +366,7 @@ function renderRouterClients(clients) {
     countEl.textContent = '0 підключено';
     table.innerHTML = header + '<div class="clients-row"><span>немає підключених клієнтів</span></div>';
   } else {
-    countEl.textContent = `${filtered.length} підключено`;
+    countEl.textContent = t('clients_connected', {n: filtered.length});
     table.innerHTML = header + rows;
   }
 }
@@ -357,7 +378,7 @@ function renderRouterUpdateStatus(latest) {
   // регулярно проходить через цей стан як частину нормального циклу
   // перевірки, показ як "помилка" щоразу лише вводить в оману.
   const displayState = HIDDEN_ROUTER_STATES.includes(state) ? 'NOT_RUN' : state;
-  badge.textContent = ROUTER_UPDATE_STATE_LABELS[displayState] || displayState;
+  badge.textContent = ROUTER_UPDATE_STATE_LABELS_get(displayState) || displayState;
 
   badge.classList.remove('state-idle', 'state-active', 'state-reboot');
   if (displayState === 'NOT_RUN' || displayState === 'NO_UPDATE_REQUIRED') {
@@ -384,7 +405,7 @@ function renderRouterAlerts(latest) {
     return;
   }
   body.innerHTML = alerts
-    .map(a => `<span class="alert-chip">${escapeHtml(ROUTER_ALERT_LABELS[a] || a)}</span>`)
+    .map(a => `<span class="alert-chip">${escapeHtml(ROUTER_ALERT_LABELS_get(a) || a)}</span>`)
     .join('');
 }
 
@@ -397,7 +418,7 @@ async function refreshEvents() {
     const events = await res.json();
     const log = el('eventLog');
     if (!events.length) {
-      log.innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Подій ще немає</span></div>';
+      log.innerHTML = `<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>${t('no_events_yet')}</span></div>`;
       return;
     }
     log.innerHTML = events.map(ev => `
@@ -415,17 +436,17 @@ async function refreshEvents() {
 async function handleReboot() {
   const btn = el('rebootBtn');
   const hint = el('rebootHint');
-  if (!confirm('Перезавантажити Starlink dish зараз? Зв\'язок буде втрачено на ~1-2 хвилини.')) return;
+  if (!confirm(t('confirm_reboot_starlink'))) return;
 
   btn.disabled = true;
-  hint.textContent = 'Надсилаю команду reboot...';
+  hint.textContent = t('sending_reboot_cmd');
   try {
     const res = await fetch('/api/reboot-dish', { method: 'POST' });
     const data = await res.json();
-    hint.textContent = data.success ? 'Команда reboot надіслана успішно' : `Помилка: ${data.message}`;
+    hint.textContent = data.success ? t('reboot_cmd_sent_ok') : `${t('error_prefix')}: ${data.message}`;
     refreshEvents();
   } catch (e) {
-    hint.textContent = 'Помилка мережі при надсиланні команди';
+    hint.textContent = t('network_error_sending');
   } finally {
     setTimeout(() => { btn.disabled = false; }, 5000);
   }
@@ -434,39 +455,39 @@ async function handleReboot() {
 async function handlePiReboot() {
   const btn = el('piRebootBtn');
   const hint = el('piControlHint');
-  if (!confirm("Перезавантажити Raspberry Pi зараз? Дашборд стане недоступний на 1-2 хвилини.")) return;
+  if (!confirm(t('confirm_reboot_pi'))) return;
 
   btn.disabled = true;
-  hint.textContent = 'Надсилаю команду перезавантаження...';
+  hint.textContent = t('sending_pi_reboot_cmd');
   try {
     const res = await fetch('/api/system-reboot', { method: 'POST' });
     const data = await res.json();
-    hint.textContent = data.success ? 'Pi перезавантажується...' : `Помилка: ${data.message}`;
+    hint.textContent = data.success ? t('pi_rebooting') : `${t('error_prefix')}: ${data.message}`;
   } catch (e) {
-    hint.textContent = 'Команду надіслано (з\'єднання розірвано)';
+    hint.textContent = t('cmd_sent_disconnected');
   }
 }
 
 async function handlePiShutdown() {
   const btn = el('piShutdownBtn');
   const hint = el('piControlHint');
-  if (!confirm("Вимкнути Raspberry Pi зараз? Для повторного увімкнення знадобиться фізичний доступ до пристрою (від'єднати й підключити живлення).")) return;
-  if (!confirm("Підтвердіть ще раз: дашборд стане повністю недоступний до ручного увімкнення Pi.")) return;
+  if (!confirm(t('confirm_shutdown_pi_1'))) return;
+  if (!confirm(t('confirm_shutdown_pi_2'))) return;
 
   btn.disabled = true;
-  hint.textContent = 'Надсилаю команду вимкнення...';
+  hint.textContent = t('sending_pi_shutdown_cmd');
   try {
     const res = await fetch('/api/system-shutdown', { method: 'POST' });
     const data = await res.json();
-    hint.textContent = data.success ? 'Pi вимикається...' : `Помилка: ${data.message}`;
+    hint.textContent = data.success ? t('pi_shutting_down') : `${t('error_prefix')}: ${data.message}`;
   } catch (e) {
-    hint.textContent = 'Команду надіслано (з\'єднання розірвано)';
+    hint.textContent = t('cmd_sent_disconnected');
   }
 }
 
 function handleClearEvents() {
   eventsClearedLocally = true;
-  el('eventLog').innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Журнал очищено на екрані</span></div>';
+  el('eventLog').innerHTML = `<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>${t('log_cleared_locally')}</span></div>`;
 }
 
 async function handleCheckUpdates() {
@@ -475,21 +496,21 @@ async function handleCheckUpdates() {
 
   btn.disabled = true;
   btn.classList.add('spinning');
-  hint.textContent = 'Опитую dish і роутер...';
+  hint.textContent = t('polling_dish_router');
   try {
     const res = await fetch('/api/check-updates', { method: 'POST' });
     const data = await res.json();
     if (data.success) {
-      const dishState = UPDATE_STATE_LABELS[data.dish.update_state] || data.dish.update_state || 'н/д';
+      const dishState = UPDATE_STATE_LABELS_get(data.dish.update_state) || data.dish.update_state || t('not_available_short');
       const routerRawState = HIDDEN_ROUTER_STATES.includes(data.router.update_state) ? 'NOT_RUN' : data.router.update_state;
-      const routerState = ROUTER_UPDATE_STATE_LABELS[routerRawState] || routerRawState || 'н/д';
-      hint.textContent = `Готово. Dish: ${dishState}  ·  Роутер: ${routerState}`;
+      const routerState = ROUTER_UPDATE_STATE_LABELS_get(routerRawState) || routerRawState || t('not_available_short');
+      hint.textContent = t('check_done', {dish: dishState, router: routerState});
     } else {
-      hint.textContent = 'Помилка перевірки';
+      hint.textContent = t('check_error');
     }
     tick();
   } catch (e) {
-    hint.textContent = 'Помилка мережі при перевірці';
+    hint.textContent = t('network_error_checking');
     console.error('check updates failed', e);
   } finally {
     btn.disabled = false;
@@ -511,7 +532,7 @@ function updateAutoRebootUI(enabled) {
   const toggle = el('autoRebootToggle');
   const badge = el('autoRebootStatusBadge');
   toggle.checked = enabled;
-  badge.textContent = enabled ? 'увімкнено' : 'вимкнено';
+  badge.textContent = enabled ? t('enabled') : t('disabled_word');
   badge.classList.remove('state-idle', 'state-reboot');
   badge.classList.add(enabled ? 'state-idle' : 'state-reboot');
 }

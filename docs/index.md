@@ -10,6 +10,7 @@
 | Файл | Опис |
 |---|---|
 | `README.md` | Опис проєкту, встановлення, конфігурація, усі env-параметри |
+| `README.en.md` | Той самий README англійською - синхронізувати вручну при зміні README.md |
 | `requirements.txt` | Python-залежності (pip), встановлюються на Pi |
 | `requirements-dev.txt` | Залежності розробки (mypy) - НЕ встановлюються на Pi |
 | `mypy.ini` | Конфігурація статичної типізації (виключає `app/vendor/`) |
@@ -25,6 +26,7 @@
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
 | `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, known_devices, settings |
+| `i18n.py` | Мультимовний інтерфейс (uk/en) - словник перекладів, `t()`, мова з settings |
 | `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` |
 | `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py) |

@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="{{ ui_lang }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Dish Watch — Starlink Monitor</title>
+<title>{{ t('page_title_index') }}</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<link rel="manifest" href="/static/manifest.json">
+<link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,12 +25,13 @@ try {
 } catch (e) {}
 </script>
 <link rel="stylesheet" href="{{ static_v('style.css') }}">
+<script>window.LANG = "{{ ui_lang }}"; window.I18N = {{ i18n_json | tojson }};</script>
 </head>
 <body>
 <div class="wrap">
 
   <div class="offline-banner" id="offlineBanner" style="display:none;">
-    ⚠️ Немає зв'язку з Pi — показано останній відомий стан
+    {{ t('offline_banner') }}
     (<span id="offlineBannerAgo">—</span>)
   </div>
 
@@ -39,108 +40,108 @@ try {
       <div class="ring" id="ring"><div class="ring-dot"></div></div>
       <div>
         <h1>Dish Watch</h1>
-        <p>Starlink Mini · Автономний монітор</p>
+        <p>{{ t('brand_subtitle') }}</p>
       </div>
     </div>
     <img src="/static/logo.png" alt="logo" class="header-logo">
     <div style="display:flex; align-items:center; gap:12px;">
       <div class="status-pill" id="statusPill">
         <span class="dot"></span>
-        <span id="statusText">З'єднання...</span>
+        <span id="statusText">{{ t('connecting') }}</span>
       </div>
-      <a href="/stats" class="settings-link" title="Статистика">📊</a>
-      <a href="/settings" class="settings-link" title="Налаштування">⚙</a>
+      <a href="/stats" class="settings-link" title="{{ t('nav_stats_title') }}">📊</a>
+      <a href="/settings" class="settings-link" title="{{ t('nav_settings_title') }}">⚙</a>
     </div>
   </header>
 
   <div class="grid">
-    <div class="metric wide"><div class="label">Стан</div><div class="value text-value" id="mState">—</div></div>
-    <div class="metric"><div class="label">Downlink</div><div class="value" id="mDown">—<span class="unit">Мбіт/с</span></div></div>
-    <div class="metric"><div class="label">Uplink</div><div class="value" id="mUp">—<span class="unit">Мбіт/с</span></div></div>
-    <div class="metric"><div class="label">Затримка</div><div class="value" id="mPing">—<span class="unit">мс</span></div></div>
-    <div class="metric"><div class="label">Втрати пакетів</div><div class="value" id="mDrop">—<span class="unit">%</span></div></div>
-    <div class="metric"><div class="label">Обструкція</div><div class="value" id="mObs">—<span class="unit">%</span></div></div>
-    <div class="metric"><div class="label">Uptime dish</div><div class="value" id="mUptime">—</div></div>
-    <div class="metric wide"><div class="label">Dish ID</div><div class="value firmware-value" id="mDishId">—</div></div>
-    <div class="metric wide"><div class="label">Прошивка тарілки</div><div class="value firmware-value" id="mFirmwareDish">—</div></div>
-    <div class="metric wide"><div class="label">Прошивка роутера</div><div class="value firmware-value" id="mFirmwareRouter">—</div></div>
+    <div class="metric wide"><div class="label">{{ t('label_state') }}</div><div class="value text-value" id="mState">—</div></div>
+    <div class="metric"><div class="label">{{ t('label_downlink') }}</div><div class="value" id="mDown">—<span class="unit">Мбіт/с</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_uplink') }}</div><div class="value" id="mUp">—<span class="unit">Мбіт/с</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_latency') }}</div><div class="value" id="mPing">—<span class="unit">мс</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_packet_loss') }}</div><div class="value" id="mDrop">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_obstruction') }}</div><div class="value" id="mObs">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_uptime_dish') }}</div><div class="value" id="mUptime">—</div></div>
+    <div class="metric wide"><div class="label">{{ t('label_dish_id') }}</div><div class="value firmware-value" id="mDishId">—</div></div>
+    <div class="metric wide"><div class="label">{{ t('label_firmware_dish') }}</div><div class="value firmware-value" id="mFirmwareDish">—</div></div>
+    <div class="metric wide"><div class="label">{{ t('label_firmware_router') }}</div><div class="value firmware-value" id="mFirmwareRouter">—</div></div>
   </div>
 
   <div class="status-row">
-    <div class="status-row-label">Оновлення ПЗ dish</div>
+    <div class="status-row-label">{{ t('row_dish_update') }}</div>
     <div class="status-row-body">
       <span class="badge" id="updateStateBadge">—</span>
       <div class="progress-track">
         <div class="progress-fill" id="updateProgressFill" style="width:0%"></div>
       </div>
       <span class="progress-pct" id="updateProgressPct">—</span>
-      <span class="flag" id="updateRebootFlag" hidden>очікує перезавантаження</span>
-      <span class="flag" id="updateInstallFlag" hidden>очікує встановлення</span>
+      <span class="flag" id="updateRebootFlag" hidden>{{ t('flag_reboot_pending') }}</span>
+      <span class="flag" id="updateInstallFlag" hidden>{{ t('flag_install_pending') }}</span>
     </div>
   </div>
 
   <div class="status-row">
-    <div class="status-row-label">Попередження dish</div>
+    <div class="status-row-label">{{ t('row_dish_alerts') }}</div>
     <div class="status-row-body" id="alertsBody">
-      <span class="alerts-none">активних попереджень немає</span>
+      <span class="alerts-none">{{ t('alerts_none') }}</span>
     </div>
   </div>
 
   <div class="status-row">
-    <div class="status-row-label">Оновлення ПЗ роутера</div>
+    <div class="status-row-label">{{ t('row_router_update') }}</div>
     <div class="status-row-body">
       <span class="badge" id="routerUpdateStateBadge">—</span>
       <div class="progress-track">
         <div class="progress-fill" id="routerUpdateProgressFill" style="width:0%"></div>
       </div>
       <span class="progress-pct" id="routerUpdateProgressPct">—</span>
-      <span class="flag" id="routerUpdateInstallFlag" hidden>очікує встановлення</span>
+      <span class="flag" id="routerUpdateInstallFlag" hidden>{{ t('flag_install_pending') }}</span>
     </div>
   </div>
 
   <div class="status-row">
-    <div class="status-row-label">Попередження роутера</div>
+    <div class="status-row-label">{{ t('row_router_alerts') }}</div>
     <div class="status-row-body" id="routerAlertsBody">
-      <span class="alerts-none">активних попереджень немає</span>
+      <span class="alerts-none">{{ t('alerts_none') }}</span>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Керування Starlink</h2>
+      <h2>{{ t('panel_starlink_control') }}</h2>
     </div>
     <div class="controls">
-      <button class="reboot-btn" id="rebootBtn">⟲ Перезавантажити Starlink</button>
-      <span class="hint" id="rebootHint">Ручний reboot dish через локальний gRPC API</span>
+      <button class="reboot-btn" id="rebootBtn">{{ t('btn_reboot_starlink') }}</button>
+      <span class="hint" id="rebootHint">{{ t('hint_reboot_starlink') }}</span>
     </div>
     <div class="controls" style="margin-top:12px;">
-      <button class="check-btn" id="checkUpdatesBtn">↻ Перевірити стан оновлень</button>
-      <span class="hint" id="checkUpdatesHint">Оновлює дані dish і роутера негайно, без очікування циклу опитування</span>
+      <button class="check-btn" id="checkUpdatesBtn">{{ t('btn_check_updates') }}</button>
+      <span class="hint" id="checkUpdatesHint">{{ t('hint_check_updates') }}</span>
     </div>
     <div class="controls" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
       <label class="toggle-switch">
         <input type="checkbox" id="autoRebootToggle">
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
       </label>
-      <span class="toggle-label">Автоматичний reboot при готовому оновленні</span>
+      <span class="toggle-label">{{ t('toggle_auto_reboot') }}</span>
       <span class="badge" id="autoRebootStatusBadge">—</span>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Клієнти WiFi</h2>
+      <h2>{{ t('panel_wifi_clients') }}</h2>
       <span class="sub" id="routerClientsCount">—</span>
     </div>
     <div class="clients-table" id="routerClientsTable">
       <div class="clients-row clients-header">
-        <span>Пристрій</span>
-        <span>IP</span>
-        <span>Діапазон</span>
-        <span>Сигнал</span>
-        <span>У мережі</span>
+        <span>{{ t('th_device') }}</span>
+        <span>{{ t('th_ip') }}</span>
+        <span>{{ t('th_band') }}</span>
+        <span>{{ t('th_signal') }}</span>
+        <span>{{ t('th_uptime_net') }}</span>
       </div>
-      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>{{ t('loading') }}</span></div>
     </div>
   </div>
 
@@ -149,40 +150,40 @@ try {
   </div>
 
   <div class="grid">
-    <div class="metric"><div class="label">Uptime Pi</div><div class="value" id="sUptime">—</div></div>
-    <div class="metric"><div class="label">Температура</div><div class="value" id="sTemp">—<span class="unit">°C</span></div></div>
-    <div class="metric"><div class="label">CPU</div><div class="value" id="sCpu">—<span class="unit">%</span></div></div>
-    <div class="metric"><div class="label">Пам'ять</div><div class="value" id="sMem">—<span class="unit">%</span></div></div>
-    <div class="metric"><div class="label">Диск</div><div class="value" id="sDisk">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_uptime_pi') }}</div><div class="value" id="sUptime">—</div></div>
+    <div class="metric"><div class="label">{{ t('label_temperature') }}</div><div class="value" id="sTemp">—<span class="unit">°C</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_cpu') }}</div><div class="value" id="sCpu">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_memory') }}</div><div class="value" id="sMem">—<span class="unit">%</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_disk') }}</div><div class="value" id="sDisk">—<span class="unit">%</span></div></div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Керування Raspberry Pi</h2>
+      <h2>{{ t('panel_pi_control') }}</h2>
     </div>
     <div class="controls">
-      <button class="reboot-btn" id="piRebootBtn">⟲ Перезавантажити Pi</button>
-      <button class="reboot-btn" id="piShutdownBtn">⏻ Вимкнути Pi</button>
-      <span class="hint" id="piControlHint">Обидві дії reboot/shutdown розривають з'єднання з дашбордом</span>
+      <button class="reboot-btn" id="piRebootBtn">{{ t('btn_reboot_pi') }}</button>
+      <button class="reboot-btn" id="piShutdownBtn">{{ t('btn_shutdown_pi') }}</button>
+      <span class="hint" id="piControlHint">{{ t('hint_pi_control') }}</span>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Журнал подій</h2>
-      <button class="clear-btn" id="clearEventsBtn" title="Очистити журнал подій">Очистити</button>
+      <h2>{{ t('panel_event_log') }}</h2>
+      <button class="clear-btn" id="clearEventsBtn" title="{{ t('btn_clear_title') }}">{{ t('btn_clear') }}</button>
     </div>
     <div class="log" id="eventLog">
-      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>{{ t('loading') }}</span></div>
     </div>
     <div class="controls" style="margin-top:12px;">
-      <a href="/stats" class="check-btn" style="text-decoration:none; display:inline-block;">Уся статистика →</a>
+      <a href="/stats" class="check-btn" style="text-decoration:none; display:inline-block;">{{ t('link_all_stats') }}</a>
     </div>
   </div>
 
   <footer>
     DISH ADDR 192.168.100.1:9200 · Raspberry Pi Zero 2 W<br>
-    © 2026 JunioR · Starlink Mini Monitor · Ліцензія MIT
+    {{ t('footer_license') }}
   </footer>
 </div>
 

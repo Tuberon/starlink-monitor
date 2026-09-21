@@ -7,7 +7,7 @@ from typing import Optional
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, monitor, pi_power, telegram_notify
+from app import config, config_editor, db, i18n, monitor, pi_power, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -40,21 +40,59 @@ def _static_v(filename: str) -> str:
 
 
 app.jinja_env.globals["static_v"] = _static_v
+app.jinja_env.globals["t"] = i18n.t
 
 
 @app.route("/")
 def index() -> ResponseReturnValue:
-    return render_template("index.html")
+    return render_template("index.html", ui_lang=i18n.get_language(), i18n_json=i18n.all_translations_for_current_lang())
 
 
 @app.route("/settings")
 def settings_page() -> ResponseReturnValue:
-    return render_template("settings.html")
+    return render_template("settings.html", ui_lang=i18n.get_language(), i18n_json=i18n.all_translations_for_current_lang())
 
 
 @app.route("/stats")
 def stats_page() -> ResponseReturnValue:
-    return render_template("stats.html")
+    return render_template("stats.html", ui_lang=i18n.get_language(), i18n_json=i18n.all_translations_for_current_lang())
+
+
+@app.route("/manifest.json")
+def manifest() -> ResponseReturnValue:
+    """PWA-маніфест генерується динамічно (не статичний файл у
+    static/), щоб name/description реально показувались поточною
+    мовою інтерфейсу при встановленні на головний екран телефону -
+    статичний JSON не міг би реагувати на зміну мови через
+    /api/set-language без окремого механізму."""
+    return jsonify({
+        "name": i18n.t("manifest_name"),
+        "short_name": i18n.t("manifest_short_name"),
+        "description": i18n.t("manifest_description"),
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#0b1220",
+        "theme_color": "#0b1220",
+        "orientation": "any",
+        "icons": [
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        ],
+    })
+
+
+@app.route("/api/set-language", methods=["POST"])
+def api_set_language() -> ResponseReturnValue:
+    """Одна мова для всього інтерфейсу (веб + Telegram) - не per-user,
+    одна людина/сім'я керує одним Pi. Валідність значення перевіряється
+    тут (не покладаємось на frontend), щоб db.get_setting("ui_language")
+    ніколи не міг повернути щось поза SUPPORTED_LANGS."""
+    lang = (request.get_json(silent=True) or {}).get("lang", "")
+    if lang not in i18n.SUPPORTED_LANGS:
+        return jsonify({"success": False, "message": f"Непідтримувана мова: {lang}"}), 400
+    db.set_setting("ui_language", lang)
+    return jsonify({"success": True, "message": "ok"})
 
 
 @app.route("/healthz")
@@ -464,9 +502,12 @@ def api_settings_restore() -> ResponseReturnValue:
 
 @app.route("/api/env-config")
 def api_get_env_config() -> ResponseReturnValue:
+    params = config_editor.read_current_values()
+    for p in params:
+        p["label"] = i18n.t(p["label"])
     return jsonify({
-        "params": config_editor.read_current_values(),
-        "category_labels": config_editor.CATEGORY_LABELS,
+        "params": params,
+        "category_labels": {k: i18n.t(v) for k, v in config_editor.CATEGORY_LABELS.items()},
     })
 
 

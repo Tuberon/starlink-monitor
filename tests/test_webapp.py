@@ -758,3 +758,34 @@ def test_send_backup_telegram_logs_event(client, tmp_path):
 
     events = db.get_recent_events(10)
     assert any(e["kind"] == "telegram_backup_sent" for e in events)
+
+
+# ---- /api/set-language - зміна мови інтерфейсу (веб + Telegram) ----
+
+def test_set_language_valid_value_saves_and_returns_success(client):
+    resp = client.post("/api/set-language", json={"lang": "en"})
+    data = resp.get_json()
+    assert data["success"] is True
+    assert db.get_setting("ui_language") == "en"
+
+
+def test_set_language_invalid_value_rejected(client):
+    resp = client.post("/api/set-language", json={"lang": "fr"})
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["success"] is False
+
+
+def test_index_page_reflects_saved_language(client):
+    client.post("/api/set-language", json={"lang": "en"})
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert 'html lang="en"' in html
+    assert "Autonomous monitor" in html
+
+
+def test_index_page_default_language_is_ukrainian(client):
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert 'html lang="uk"' in html
+    assert "Автономний монітор" in html

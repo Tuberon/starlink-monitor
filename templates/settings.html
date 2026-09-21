@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="{{ ui_lang }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Налаштування — Dish Watch</title>
+<title>{{ t('page_title_settings') }}</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<link rel="manifest" href="/static/manifest.json">
+<link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,16 +25,17 @@ try {
 } catch (e) {}
 </script>
 <link rel="stylesheet" href="{{ static_v('style.css') }}">
+<script>window.LANG = "{{ ui_lang }}"; window.I18N = {{ i18n_json | tojson }};</script>
 </head>
 <body>
 <div class="wrap">
 
   <header>
     <div class="brand">
-      <a href="/" class="settings-link" title="Назад до дашборду">←</a>
+      <a href="/" class="settings-link" title="{{ t('back_to_dashboard') }}">←</a>
       <div>
-        <h1>Налаштування</h1>
-        <p>Dish Watch · Telegram, backup</p>
+        <h1>{{ t('settings_title') }}</h1>
+        <p>{{ t('settings_subtitle') }}</p>
       </div>
     </div>
     <img src="/static/logo.png" alt="logo" class="header-logo">
@@ -42,94 +43,101 @@ try {
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Вигляд</h2>
+      <h2>{{ t('panel_appearance') }}</h2>
     </div>
     <div class="controls">
       <label class="toggle-switch">
         <input type="checkbox" id="lightThemeToggle">
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
       </label>
-      <span class="toggle-label">Світла тема</span>
+      <span class="toggle-label">{{ t('toggle_light_theme') }}</span>
+    </div>
+    <div class="controls" style="margin-top:12px;">
+      <label class="tg-label" for="languageSelect" style="margin:0;">{{ t('label_interface_language') }}</label>
+      <select class="tg-input" id="languageSelect" style="width:auto; display:inline-block;">
+        <option value="uk" {% if ui_lang == 'uk' %}selected{% endif %}>{{ t('lang_uk') }}</option>
+        <option value="en" {% if ui_lang == 'en' %}selected{% endif %}>{{ t('lang_en') }}</option>
+      </select>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Telegram-сповіщення</h2>
-      <span class="sub">reboot, оновлення, попередження</span>
+      <h2>{{ t('panel_telegram') }}</h2>
+      <span class="sub">{{ t('sub_telegram') }}</span>
     </div>
     <div class="controls">
       <label class="toggle-switch">
         <input type="checkbox" id="telegramEnabledToggle">
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
       </label>
-      <span class="toggle-label">Увімкнути сповіщення</span>
+      <span class="toggle-label">{{ t('toggle_enable_notifications') }}</span>
       <span class="badge" id="telegramStatusBadge">—</span>
     </div>
     <div class="tg-form">
-      <label class="tg-label" for="telegramTokenInput">Bot token</label>
+      <label class="tg-label" for="telegramTokenInput">{{ t('label_bot_token') }}</label>
       <input class="tg-input" type="password" id="telegramTokenInput" placeholder="напр. 123456789:ABCdef...">
-      <label class="tg-label" for="telegramChatIdsInput">Chat ID (через кому, якщо кілька)</label>
+      <label class="tg-label" for="telegramChatIdsInput">{{ t('label_chat_ids') }}</label>
       <input class="tg-input" type="text" id="telegramChatIdsInput" placeholder="напр. 123456789, 987654321">
     </div>
     <div class="controls" style="margin-top:12px;">
-      <button class="check-btn" id="telegramSaveBtn">💾 Зберегти</button>
-      <button class="check-btn" id="telegramTestBtn">✉ Надіслати тестове</button>
-      <span class="hint" id="telegramHint">Bot token отримайте в @BotFather, chat_id — у @userinfobot</span>
+      <button class="check-btn" id="telegramSaveBtn">{{ t('btn_save') }}</button>
+      <button class="check-btn" id="telegramTestBtn">{{ t('btn_send_test') }}</button>
+      <span class="hint" id="telegramHint">{{ t('hint_telegram_setup') }}</span>
     </div>
     <div class="hint" style="margin-top:10px;">
-      Команди в чаті з ботом: <b>/status</b> — стан оновлень, <b>/reboot</b> — перезавантажити Starlink Mini (з підтвердженням), <b>/id</b> — відомі тарілки, <b>/help</b> — довідка.
+      {{ t('telegram_commands_hint') | safe }}
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Очікувані версії прошивок</h2>
-      <span class="sub">сповіщення, коли встановлено будь-яку з очікуваних версій</span>
+      <h2>{{ t('panel_target_versions') }}</h2>
+      <span class="sub">{{ t('sub_target_versions') }}</span>
     </div>
     <div class="tg-form">
-      <label class="tg-label" for="dishTargetVersionInput">Тарілка — очікувана версія (можна кілька через кому)</label>
+      <label class="tg-label" for="dishTargetVersionInput">{{ t('label_dish_target') }}</label>
       <input class="tg-input" type="text" id="dishTargetVersionInput" placeholder="напр. 2026.03.03.mr75126.1, 2026.03.03.mr75130.1">
-      <label class="tg-label" for="routerTargetVersionInput">Роутер — очікувана версія (можна кілька через кому)</label>
+      <label class="tg-label" for="routerTargetVersionInput">{{ t('label_router_target') }}</label>
       <input class="tg-input" type="text" id="routerTargetVersionInput" placeholder="напр. 2025.10.03.mr61821">
     </div>
     <div class="controls" style="margin-top:12px;">
-      <button class="check-btn" id="targetVersionsSaveBtn">💾 Зберегти</button>
-      <span class="hint" id="targetVersionsHint">Сповіщення прийде, коли встановлена версія збіжиться з БУДЬ-ЯКОЮ з очікуваних (корисно для різних апаратних ревізій) — версії з різних build-каналів (mr/cr тощо) не порівнюються одна з одною, лише в межах свого каналу; порожнє поле + "Зберегти" очищає</span>
+      <button class="check-btn" id="targetVersionsSaveBtn">{{ t('btn_save') }}</button>
+      <span class="hint" id="targetVersionsHint">{{ t('hint_target_versions') }}</span>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Backup/restore налаштувань</h2>
-      <span class="sub">Telegram config, параметри моніторингу, auto-reboot</span>
+      <h2>{{ t('panel_backup_restore') }}</h2>
+      <span class="sub">{{ t('sub_backup_restore') }}</span>
     </div>
     <div class="controls">
-      <button class="check-btn" id="settingsBackupBtn">⬇ Завантажити backup</button>
-      <button class="check-btn" id="settingsRestoreBtn">⬆ Відновити з backup</button>
-      <button class="check-btn" id="sendBackupTelegramBtn">📨 Надіслати backup у Telegram</button>
+      <button class="check-btn" id="settingsBackupBtn">{{ t('btn_download_backup') }}</button>
+      <button class="check-btn" id="settingsRestoreBtn">{{ t('btn_restore_backup') }}</button>
+      <button class="check-btn" id="sendBackupTelegramBtn">{{ t('btn_send_backup_telegram') }}</button>
       <input type="file" id="settingsRestoreFile" accept="application/json" style="display:none;">
-      <span class="hint" id="settingsBackupHint">Bot token, chat_id, auto-reboot, очікувані версії прошивок, історія відомих пристроїв і перевизначені параметри моніторингу одним файлом</span>
+      <span class="hint" id="settingsBackupHint">{{ t('hint_backup') }}</span>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Параметри моніторингу</h2>
-      <span class="sub">app/config.py — застосовуються після перезапуску сервісів</span>
+      <h2>{{ t('panel_monitoring_params') }}</h2>
+      <span class="sub">{{ t('sub_monitoring_params') }}</span>
     </div>
     <div class="tg-form" id="envParamsForm">
-      <span class="hint">Завантаження...</span>
+      <span class="hint">{{ t('loading') }}</span>
     </div>
     <div class="controls" style="margin-top:12px;">
-      <button class="check-btn" id="envConfigSaveBtn">💾 Зберегти параметри</button>
-      <button class="check-btn" id="envConfigRestartBtn">🔁 Зберегти й перезапустити сервіси</button>
-      <span class="hint" id="envConfigHint">Порожнє поле = значення за замовчуванням</span>
+      <button class="check-btn" id="envConfigSaveBtn">{{ t('btn_save_params') }}</button>
+      <button class="check-btn" id="envConfigRestartBtn">{{ t('btn_save_restart') }}</button>
+      <span class="hint" id="envConfigHint">{{ t('hint_empty_is_default') }}</span>
     </div>
   </div>
 
   <footer>
-    © 2026 JunioR · Starlink Mini Monitor · Ліцензія MIT
+    {{ t('footer_license') }}
   </footer>
 </div>
 

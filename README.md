@@ -1,5 +1,7 @@
 # 🛰️ Starlink Mini Monitor & Watchdog — Raspberry Pi Zero 2 W
 
+*Читати англійською: [README.en.md](README.en.md)*
+
 Автономний монітор і watchdog для Starlink Mini на Raspberry Pi Zero 2 W.
 
 **Зміст**: [Що робить](#-що-робить) · [Схема підключення](#-схема-підключення-опційне-обладнання) ·
@@ -269,7 +271,7 @@ mypy app/
 
 ## ✅ Тести
 
-435 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
+441 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -291,7 +293,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 435 тестів (16 файлів), pytest-randomly
+├── tests/          # 441 тестів (16 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

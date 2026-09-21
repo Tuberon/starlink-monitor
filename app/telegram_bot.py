@@ -14,8 +14,8 @@ from typing import Any, Optional
 
 import requests
 
-from app import config, db, monitor, telegram_notify
-from app.labels import ROUTER_UPDATE_STATE_LABELS, UPDATE_STATE_LABELS
+from app import config, db, i18n, monitor, telegram_notify
+from app import labels
 from app.starlink_client import StarlinkClient
 
 logger = logging.getLogger("telegram_bot")
@@ -156,7 +156,7 @@ class TelegramBot:
 
         if chat_id not in allowed_chat_ids:
             logger.info("Ігноровано команду від неавторизованого chat_id=%s", chat_id)
-            self._send(token, chat_id, "\u26d4 Цей чат не авторизований для команд боту.")
+            self._send(token, chat_id, i18n.t("tg_unauthorized_chat"))
             return
 
         command = text.split()[0].lower().split("@")[0]  # прибрати /cmd@botname
@@ -172,7 +172,7 @@ class TelegramBot:
         elif command in ("/help", "/start"):
             self._cmd_help(token, chat_id)
         else:
-            self._send(token, chat_id, "Невідома команда. /help — список команд.")
+            self._send(token, chat_id, i18n.t("tg_unknown_command"))
 
     def _handle_callback(self, token: str, allowed_chat_ids: set[str], callback: dict[str, Any]) -> None:
         chat_id = str(callback.get("message", {}).get("chat", {}).get("id", ""))
@@ -181,58 +181,58 @@ class TelegramBot:
 
         if chat_id not in allowed_chat_ids:
             _api_call("answerCallbackQuery", token, config.TELEGRAM_SEND_TIMEOUT_SEC, callback_query_id=callback_id,
-                      text="Не авторизовано")
+                      text=i18n.t("tg_not_authorized"))
             return
 
         if data == "reboot_confirm":
             requested_at = self._pending_reboot_confirm.pop(chat_id, None)
             _api_call("answerCallbackQuery", token, config.TELEGRAM_SEND_TIMEOUT_SEC, callback_query_id=callback_id)
             if requested_at is None or (time.time() - requested_at) > config.TELEGRAM_CONFIRM_TTL_SEC:
-                self._send(token, chat_id, "\u231b Запит на reboot застарів. Надішліть /reboot ще раз.")
+                self._send(token, chat_id, i18n.t("tg_reboot_expired"))
                 return
-            self._send(token, chat_id, "\U0001f501 Виконую reboot Starlink Mini...")
+            self._send(token, chat_id, i18n.t("tg_executing_reboot"))
             ok, msg = self.client.reboot_dish()
             db.insert_event("dish_reboot", f"Ручний reboot через Telegram: {msg}", success=ok)
             if ok:
-                self._send(token, chat_id, "\u2705 Reboot виконано успішно.")
+                self._send(token, chat_id, i18n.t("tg_reboot_success"))
             else:
-                self._send(token, chat_id, f"\u274c Не вдалося виконати reboot: {msg}")
+                self._send(token, chat_id, i18n.t("tg_reboot_failed", msg=msg))
         elif data == "reboot_cancel":
             self._pending_reboot_confirm.pop(chat_id, None)
             _api_call("answerCallbackQuery", token, config.TELEGRAM_SEND_TIMEOUT_SEC, callback_query_id=callback_id)
-            self._send(token, chat_id, "Скасовано.")
+            self._send(token, chat_id, i18n.t("tg_cancelled"))
 
     def _cmd_status(self, token: str, chat_id: str) -> None:
         dish = self.client.get_status()
         router = self.client.get_router_info()
 
-        lines = ["<b>Стан Starlink Mini</b>", ""]
+        lines = [i18n.t("tg_status_title"), ""]
 
         if dish.online:
-            dish_label = UPDATE_STATE_LABELS.get(dish.update_state, dish.update_state or "н/д")
-            lines.append(f"\U0001f4e1 <b>Тарілка</b>: online, ПЗ {dish.software_version or '?'}")
+            dish_label = labels.update_state_label(dish.update_state) if dish.update_state else i18n.t('not_available_short')
+            lines.append(i18n.t("tg_dish_online_line", sw=dish.software_version or "?"))
             lines.append(
-                f"   Оновлення: {dish_label}"
+                i18n.t("tg_update_line", label=dish_label)
                 + (f" ({dish.update_progress_pct:.0f}%)" if dish.update_progress_pct else "")
             )
             if dish.active_alerts:
-                lines.append(f"   \u26a0\ufe0f Попереджень: {len(dish.active_alerts)}")
+                lines.append(i18n.t("tg_alerts_count_line", n=len(dish.active_alerts)))
         else:
-            lines.append(f"\U0001f4e1 <b>Тарілка</b>: offline ({dish.error or 'немає відповіді'})")
+            lines.append(i18n.t("tg_dish_offline_line", error=dish.error or i18n.t("no_response")))
 
         lines.append("")
 
         if router.online:
-            router_label = ROUTER_UPDATE_STATE_LABELS.get(router.update_state, router.update_state or "н/д")
-            lines.append(f"\U0001f4f6 <b>Роутер</b>: online, ПЗ {router.software_version or '?'}")
+            router_label = labels.router_update_state_label(router.update_state) if router.update_state else i18n.t('not_available_short')
+            lines.append(i18n.t("tg_router_online_line", sw=router.software_version or "?"))
             lines.append(
-                f"   Оновлення: {router_label}"
+                i18n.t("tg_update_line", label=router_label)
                 + (f" ({router.update_progress_pct:.0f}%)" if router.update_progress_pct else "")
             )
             if router.active_alerts:
-                lines.append(f"   \u26a0\ufe0f Попереджень: {len(router.active_alerts)}")
+                lines.append(i18n.t("tg_alerts_count_line", n=len(router.active_alerts)))
         else:
-            lines.append(f"\U0001f4f6 <b>Роутер</b>: offline ({router.error or 'немає відповіді'})")
+            lines.append(i18n.t("tg_router_offline_line", error=router.error or i18n.t("no_response")))
 
         self._send(token, chat_id, "\n".join(lines))
 
@@ -246,29 +246,29 @@ class TelegramBot:
 
         dish, router = monitor.check_updates_now(self.client, notify)
 
-        lines = ["<b>Перевірка оновлень</b>", ""]
+        lines = [i18n.t("tg_check_updates_title"), ""]
 
         if dish.online:
-            dish_label = UPDATE_STATE_LABELS.get(dish.update_state, dish.update_state or "н/д")
-            lines.append(f"\U0001f4e1 <b>Тарілка</b>: ПЗ {dish.software_version or '?'}")
+            dish_label = labels.update_state_label(dish.update_state) if dish.update_state else i18n.t('not_available_short')
+            lines.append(i18n.t("tg_dish_line_short", sw=dish.software_version or "?"))
             lines.append(
-                f"   Оновлення: {dish_label}"
+                i18n.t("tg_update_line", label=dish_label)
                 + (f" ({dish.update_progress_pct:.0f}%)" if dish.update_progress_pct else "")
             )
         else:
-            lines.append(f"\U0001f4e1 <b>Тарілка</b>: offline ({dish.error or 'немає відповіді'})")
+            lines.append(i18n.t("tg_dish_offline_line", error=dish.error or i18n.t("no_response")))
 
         lines.append("")
 
         if router.online:
-            router_label = ROUTER_UPDATE_STATE_LABELS.get(router.update_state, router.update_state or "н/д")
-            lines.append(f"\U0001f4f6 <b>Роутер</b>: ПЗ {router.software_version or '?'}")
+            router_label = labels.router_update_state_label(router.update_state) if router.update_state else i18n.t('not_available_short')
+            lines.append(i18n.t("tg_router_line_short", sw=router.software_version or "?"))
             lines.append(
-                f"   Оновлення: {router_label}"
+                i18n.t("tg_update_line", label=router_label)
                 + (f" ({router.update_progress_pct:.0f}%)" if router.update_progress_pct else "")
             )
         else:
-            lines.append(f"\U0001f4f6 <b>Роутер</b>: offline ({router.error or 'немає відповіді'})")
+            lines.append(i18n.t("tg_router_offline_line", error=router.error or i18n.t("no_response")))
 
         self._send(token, chat_id, "\n".join(lines))
 
@@ -287,7 +287,7 @@ class TelegramBot:
             del self._pending_reboot_confirm[cid]
 
         self._pending_reboot_confirm[chat_id] = time.time()
-        text = "\u26a0\ufe0f Перезавантажити Starlink Mini зараз? Зв'язок буде втрачено на 1-2 хвилини."
+        text = i18n.t("tg_reboot_confirm_prompt")
         _api_call(
             "sendMessage",
             token,
@@ -296,25 +296,14 @@ class TelegramBot:
             text=text,
             reply_markup={
                 "inline_keyboard": [[
-                    {"text": "\u2705 Так, перезавантажити", "callback_data": "reboot_confirm"},
-                    {"text": "\u274c Скасувати", "callback_data": "reboot_cancel"},
+                    {"text": i18n.t("tg_yes_reboot"), "callback_data": "reboot_confirm"},
+                    {"text": i18n.t("tg_cancel_btn"), "callback_data": "reboot_cancel"},
                 ]]
             },
         )
 
     def _cmd_help(self, token: str, chat_id: str) -> None:
-        text = (
-            "<b>Starlink Monitor — команди</b>\n\n"
-            "/status — поточний стан оновлення ПЗ тарілки й роутера, активні попередження\n"
-            "/checkupdates — примусово опитати dish/router зараз (не чекаючи наступного циклу), "
-            "перевірити target-версії й зафіксувати відомі зміни прошивки\n"
-            "/reboot — перезавантажити Starlink Mini (з підтвердженням)\n"
-            "/id — список усіх колись підключених тарілок (ID, версії ПЗ)\n"
-            "/id &lt;ID або частина ID&gt; — деталі конкретної тарілки: версії ПЗ dish/router "
-            "і коли востаннє встановлювались оновлення\n"
-            "/help — цей список"
-        )
-        self._send(token, chat_id, text)
+        self._send(token, chat_id, i18n.t("tg_help_text"))
 
     def _cmd_id(self, token: str, chat_id: str, arg: str) -> None:
         if not arg:
@@ -326,7 +315,7 @@ class TelegramBot:
         """Список УСІХ відомих тарілок - викликається при /id без аргументу."""
         devices = db.get_all_known_devices()
         if not devices:
-            self._send(token, chat_id, "Ще жодної тарілки не підключено.")
+            self._send(token, chat_id, i18n.t("tg_no_dishes_yet"))
             return
         # Telegram обмежує повідомлення 4096 символами - без цього
         # захисту довгий список (десятки відомих тарілок за час
@@ -337,15 +326,15 @@ class TelegramBot:
         # devices() уже сортує за last_seen_ts DESC - найновіші
         # (найактуальніші) показуються першими.
         shown = devices[:config.TELEGRAM_ID_LIST_MAX_ITEMS]
-        lines = [f"<b>Відомі тарілки ({len(devices)})</b>", ""]
+        lines = [i18n.t("tg_known_dishes_title", n=len(devices)), ""]
         for d in shown:
             last_seen = self._fmt_ago(d["last_seen_ts"])
-            lines.append(f"<code>{d['dish_id']}</code> — востаннє в мережі {last_seen}")
+            lines.append(i18n.t("tg_last_seen_line", id=d['dish_id'], ago=last_seen))
         if len(devices) > len(shown):
             lines.append("")
-            lines.append(f"…і ще {len(devices) - len(shown)}. Уточніть /id &lt;ID або частина ID&gt;.")
+            lines.append(i18n.t("tg_and_more_hint", n=len(devices) - len(shown)))
         lines.append("")
-        lines.append("Деталі: /id &lt;ID або частина ID&gt;")
+        lines.append(i18n.t("tg_details_hint"))
         self._send(token, chat_id, "\n".join(lines))
 
     def _reply_id_detail(self, token: str, chat_id: str, arg: str) -> None:
@@ -359,45 +348,46 @@ class TelegramBot:
                 device = matches[0]
             elif len(matches) > 1:
                 ids = "\n".join(f"<code>{d['dish_id']}</code>" for d in matches)
-                self._send(token, chat_id, f"Знайдено кілька збігів, уточніть ID:\n\n{ids}")
+                self._send(token, chat_id, i18n.t("tg_multiple_matches", ids=ids))
                 return
 
         if device is None:
-            self._send(token, chat_id, f"Тарілку з ID «{arg}» не знайдено серед відомих.")
+            self._send(token, chat_id, i18n.t("tg_dish_not_found", arg=arg))
             return
 
-        lines = [f"<b>Тарілка</b> <code>{device['dish_id']}</code>", ""]
+        na = i18n.t("not_available_short")
+        lines = [i18n.t("tg_dish_title", id=device['dish_id']), ""]
 
-        lines.append(f"\U0001f4e1 <b>Dish</b>: {device['dish_hardware_version'] or 'н/д'}")
-        lines.append(f"   ПЗ: {device['dish_software_version'] or 'н/д'}")
+        lines.append(i18n.t("tg_dish_hw_line", hw=device['dish_hardware_version'] or na))
+        lines.append(i18n.t("tg_sw_line", sw=device['dish_software_version'] or na))
         if device["dish_software_updated_ts"]:
-            lines.append(f"   Останнє оновлення ПЗ: {self._fmt_ago(device['dish_software_updated_ts'])}")
+            lines.append(i18n.t("tg_last_fw_update_line", ago=self._fmt_ago(device['dish_software_updated_ts'])))
 
         lines.append("")
-        lines.append(f"\U0001f4f6 <b>Router</b>: {device['router_hardware_version'] or 'н/д'}")
-        lines.append(f"   ПЗ: {device['router_software_version'] or 'н/д'}")
+        lines.append(i18n.t("tg_router_hw_line", hw=device['router_hardware_version'] or na))
+        lines.append(i18n.t("tg_sw_line", sw=device['router_software_version'] or na))
         if device["router_software_updated_ts"]:
-            lines.append(f"   Останнє оновлення ПЗ: {self._fmt_ago(device['router_software_updated_ts'])}")
+            lines.append(i18n.t("tg_last_fw_update_line", ago=self._fmt_ago(device['router_software_updated_ts'])))
 
         lines.append("")
-        lines.append(f"Вперше підключено: {self._fmt_ago(device['first_seen_ts'])}")
-        lines.append(f"Востаннє в мережі: {self._fmt_ago(device['last_seen_ts'])}")
+        lines.append(i18n.t("tg_first_seen_line", ago=self._fmt_ago(device['first_seen_ts'])))
+        lines.append(i18n.t("tg_last_seen_full_line", ago=self._fmt_ago(device['last_seen_ts'])))
 
         self._send(token, chat_id, "\n".join(lines))
 
     @staticmethod
     def _fmt_ago(ts: float) -> str:
         if not ts:
-            return "невідомо"
+            return i18n.t("ago_unknown")
         delta = time.time() - ts
         if delta < 60:
-            return "щойно"
+            return i18n.t("ago_just_now")
         if delta < 3600:
-            return f"{int(delta // 60)} хв тому"
+            return f"{int(delta // 60)} {i18n.t('ago_min')}"
         if delta < 86400:
-            return f"{int(delta // 3600)} год тому"
+            return f"{int(delta // 3600)} {i18n.t('ago_hour')}"
         days = int(delta // 86400)
-        return f"{days} дн тому"
+        return f"{days} {i18n.t('ago_day')}"
 
     def _send(self, token: str, chat_id: str, text: str) -> None:
         _api_call("sendMessage", token, config.TELEGRAM_SEND_TIMEOUT_SEC, chat_id=chat_id, text=text, parse_mode="HTML")

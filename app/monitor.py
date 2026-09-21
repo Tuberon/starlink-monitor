@@ -16,7 +16,7 @@ from typing import Any, Callable, Optional
 import psutil
 
 from app import activity_led, config, config_editor, db, telegram_notify
-from app.labels import ALERT_LABELS, ROUTER_ALERT_LABELS, ROUTER_UPDATE_STATE_LABELS, UPDATE_STATE_LABELS
+from app import labels
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
 
@@ -514,7 +514,7 @@ class Watchdog:
         if state == self.prev_update_state:
             return
 
-        label = UPDATE_STATE_LABELS.get(state, state)
+        label = labels.update_state_label(state)
         detail = ""
         if state in self.DOWNLOADING_UPDATE_STATES and status.update_progress_pct:
             detail = f" ({status.update_progress_pct:.0f}%)"
@@ -551,7 +551,7 @@ class Watchdog:
             appeared = current - previous
             resolved = previous - current
             for alert in sorted(appeared):
-                label = ALERT_LABELS.get(alert, alert)
+                label = labels.alert_label(alert)
                 db.insert_event(
                     "dish_alert",
                     f"Нове попередження dish: {label}",
@@ -566,7 +566,7 @@ class Watchdog:
                 # взагалі, на відміну від решти resolved-алертів.
                 if alert == "obstruction_map_reset":
                     continue
-                label = ALERT_LABELS.get(alert, alert)
+                label = labels.alert_label(alert)
                 db.insert_event(
                     "dish_alert_resolved",
                     f"Попередження знято: {label}",
@@ -637,7 +637,7 @@ class Watchdog:
         if state == self.prev_router_update_state:
             return
 
-        label = ROUTER_UPDATE_STATE_LABELS.get(state, state)
+        label = labels.router_update_state_label(state)
         detail = ""
         if state in ("DOWNLOADING_UPDATE_IMAGE", "FLASHING") and info.update_progress_pct:
             detail = f" ({info.update_progress_pct:.0f}%)"
@@ -665,7 +665,7 @@ class Watchdog:
             appeared = current - previous
             resolved = previous - current
             for alert in sorted(appeared):
-                label = ROUTER_ALERT_LABELS.get(alert, alert)
+                label = labels.router_alert_label(alert)
                 db.insert_event(
                     "router_alert",
                     f"Нове попередження роутера: {label}",
@@ -674,7 +674,7 @@ class Watchdog:
                 if alert not in self.MUTED_ROUTER_ALERTS:
                     self._notify(f"⚠️ Нове попередження роутера: {label}")
             for alert in sorted(resolved):
-                label = ROUTER_ALERT_LABELS.get(alert, alert)
+                label = labels.router_alert_label(alert)
                 db.insert_event(
                     "router_alert_resolved",
                     f"Попередження роутера знято: {label}",

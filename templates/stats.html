@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="{{ ui_lang }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Статистика — Dish Watch</title>
+<title>{{ t('page_title_stats') }}</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<link rel="manifest" href="/static/manifest.json">
+<link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <meta name="theme-color" content="#0b1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,16 +25,17 @@ try {
 } catch (e) {}
 </script>
 <link rel="stylesheet" href="{{ static_v('style.css') }}">
+<script>window.LANG = "{{ ui_lang }}"; window.I18N = {{ i18n_json | tojson }};</script>
 </head>
 <body>
 <div class="wrap">
 
   <header>
     <div class="brand">
-      <a href="/" class="settings-link" title="Назад до дашборду">←</a>
+      <a href="/" class="settings-link" title="{{ t('back_to_dashboard') }}">←</a>
       <div>
-        <h1>Статистика</h1>
-        <p>Dish Watch · журнал подій</p>
+        <h1>{{ t('nav_stats_title') }}</h1>
+        <p>{{ t('stats_subtitle') }}</p>
       </div>
     </div>
     <img src="/static/logo.png" alt="logo" class="header-logo">
@@ -42,16 +43,16 @@ try {
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Журнал подій</h2>
-      <button class="clear-btn" id="clearEventsBtn" title="Очистити журнал подій">Очистити</button>
+      <h2>{{ t('panel_event_log') }}</h2>
+      <button class="clear-btn" id="clearEventsBtn" title="{{ t('btn_clear_title') }}">{{ t('btn_clear') }}</button>
     </div>
     <div class="log" id="eventLog">
-      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Завантаження...</span></div>
+      <div class="log-row"><span class="time">—</span><span class="kind">—</span><span>{{ t('loading') }}</span></div>
     </div>
   </div>
 
   <footer>
-    © 2026 JunioR · Starlink Mini Monitor · Ліцензія MIT
+    {{ t('footer_license') }}
   </footer>
 </div>
 

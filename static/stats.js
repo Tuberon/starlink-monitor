@@ -9,7 +9,7 @@ async function refreshEvents() {
     const events = await res.json();
     const log = el('eventLog');
     if (!events.length) {
-      log.innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Подій ще немає</span></div>';
+      log.innerHTML = `<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>${t('no_events_yet')}</span></div>`;
       return;
     }
     // Події вже відсортовані найновіші-першими (БД: ORDER BY ts DESC) -
@@ -43,7 +43,7 @@ async function refreshEvents() {
 
 function handleClearEvents() {
   eventsClearedLocally = true;
-  el('eventLog').innerHTML = '<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>Журнал очищено на екрані</span></div>';
+  el('eventLog').innerHTML = `<div class="log-row"><span class="time">—</span><span class="kind">—</span><span>${t('log_cleared_locally')}</span></div>`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
