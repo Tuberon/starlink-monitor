@@ -118,7 +118,7 @@ def test_save_ignores_unknown_keys(env_file):
 
 # ---- Атомарність: помилка валідації НЕ має писати нічого ----
 
-def test_save_validation_error_writes_nothing(env_file):
+def test_save_validation_error_writes_nothing(env_file, db_path):
     """НАЙВАЖЛИВІШЕ: якщо ХОЧ ОДИН параметр невалідний, файл НЕ
     змінюється взагалі - інакше частина значень записалась би,
     а частина ні, лишивши конфігурацію в незрозумілому
@@ -136,7 +136,7 @@ def test_save_validation_error_writes_nothing(env_file):
     assert env_file.read_text() == original, "файл НЕ мав змінитись при помилці валідації"
 
 
-def test_save_reports_all_validation_errors_at_once(env_file):
+def test_save_reports_all_validation_errors_at_once(env_file, db_path):
     ok, msg = config_editor.save_values({
         "STARLINK_POLL_INTERVAL": "abc",
         "STARLINK_WEBUI_PORT": "xyz",

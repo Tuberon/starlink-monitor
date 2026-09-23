@@ -417,25 +417,25 @@ def test_cmd_id_no_match_reports_not_found(db_path):
 
 # ---- _fmt_ago() - чиста логіка, усі часові діапазони ----
 
-def test_fmt_ago_zero_timestamp_is_unknown():
+def test_fmt_ago_zero_timestamp_is_unknown(db_path):
     assert telegram_bot.TelegramBot._fmt_ago(0) == "невідомо"
 
 
-def test_fmt_ago_recent_is_just_now():
+def test_fmt_ago_recent_is_just_now(db_path):
     assert telegram_bot.TelegramBot._fmt_ago(time.time() - 5) == "щойно"
 
 
-def test_fmt_ago_minutes():
+def test_fmt_ago_minutes(db_path):
     result = telegram_bot.TelegramBot._fmt_ago(time.time() - 300)
     assert "хв тому" in result
 
 
-def test_fmt_ago_hours():
+def test_fmt_ago_hours(db_path):
     result = telegram_bot.TelegramBot._fmt_ago(time.time() - 7200)
     assert "год тому" in result
 
 
-def test_fmt_ago_days():
+def test_fmt_ago_days(db_path):
     result = telegram_bot.TelegramBot._fmt_ago(time.time() - 3 * 86400)
     assert "3 дн тому" == result
 
