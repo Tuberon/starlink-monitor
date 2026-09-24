@@ -355,9 +355,17 @@ if [[ "$MODE" == "install" ]]; then
       nmcli connection modify "$ETH_CONN" \
         ipv4.method manual ipv4.addresses "$ETH_IP" ipv4.gateway "$ETH_GW" \
         ipv4.dns "$ETH_GW,8.8.8.8" ipv4.route-metric 1002
+      # ipv6.method disabled: Starlink роздає публічний IPv6 через SLAAC,
+      # але коли сам Starlink-канал без інтернету (лише локальний зв'язок
+      # з dish/router), система все одно намагається слати DNS/HTTPS-
+      # запити через мертвий IPv6-маршрут замість чистого fallback на
+      # робочий IPv4/eth0 (виявлено на практиці - системний curl зависав
+      # без -4, хоча IPv4-маршрут через eth0 працював ідеально). Проєкт
+      # повністю на IPv4 (dish/router API), публічний IPv6 тут не потрібен.
       nmcli connection modify "$WLAN_CONN" \
         ipv4.method manual ipv4.addresses "$WLAN_IP" ipv4.gateway "$WLAN_GW" \
-        ipv4.dns "1.1.1.1,8.8.8.8" ipv4.route-metric 50
+        ipv4.dns "1.1.1.1,8.8.8.8" ipv4.route-metric 50 \
+        ipv6.method disabled
 
       # КРИТИЧНО: 192.168.100.0/24 (dish) не має власної підмережі на
       # wlan0 (це router: 192.168.1.0/24) - трафік до dish іде лише
@@ -387,8 +395,22 @@ if [[ "$MODE" == "install" ]]; then
 
       echo ""
       echo " ==> Готово. Перевірка:"
-      ip -4 addr show "$ETH_IFACE" | grep inet || true
-      ip -4 addr show "$WLAN_IFACE" | grep inet || true
+      # Активна перевірка (не лише візуальний вивід) - без цього
+      # неуспішне застосування (профіль лишився на DHCP/іншій адресі)
+      # виглядало б як "усе гаразд" у виводі скрипта, і виявлялось би
+      # лише значно пізніше через симптоми (dish/Telegram недосяжні).
+      ETH_ACTUAL="$(ip -4 addr show "$ETH_IFACE" | grep -oP 'inet \K[\d.]+/\d+' || true)"
+      WLAN_ACTUAL="$(ip -4 addr show "$WLAN_IFACE" | grep -oP 'inet \K[\d.]+/\d+' || true)"
+      echo "   $ETH_IFACE: ${ETH_ACTUAL:-(немає адреси!)}"
+      echo "   $WLAN_IFACE: ${WLAN_ACTUAL:-(немає адреси!)}"
+      if [[ "$ETH_ACTUAL" != "$ETH_IP" ]]; then
+        echo " !! УВАГА: $ETH_IFACE отримав \"$ETH_ACTUAL\", очікувалось \"$ETH_IP\"."
+        echo "    Перевірте вручну: nmcli connection show \"$ETH_CONN\" | grep ipv4"
+      fi
+      if [[ "$WLAN_ACTUAL" != "$WLAN_IP" ]]; then
+        echo " !! УВАГА: $WLAN_IFACE отримав \"$WLAN_ACTUAL\", очікувалось \"$WLAN_IP\"."
+        echo "    Перевірте вручну: nmcli connection show \"$WLAN_CONN\" | grep ipv4"
+      fi
       echo ""
       echo " Якщо працюєте віддалено по SSH через $ETH_IFACE — з'єднання могло"
       echo " щойно розірватись через зміну IP. Перепідключіться на нову адресу:"

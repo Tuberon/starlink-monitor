@@ -23,7 +23,7 @@
 # (`nmcli +ipv4.routes`), саме для того щоб він не залежав від змін
 # тут.
 #
-# Запускається через systemd timer (starlink-wan-failover.timer, кожні ~20с).
+# Запускається через systemd timer (starlink-wan-failover.timer, кожні ~30с).
 #
 # ГІСТЕРЕЗИС: реальні логи показали, що переключення (і супутній
 # `nmcli device reapply`) стається щоразу, коли одна перевірка ping

@@ -236,7 +236,7 @@ internet requires USB-Ethernet (recommended), or Starlink WiFi alone
 With USB-Ethernet, `install.sh` offers (only on first installation)
 static IPs for both interfaces — DHCP on both can cause route conflicts.
 
-**WAN failover**: `starlink-wan-failover.timer` (~20s) checks real
+**WAN failover**: `starlink-wan-failover.timer` (~30s) checks real
 internet access via `wlan0`; when Starlink is unavailable —
 `nmcli` lowers `wlan0`'s priority, `eth0` becomes the default for the
 whole system. Routes to dish/router are unaffected. Telegram requests

@@ -238,7 +238,7 @@ Starlink Mini роздає власний WiFi. RPi Zero 2 W має один WiF
 встановленні) статичні IP для обох інтерфейсів — DHCP на обох може
 спричиняти конфлікти маршрутів.
 
-**WAN-failover**: `starlink-wan-failover.timer` (~20с) перевіряє
+**WAN-failover**: `starlink-wan-failover.timer` (~30с) перевіряє
 реальний вихід в інтернет через `wlan0`; коли Starlink недоступний —
 `nmcli` знижує пріоритет `wlan0`, `eth0` стає дефолтним для всієї
 системи. Маршрути до dish/router не зачіпаються. Telegram-запити

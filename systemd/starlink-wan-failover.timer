@@ -1,9 +1,9 @@
 [Unit]
-Description=Періодична перевірка WAN failover (wlan0 vs eth0), кожні ~20с
+Description=Періодична перевірка WAN failover (wlan0 vs eth0), кожні ~30с
 
 [Timer]
 OnBootSec=15
-OnUnitActiveSec=20
+OnUnitActiveSec=30
 Unit=starlink-wan-failover.service
 AccuracySec=5
 
