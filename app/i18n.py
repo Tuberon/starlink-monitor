@@ -11,7 +11,7 @@ global (app.jinja_env.globals["t"] = t) для шаблонів і напрям�
 telegram_bot.py. Для JS - словник серіалізується в JSON і
 вбудовується в кожну сторінку (window.I18N), плюс маленький
 t(key) JS-helper у common.js."""
-from typing import Any
+from typing import Any, Callable, Iterable, Optional
 
 from app import db
 
@@ -465,12 +465,7 @@ def get_language() -> str:
     return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
 
-def t(key: str, **kwargs: Any) -> str:
-    """Перекладає key для поточної мови. Відсутній ключ у словнику -
-    повертає сам key (видно одразу під час розробки/QA, не ховає
-    помилку порожнім рядком). kwargs - підстановка через .format()
-    для рядків з плейсхолдерами (напр. t('greeting', name=x))."""
-    lang = get_language()
+def _translate(lang: str, key: str, **kwargs: Any) -> str:
     entry = TRANSLATIONS.get(key)
     if entry is None:
         return key
@@ -478,9 +473,38 @@ def t(key: str, **kwargs: Any) -> str:
     return text.format(**kwargs) if kwargs else text
 
 
-def all_translations_for_current_lang() -> dict[str, str]:
+def t(key: str, **kwargs: Any) -> str:
+    """Перекладає key для поточної мови. Відсутній ключ у словнику -
+    повертає сам key (видно одразу під час розробки/QA, не ховає
+    помилку порожнім рядком). kwargs - підстановка через .format()
+    для рядків з плейсхолдерами (напр. t('greeting', name=x)).
+
+    Кожен виклик читає мову з БД (нове SQLite-з'єднання) - для
+    поодиноких перекладів це прийнятно, але де перекладів багато
+    за одну операцію (рендер сторінки, список параметрів, label-
+    мапи) - використовувати translator() нижче."""
+    return _translate(get_language(), key, **kwargs)
+
+
+def translator(lang: Optional[str] = None) -> Callable[..., str]:
+    """Повертає функцію перекладу, прив'язану до мови, прочитаної з БД
+    ОДИН раз. Для операцій з багатьма перекладами: рендер головної
+    сторінки робив ~55 окремих SQLite-з'єднань (по одному на кожен
+    {{ t('key') }}), /api/env-config - ~57 (виміряно). Свідомо НЕ
+    кеш із TTL між запитами - мова змінюється в webapp-процесі, а
+    читається й у monitor-процесі (Telegram-бот), тож кеш давав би
+    застарілу мову; тут мова лише не перечитується ВСЕРЕДИНІ однієї
+    операції."""
+    bound = lang or get_language()
+    return lambda key, **kwargs: _translate(bound, key, **kwargs)
+
+
+def all_translations_for_current_lang(
+    lang: Optional[str] = None, keys: Optional[Iterable[str]] = None,
+) -> dict[str, str]:
     """Плаский {key: text} для поточної мови - серіалізується в JSON
     і вбудовується в кожну HTML-сторінку як window.I18N для JS-коду
     (JS не має доступу до Jinja2-функції t() напряму)."""
-    lang = get_language()
-    return {k: (v.get(lang) or v.get(DEFAULT_LANG, k)) for k, v in TRANSLATIONS.items()}
+    lang = lang or get_language()
+    wanted = TRANSLATIONS.keys() if keys is None else keys
+    return {k: _translate(lang, k) for k in wanted if k in TRANSLATIONS}

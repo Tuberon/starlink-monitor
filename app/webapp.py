@@ -1,8 +1,9 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, журнал подій, ручний reboot."""
 import logging
 import os
+import re
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
@@ -40,22 +41,61 @@ def _static_v(filename: str) -> str:
 
 
 app.jinja_env.globals["static_v"] = _static_v
-app.jinja_env.globals["t"] = i18n.t
+
+
+# window.I18N вбудовується в КОЖНУ HTML-сторінку - раніше всі 366
+# ключів (~58К з ~66К сторінки, виміряно), хоча JS використовує
+# лише ~121. Набір визначається один раз при старті скануванням
+# t('...')-викликів у static/*.js (усі виклики - з літералами;
+# тест test_js_i18n_calls_are_static_literals це гарантує, інакше
+# динамічний ключ тихо випав би з набору).
+_JS_T_CALL_RE = re.compile(r"(?<![\w.])t\(\s*['\"](\w+)['\"]")
+
+
+def _collect_js_i18n_keys(static_dir: str) -> frozenset[str]:
+    keys: set[str] = set()
+    for name in os.listdir(static_dir):
+        if name.endswith(".js"):
+            with open(os.path.join(static_dir, name), encoding="utf-8") as f:
+                keys.update(_JS_T_CALL_RE.findall(f.read()))
+    return frozenset(keys)
+
+
+_JS_I18N_KEYS = _collect_js_i18n_keys(app.static_folder or "static")
+
+# UTF-8 замість \uXXXX для кирилиці: 2 байти на літеру замість 6 -
+# і в window.I18N, і в JSON-відповідях API. Безпека вбудовування в
+# <script> не залежить від цього: tojson окремо екранує < > & '.
+app.json.ensure_ascii = False  # type: ignore[attr-defined]
+
+
+@app.context_processor
+def _inject_i18n() -> dict[str, Any]:
+    """t()/ui_lang/i18n_json для шаблонів - усі три з ОДНОГО читання
+    мови з БД на рендер. Раніше глобальний i18n.t читав мову на кожен
+    {{ t('key') }} (~55 SQLite-з'єднань на рендер головної сторінки,
+    виміряно); тепер - одне."""
+    lang = i18n.get_language()
+    return {
+        "t": i18n.translator(lang),
+        "ui_lang": lang,
+        "i18n_json": i18n.all_translations_for_current_lang(lang, _JS_I18N_KEYS),
+    }
 
 
 @app.route("/")
 def index() -> ResponseReturnValue:
-    return render_template("index.html", ui_lang=i18n.get_language(), i18n_json=i18n.all_translations_for_current_lang())
+    return render_template("index.html")
 
 
 @app.route("/settings")
 def settings_page() -> ResponseReturnValue:
-    return render_template("settings.html", ui_lang=i18n.get_language(), i18n_json=i18n.all_translations_for_current_lang())
+    return render_template("settings.html")
 
 
 @app.route("/stats")
 def stats_page() -> ResponseReturnValue:
-    return render_template("stats.html", ui_lang=i18n.get_language(), i18n_json=i18n.all_translations_for_current_lang())
+    return render_template("stats.html")
 
 
 @app.route("/manifest.json")
@@ -65,10 +105,11 @@ def manifest() -> ResponseReturnValue:
     мовою інтерфейсу при встановленні на головний екран телефону -
     статичний JSON не міг би реагувати на зміну мови через
     /api/set-language без окремого механізму."""
+    tr = i18n.translator()
     return jsonify({
-        "name": i18n.t("manifest_name"),
-        "short_name": i18n.t("manifest_short_name"),
-        "description": i18n.t("manifest_description"),
+        "name": tr("manifest_name"),
+        "short_name": tr("manifest_short_name"),
+        "description": tr("manifest_description"),
         "start_url": "/",
         "scope": "/",
         "display": "standalone",
@@ -503,11 +544,12 @@ def api_settings_restore() -> ResponseReturnValue:
 @app.route("/api/env-config")
 def api_get_env_config() -> ResponseReturnValue:
     params = config_editor.read_current_values()
+    tr = i18n.translator()
     for p in params:
-        p["label"] = i18n.t(p["label"])
+        p["label"] = tr(p["label"])
     return jsonify({
         "params": params,
-        "category_labels": {k: i18n.t(v) for k, v in config_editor.CATEGORY_LABELS.items()},
+        "category_labels": {k: tr(v) for k, v in config_editor.CATEGORY_LABELS.items()},
     })
 
 

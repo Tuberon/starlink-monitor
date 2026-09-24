@@ -236,7 +236,12 @@ Starlink Mini роздає власний WiFi. RPi Zero 2 W має один WiF
 
 При USB-Ethernet `install.sh` пропонує (лише при першому
 встановленні) статичні IP для обох інтерфейсів — DHCP на обох може
-спричиняти конфлікти маршрутів.
+спричиняти конфлікти маршрутів. На WiFi-профілі Starlink також
+вимикається IPv6: коли Starlink без інтернету, системні DNS/HTTPS-
+запити інакше йдуть через мертвий IPv6-маршрут замість робочого
+IPv4 через `eth0`. На вже встановленій системі (мережевий блок не
+повторюється при оновленні) — вручну:
+`sudo nmcli connection modify "<WiFi-профіль>" ipv6.method disabled`.
 
 **WAN-failover**: `starlink-wan-failover.timer` (~30с) перевіряє
 реальний вихід в інтернет через `wlan0`; коли Starlink недоступний —
@@ -276,7 +281,7 @@ mypy app/
 
 ## ✅ Тести
 
-441 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
+443 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -298,7 +303,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 441 тестів (16 файлів), pytest-randomly
+├── tests/          # 443 тестів (16 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

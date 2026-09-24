@@ -235,6 +235,11 @@ internet requires USB-Ethernet (recommended), or Starlink WiFi alone
 
 With USB-Ethernet, `install.sh` offers (only on first installation)
 static IPs for both interfaces — DHCP on both can cause route conflicts.
+IPv6 is also disabled on the Starlink WiFi profile: when Starlink has
+no internet, system DNS/HTTPS requests would otherwise go through a
+dead IPv6 route instead of working IPv4 via `eth0`. On an already
+installed system (the network block isn't repeated on updates) —
+manually: `sudo nmcli connection modify "<WiFi profile>" ipv6.method disabled`.
 
 **WAN failover**: `starlink-wan-failover.timer` (~30s) checks real
 internet access via `wlan0`; when Starlink is unavailable —
@@ -274,7 +279,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-441 tests (`pytest-randomly` — resilient to execution order), 16
+443 tests (`pytest-randomly` — resilient to execution order), 16
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -297,7 +302,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 441 tests (16 files), pytest-randomly
+├── tests/          # 443 tests (16 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

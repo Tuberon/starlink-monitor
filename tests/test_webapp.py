@@ -789,3 +789,35 @@ def test_index_page_default_language_is_ukrainian(client):
     html = resp.get_data(as_text=True)
     assert 'html lang="uk"' in html
     assert "Автономний монітор" in html
+
+
+# ---- window.I18N містить лише ключі, реально потрібні JS ----
+
+def test_js_i18n_calls_are_static_literals():
+    """Набір ключів для window.I18N визначається скануванням t('...')-
+    літералів у static/*.js. Динамічний виклик (t(var), t(`...`))
+    не потрапив би в набір - і в інтерфейсі тихо з'явився б сирий
+    ключ. Цей тест забороняє такі виклики."""
+    import glob
+    import re
+    dynamic = re.compile(r"(?<![\w.])t\(\s*[^'\"\s)]")
+    offenders = []
+    for path in glob.glob(os.path.join(os.path.dirname(__file__), "..", "static", "*.js")):
+        with open(path, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                if dynamic.search(line) and "function t(" not in line:
+                    offenders.append(f"{os.path.basename(path)}:{n}: {line.strip()}")
+    assert offenders == [], offenders
+
+
+def test_every_js_i18n_key_is_embedded_in_pages(client):
+    import json
+    import re
+    from app import i18n, webapp
+    assert webapp._JS_I18N_KEYS, "сканування не знайшло жодного ключа"
+    missing_in_dict = webapp._JS_I18N_KEYS - set(i18n.TRANSLATIONS)
+    assert missing_in_dict == set(), f"JS використовує невідомі ключі: {missing_in_dict}"
+    for page in ("/", "/settings", "/stats"):
+        html = client.get(page).get_data(as_text=True)
+        blob = json.loads(re.search(r"window\.I18N = (\{.*?\});</script>", html).group(1))
+        assert set(blob) == set(webapp._JS_I18N_KEYS), page

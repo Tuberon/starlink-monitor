@@ -40,7 +40,10 @@ def env_file(tmp_path, monkeypatch):
     ("bool", "true", False),         # текстове "true" НЕ приймається
     ("str", "будь-що", True),
 ])
-def test_validate_value_type_checking(type_name, value, expected_ok):
+def test_validate_value_type_checking(type_name, value, expected_ok, db_path):
+    # db_path: невалідні значення доходять до error-гілки, що викликає
+    # i18n.t() -> db.get_setting(); без ізоляції тест читав БД, залишену
+    # іншим тестом (sqlite3.OperationalError: no such table: settings).
     param = {"type": type_name, "label": "тест"}
     ok, _ = config_editor._validate_value(param, value)
     assert ok is expected_ok

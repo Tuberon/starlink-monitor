@@ -401,14 +401,19 @@ if [[ "$MODE" == "install" ]]; then
       # лише значно пізніше через симптоми (dish/Telegram недосяжні).
       ETH_ACTUAL="$(ip -4 addr show "$ETH_IFACE" | grep -oP 'inet \K[\d.]+/\d+' || true)"
       WLAN_ACTUAL="$(ip -4 addr show "$WLAN_IFACE" | grep -oP 'inet \K[\d.]+/\d+' || true)"
-      echo "   $ETH_IFACE: ${ETH_ACTUAL:-(немає адреси!)}"
-      echo "   $WLAN_IFACE: ${WLAN_ACTUAL:-(немає адреси!)}"
-      if [[ "$ETH_ACTUAL" != "$ETH_IP" ]]; then
-        echo " !! УВАГА: $ETH_IFACE отримав \"$ETH_ACTUAL\", очікувалось \"$ETH_IP\"."
+      # Інтерфейс може мати КІЛЬКА IPv4-адрес (напр. залишкова DHCP-
+      # адреса поруч зі статичною) - тому перевіряється ВХОДЖЕННЯ
+      # очікуваної адреси в список (grep -qxF), не точна рівність
+      # усього виводу (інакше коректна статична адреса + будь-яка
+      # друга давали б хибне "УВАГА").
+      echo "   $ETH_IFACE: $(echo ${ETH_ACTUAL:-'(немає адреси!)'})"
+      echo "   $WLAN_IFACE: $(echo ${WLAN_ACTUAL:-'(немає адреси!)'})"
+      if ! grep -qxF "$ETH_IP" <<< "$ETH_ACTUAL"; then
+        echo " !! УВАГА: на $ETH_IFACE немає очікуваної адреси \"$ETH_IP\"."
         echo "    Перевірте вручну: nmcli connection show \"$ETH_CONN\" | grep ipv4"
       fi
-      if [[ "$WLAN_ACTUAL" != "$WLAN_IP" ]]; then
-        echo " !! УВАГА: $WLAN_IFACE отримав \"$WLAN_ACTUAL\", очікувалось \"$WLAN_IP\"."
+      if ! grep -qxF "$WLAN_IP" <<< "$WLAN_ACTUAL"; then
+        echo " !! УВАГА: на $WLAN_IFACE немає очікуваної адреси \"$WLAN_IP\"."
         echo "    Перевірте вручну: nmcli connection show \"$WLAN_CONN\" | grep ipv4"
       fi
       echo ""

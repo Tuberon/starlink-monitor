@@ -42,6 +42,17 @@ class _FakeHardwareDisplay:
         self.images.append(img)
 
 
+@pytest.fixture(autouse=True)
+def _restore_display_enabled(monkeypatch):
+    """Тести цього файлу присвоюють config.DISPLAY_ENABLED напряму -
+    monkeypatch.setattr запам'ятовує початкове значення і ВІДНОВЛЮЄ
+    його після кожного тесту (незалежно від проміжних присвоєнь).
+    Без цього True протікав би в інші тестові файли (pi_power.py і
+    shutdown_button.py читають цей прапорець), роблячи їхню поведінку
+    залежною від порядку виконання під pytest-randomly."""
+    monkeypatch.setattr(config, "DISPLAY_ENABLED", config.DISPLAY_ENABLED)
+
+
 @pytest.fixture
 def fake_hardware():
     """Встановлює fake board/digitalio/busio/adafruit_rgb_display в
@@ -82,14 +93,20 @@ def test_run_forever_disabled_returns_immediately(caplog):
     assert "вимкнено" in caplog.text
 
 
-def test_run_forever_missing_hardware_libs_returns(caplog):
+def test_run_forever_missing_hardware_libs_returns(caplog, monkeypatch):
     """Реальний сценарій: пакети adafruit-blinka/adafruit-circuitpython-
     rgb-display не встановлені (DISPLAY_ENABLED=1 виставлено, але
     пакети не поставлені) - МАЄ логувати помилку і завершитись, не
-    кидати виняток назовні."""
+    кидати виняток назовні.
+
+    sys.modules[m] = None (не .pop()) - стандартний механізм Python,
+    що змушує `import m` кидати ImportError НЕЗАЛЕЖНО від того, чи
+    пакет реально є на диску. .pop() лише чистив кеш імпорту, і на
+    машині з повним requirements.txt (adafruit-blinka встановлено)
+    тест падав - перевіряв середовище, а не код."""
     config.DISPLAY_ENABLED = True
     for m in ("board", "digitalio", "busio", "adafruit_rgb_display"):
-        sys.modules.pop(m, None)
+        monkeypatch.setitem(sys.modules, m, None)
     with caplog.at_level("ERROR"):
         display.run_forever()
     assert "не встановлено" in caplog.text
