@@ -1156,6 +1156,17 @@ def _events(kind):
     return [e for e in db.get_recent_events(500) if e["kind"] == kind]
 
 
+def _go_offline(wd, t0):
+    """Роутер мовчить STARLINK_OFFLINE_CONFIRM_POLLS опитувань поспіль
+    (крок 10 с, починаючи з t0) - підтверджене вимкнення Starlink."""
+    wd.client.router_reachable = lambda timeout=2.0: False
+    for i in range(wd.STARLINK_OFFLINE_CONFIRM_POLLS):
+        with patch("time.time", return_value=t0 + i * 10), \
+             patch.object(wd.client, "get_status", return_value=_offline_status()):
+            wd.poll_once()
+    assert wd.starlink_offline_since == t0
+
+
 def test_starlink_off_no_reboot_no_failure_count(watchdog):
     """Роутер недоступний -> це вимкнений Starlink, не зависання тарілки:
     жодної спроби reboot навіть після багатьох опитувань, лічильник не
@@ -1182,11 +1193,8 @@ def test_starlink_off_no_per_poll_warning(watchdog, caplog):
 
 
 def test_starlink_back_after_long_off_notifies_once_with_duration(watchdog):
-    watchdog.client.router_reachable = lambda timeout=2.0: False
     t0 = 1_000_000.0
-    with patch("time.time", return_value=t0), \
-         patch.object(watchdog.client, "get_status", return_value=_offline_status()):
-        watchdog.poll_once()
+    _go_offline(watchdog, t0)
     watchdog.client.router_reachable = lambda timeout=2.0: True
     with patch("time.time", return_value=t0 + 8 * 3600 + 20 * 60), \
          patch.object(watchdog.client, "get_status", return_value=_online_status()):
@@ -1200,11 +1208,8 @@ def test_starlink_back_after_long_off_notifies_once_with_duration(watchdog):
 def test_starlink_back_after_short_off_no_telegram(watchdog):
     """Коротке зникнення (перезавантаження роутера при оновленні
     прошивки) - лише запис у журнал, без Telegram."""
-    watchdog.client.router_reachable = lambda timeout=2.0: False
     t0 = 1_000_000.0
-    with patch("time.time", return_value=t0), \
-         patch.object(watchdog.client, "get_status", return_value=_offline_status()):
-        watchdog.poll_once()
+    _go_offline(watchdog, t0)
     watchdog.client.router_reachable = lambda timeout=2.0: True
     with patch("time.time", return_value=t0 + 90), \
          patch.object(watchdog.client, "get_status", return_value=_online_status()):
@@ -1215,10 +1220,7 @@ def test_starlink_back_after_short_off_no_telegram(watchdog):
 
 def test_starlink_back_message_in_english(watchdog):
     db.set_setting("ui_language", "en")
-    watchdog.client.router_reachable = lambda timeout=2.0: False
-    with patch("time.time", return_value=1000.0), \
-         patch.object(watchdog.client, "get_status", return_value=_offline_status()):
-        watchdog.poll_once()
+    _go_offline(watchdog, 1000.0)
     watchdog.client.router_reachable = lambda timeout=2.0: True
     with patch("time.time", return_value=1000.0 + 2 * 3600), \
          patch.object(watchdog.client, "get_status", return_value=_online_status()):
@@ -1273,3 +1275,39 @@ def test_format_duration():
     assert format_duration(45 * 60, uk) == "45 хв"
     assert format_duration(8 * 3600 + 20 * 60, uk) == "8 год 20 хв"
     assert format_duration(-5, uk) == "0 хв"
+
+
+def test_short_wifi_blip_is_silent(watchdog, caplog):
+    """Розрив WiFi коротший за підтвердження (1-2 опитування) - жодних
+    подій, логів "Starlink недоступний", Telegram чи лічильника збоїв."""
+    for blip_len in (1, watchdog.STARLINK_OFFLINE_CONFIRM_POLLS - 1):
+        watchdog.client.router_reachable = lambda timeout=2.0: False
+        with caplog.at_level("INFO", logger="monitor"):
+            with patch.object(watchdog.client, "get_status", return_value=_offline_status()):
+                for _ in range(blip_len):
+                    watchdog.poll_once()
+            watchdog.client.router_reachable = lambda timeout=2.0: True
+            with patch.object(watchdog.client, "get_status", return_value=_online_status()):
+                watchdog.poll_once()
+        assert watchdog.starlink_offline_since is None
+        assert watchdog.consecutive_failures == 0
+    assert _events("starlink_offline") == [] and _events("starlink_online") == []
+    assert "Starlink" not in caplog.text
+    assert watchdog.sent == []
+
+
+def test_blip_then_dish_hang_counts_normally(watchdog):
+    """Короткий провал роутера, далі роутер є, а dish ні - звичайний
+    watchdog; провал не відкриває стан "Starlink вимкнено"."""
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()):
+        watchdog.poll_once()
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()), \
+         patch.object(watchdog, "_maybe_reboot") as mock_maybe:
+        watchdog.poll_once()
+    assert watchdog.starlink_offline_since is None
+    assert watchdog.consecutive_failures == 1
+    assert watchdog._router_down_polls == 0
+    mock_maybe.assert_called_once()
+    assert _events("starlink_offline") == []

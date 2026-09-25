@@ -344,6 +344,13 @@ def format_duration(seconds: float, tr: Callable[..., str]) -> str:
 
 
 class Watchdog:
+    # Скільки опитувань поспіль роутер має мовчати, щоб стан "Starlink
+    # вимкнено" зафіксувався (~30 с при інтервалі 10 с). Короткі розриви
+    # WiFi (на Pi користувача - щохвилини, ~0.5 с) інколи збігаються з
+    # опитуванням; без гістерезису кожен такий збіг давав пару подій
+    # starlink_offline/online у журналі (до ~100 на годину, симуляція).
+    STARLINK_OFFLINE_CONFIRM_POLLS = 3
+
     def __init__(self) -> None:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
@@ -395,6 +402,7 @@ class Watchdog:
         # активний, watchdog не шле марних reboot (команда йде тим самим
         # недоступним шляхом) і не пише рядок на кожне опитування.
         self.starlink_offline_since: Optional[float] = None
+        self._router_down_polls = 0
         # last_reboot_ts, для якого вже записано "Пропускаю авто-reboot" -
         # один рядок на вікно очікування замість рядка щоопитування.
         self._reboot_skip_logged_for: Optional[float] = None
@@ -508,6 +516,7 @@ class Watchdog:
         self.metrics_buffer.append(status.to_dict())
 
         if status.online:
+            self._router_down_polls = 0
             if self.starlink_offline_since is not None:
                 self._exit_starlink_offline()
             if self.consecutive_failures > 0:
@@ -531,8 +540,13 @@ class Watchdog:
         elif not self.client.router_reachable():
             if self.first_failure_ts is None:
                 self.first_failure_ts = time.time()
-            self._enter_starlink_offline()
+            self._router_down_polls += 1
+            if self.starlink_offline_since is not None or self._router_down_polls >= self.STARLINK_OFFLINE_CONFIRM_POLLS:
+                self._enter_starlink_offline()
+            # інакше - ще не підтверджено (можливо, короткий розрив WiFi):
+            # тихо чекаємо, лічильник збоїв dish не росте
         else:
+            self._router_down_polls = 0
             if self.starlink_offline_since is not None:
                 # роутер повернувся раніше за dish (dish ще завантажується) -
                 # далі звичайний watchdog з нульового лічильника
