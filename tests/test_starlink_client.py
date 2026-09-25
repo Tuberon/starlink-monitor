@@ -527,3 +527,29 @@ def test_router_to_dict_serializes_clients_and_alerts_as_json():
     d = r.to_dict()
     assert isinstance(d["active_alerts"], str) and "thermal_throttle" in d["active_alerts"]
     assert isinstance(d["clients"], str) and "AA:BB:CC:DD:EE:FF" in d["clients"]
+
+
+# ---- router_reachable(): реальний TCP, без моків ----
+
+def test_router_reachable_true_for_listening_port():
+    import socket
+    from app.starlink_client import StarlinkClient
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    try:
+        assert StarlinkClient(router_addr=f"127.0.0.1:{port}").router_reachable(timeout=1.0) is True
+    finally:
+        srv.close()
+
+
+def test_router_reachable_false_for_closed_port_and_bad_addr():
+    import socket
+    from app.starlink_client import StarlinkClient
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()   # порт гарантовано вільний -> connection refused
+    assert StarlinkClient(router_addr=f"127.0.0.1:{port}").router_reachable(timeout=1.0) is False
+    assert StarlinkClient(router_addr="не-адреса").router_reachable(timeout=1.0) is False

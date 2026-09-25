@@ -167,6 +167,10 @@ Long polling (без webhook), у потоці `starlink-monitor.service`.
   підсумок після затишшя
 - `STARLINK_MAX_LOGGED_FAILURES` (15) — журнал зупиняється, reboot триває
 - Завжди приглушені: помилка перевірки роутера, "оновлення очікує", роумінг
+- **Starlink вимкнено** (ніч, відключення світла): якщо не відповідає навіть
+  роутер, watchdog не перезавантажує тарілку й не пише рядок на кожне
+  опитування. Вранці — одне повідомлення "✅ Starlink знову доступний, був
+  вимкнений N год" (лише якщо довше `NOTIFICATIONS_MUTE_AFTER`, 15 хв)
 - Відкат прошивки (SpaceX інколи відкочує білди) — навмисно не
   сповіщається, `known_devices` оновлюється мовчки
 - **Очікувані версії** (`/settings`) — кілька через кому, лише новіші приймаються
@@ -281,7 +285,7 @@ mypy app/
 
 ## ✅ Тести
 
-443 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
+454 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -303,7 +307,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 443 тестів (16 файлів), pytest-randomly
+├── tests/          # 454 тестів (16 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

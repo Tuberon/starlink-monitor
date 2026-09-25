@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 import psutil
 
-from app import activity_led, config, config_editor, db, telegram_notify
+from app import activity_led, config, config_editor, db, i18n, telegram_notify
 from app import labels
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
@@ -334,6 +334,15 @@ def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) 
     return dish_status, router_info
 
 
+def format_duration(seconds: float, tr: Callable[..., str]) -> str:
+    """"8 год 20 хв" / "45 хв" - мовою перекладача tr (i18n.translator())."""
+    minutes = max(0, round(seconds / 60))
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours} {tr('dur_hours')} {minutes} {tr('dur_minutes')}"
+    return f"{minutes} {tr('dur_minutes')}"
+
+
 class Watchdog:
     def __init__(self) -> None:
         self.client = StarlinkClient()
@@ -381,6 +390,14 @@ class Watchdog:
         self.reboot_notify_ts: list[float] = []
         self.reboot_spam_muted = False
         self.muted_reboot_count = 0
+        # Starlink вимкнено (ніч, відключення світла): dish недоступний І
+        # роутер теж не відповідає. None - Starlink у мережі. Поки стан
+        # активний, watchdog не шле марних reboot (команда йде тим самим
+        # недоступним шляхом) і не пише рядок на кожне опитування.
+        self.starlink_offline_since: Optional[float] = None
+        # last_reboot_ts, для якого вже записано "Пропускаю авто-reboot" -
+        # один рядок на вікно очікування замість рядка щоопитування.
+        self._reboot_skip_logged_for: Optional[float] = None
 
     def _notify(self, text: str) -> None:
         """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток
@@ -441,6 +458,38 @@ class Watchdog:
         self.muted_reboot_count = 0
         self.reboot_notify_ts = []
 
+    def _enter_starlink_offline(self) -> None:
+        """Dish недоступний, роутер теж - Starlink вимкнено або його WiFi
+        немає. Одна подія на вхід у стан; збої dish не накопичуються в
+        consecutive_failures (це не зависання тарілки), тож після
+        увімкнення watchdog стартує з нуля."""
+        if self.starlink_offline_since is None:
+            self.starlink_offline_since = self.first_failure_ts or time.time()
+            logger.info(
+                "Starlink недоступний (роутер %s теж не відповідає) - авто-reboot призупинено до відновлення",
+                self.client.router_addr,
+            )
+            db.insert_event("starlink_offline", "Starlink недоступний (роутер не відповідає) — авто-reboot призупинено", success=True)
+        self.consecutive_failures = 0
+
+    def _exit_starlink_offline(self) -> None:
+        """Роутер знову відповідає. Подія в журнал завжди; Telegram - лише
+        якщо Starlink був вимкнений довше NOTIFICATIONS_MUTE_AFTER_SEC
+        (нічне вимкнення - так; хвилинне перезавантаження при оновленні
+        прошивки - ні, воно й так має власні сповіщення)."""
+        since = self.starlink_offline_since
+        self.starlink_offline_since = None
+        self.first_failure_ts = None
+        if since is None:
+            return
+        duration = time.time() - since
+        uk = i18n.translator("uk")
+        logger.info("Starlink знову доступний (був недоступний %s)", format_duration(duration, uk))
+        db.insert_event("starlink_online", f"Starlink знову доступний (був недоступний {format_duration(duration, uk)})", success=True)
+        if duration >= config.NOTIFICATIONS_MUTE_AFTER_SEC:
+            tr = i18n.translator()
+            self._notify(tr("tg_starlink_back", duration=format_duration(duration, tr)))
+
     def flush_metrics_buffer(self) -> None:
         """Записує накопичені dish-зчитування одним batch-INSERT і
         очищає буфер. Викликається періодично з run_forever() (кожні
@@ -459,6 +508,8 @@ class Watchdog:
         self.metrics_buffer.append(status.to_dict())
 
         if status.online:
+            if self.starlink_offline_since is not None:
+                self._exit_starlink_offline()
             if self.consecutive_failures > 0:
                 downtime_sec = time.time() - self.first_failure_ts if self.first_failure_ts else 0
                 logger.info("Dish знову online після %d невдалих спроб", self.consecutive_failures)
@@ -477,7 +528,15 @@ class Watchdog:
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
+        elif not self.client.router_reachable():
+            if self.first_failure_ts is None:
+                self.first_failure_ts = time.time()
+            self._enter_starlink_offline()
         else:
+            if self.starlink_offline_since is not None:
+                # роутер повернувся раніше за dish (dish ще завантажується) -
+                # далі звичайний watchdog з нульового лічильника
+                self._exit_starlink_offline()
             if self.first_failure_ts is None:
                 self.first_failure_ts = time.time()
             self.consecutive_failures += 1
@@ -771,11 +830,15 @@ class Watchdog:
 
         now = time.time()
         if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
-            logger.info(
-                "Пропускаю авто-reboot: останній reboot був %.0f с тому (мін. інтервал %d с)",
-                now - self.last_reboot_ts,
-                config.MIN_REBOOT_INTERVAL_SEC,
-            )
+            # Один рядок на вікно очікування - раніше писався на КОЖНОМУ
+            # опитуванні (~30 рядків за вікно, сотні за ніч на SD-картку).
+            if self._reboot_skip_logged_for != self.last_reboot_ts:
+                self._reboot_skip_logged_for = self.last_reboot_ts
+                logger.info(
+                    "Пропускаю авто-reboot: останній reboot був %.0f с тому (мін. інтервал %d с)",
+                    now - self.last_reboot_ts,
+                    config.MIN_REBOOT_INTERVAL_SEC,
+                )
             return
 
         failures = self.consecutive_failures

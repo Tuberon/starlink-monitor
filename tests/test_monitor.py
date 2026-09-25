@@ -1138,3 +1138,138 @@ def test_maybe_send_backup_updates_timer_even_on_failure(watchdog, tmp_path):
         watchdog._maybe_send_backup_to_telegram()
 
     assert watchdog.last_telegram_backup_sent_ts > before
+
+
+# ---- Starlink вимкнено (ніч / відключення світла): роутер теж недоступний ----
+
+def _offline_status():
+    from app.starlink_client import DishStatus
+    return DishStatus(timestamp=time.time(), online=False, error="no route to host")
+
+
+def _online_status():
+    from app.starlink_client import DishStatus
+    return DishStatus(timestamp=time.time(), online=True, uptime_s=100)
+
+
+def _events(kind):
+    return [e for e in db.get_recent_events(500) if e["kind"] == kind]
+
+
+def test_starlink_off_no_reboot_no_failure_count(watchdog):
+    """Роутер недоступний -> це вимкнений Starlink, не зависання тарілки:
+    жодної спроби reboot навіть після багатьох опитувань, лічильник не
+    росте, у журналі рівно ОДНА подія starlink_offline."""
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()), \
+         patch.object(watchdog.client, "reboot_dish") as mock_reboot:
+        for _ in range(config.MAX_CONSECUTIVE_FAILURES * 3):
+            watchdog.poll_once()
+    mock_reboot.assert_not_called()
+    assert watchdog.consecutive_failures == 0
+    assert watchdog.starlink_offline_since is not None
+    assert len(_events("starlink_offline")) == 1
+
+
+def test_starlink_off_no_per_poll_warning(watchdog, caplog):
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()), \
+         caplog.at_level("INFO", logger="monitor"):
+        for _ in range(20):
+            watchdog.poll_once()
+    assert "Dish недоступний" not in caplog.text
+    assert caplog.text.count("Starlink недоступний") == 1
+
+
+def test_starlink_back_after_long_off_notifies_once_with_duration(watchdog):
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    t0 = 1_000_000.0
+    with patch("time.time", return_value=t0), \
+         patch.object(watchdog.client, "get_status", return_value=_offline_status()):
+        watchdog.poll_once()
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    with patch("time.time", return_value=t0 + 8 * 3600 + 20 * 60), \
+         patch.object(watchdog.client, "get_status", return_value=_online_status()):
+        watchdog.poll_once()
+        watchdog.poll_once()
+    assert watchdog.sent == ["✅ Starlink знову доступний, був вимкнений 8 год 20 хв"]
+    assert watchdog.starlink_offline_since is None
+    assert len(_events("starlink_online")) == 1
+
+
+def test_starlink_back_after_short_off_no_telegram(watchdog):
+    """Коротке зникнення (перезавантаження роутера при оновленні
+    прошивки) - лише запис у журнал, без Telegram."""
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    t0 = 1_000_000.0
+    with patch("time.time", return_value=t0), \
+         patch.object(watchdog.client, "get_status", return_value=_offline_status()):
+        watchdog.poll_once()
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    with patch("time.time", return_value=t0 + 90), \
+         patch.object(watchdog.client, "get_status", return_value=_online_status()):
+        watchdog.poll_once()
+    assert watchdog.sent == []
+    assert len(_events("starlink_online")) == 1
+
+
+def test_starlink_back_message_in_english(watchdog):
+    db.set_setting("ui_language", "en")
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    with patch("time.time", return_value=1000.0), \
+         patch.object(watchdog.client, "get_status", return_value=_offline_status()):
+        watchdog.poll_once()
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    with patch("time.time", return_value=1000.0 + 2 * 3600), \
+         patch.object(watchdog.client, "get_status", return_value=_online_status()):
+        watchdog.poll_once()
+    assert watchdog.sent == ["✅ Starlink is available again, was off for 2 h 0 min"]
+
+
+def test_router_back_before_dish_resumes_normal_watchdog_from_zero(watchdog):
+    """Роутер повернувся, dish ще ні (завантажується) - вихід зі стану,
+    далі звичайний watchdog з нульового лічильника."""
+    watchdog.client.router_reachable = lambda timeout=2.0: False
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()):
+        for _ in range(5):
+            watchdog.poll_once()
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()), \
+         patch.object(watchdog, "_maybe_reboot") as mock_maybe:
+        watchdog.poll_once()
+    assert watchdog.starlink_offline_since is None
+    assert watchdog.consecutive_failures == 1
+    mock_maybe.assert_called_once()
+
+
+def test_dish_hang_with_router_up_still_reboots(watchdog):
+    """Регресія: роутер відповідає, dish ні - це зависання тарілки,
+    watchdog і далі перезавантажує (попередня поведінка збережена)."""
+    watchdog.last_reboot_ts = 0.0
+    with patch.object(watchdog.client, "get_status", return_value=_offline_status()), \
+         patch.object(watchdog.client, "reboot_dish", return_value=(False, "timeout")) as mock_reboot:
+        for _ in range(config.MAX_CONSECUTIVE_FAILURES):
+            watchdog.poll_once()
+    mock_reboot.assert_called_once()
+    assert watchdog.starlink_offline_since is None
+
+
+def test_reboot_skip_logged_once_per_wait_window(watchdog, caplog):
+    watchdog.consecutive_failures = config.MAX_CONSECUTIVE_FAILURES
+    with patch("time.time", return_value=10_000.0), caplog.at_level("INFO", logger="monitor"):
+        watchdog.last_reboot_ts = 10_000.0 - 10
+        for _ in range(25):
+            watchdog._maybe_reboot()
+        assert caplog.text.count("Пропускаю авто-reboot") == 1
+        watchdog.last_reboot_ts = 10_000.0 - 5   # нове вікно (нова спроба reboot)
+        watchdog._maybe_reboot()
+        assert caplog.text.count("Пропускаю авто-reboot") == 2
+
+
+def test_format_duration():
+    from app import i18n
+    from app.monitor import format_duration
+    uk = i18n.translator("uk")
+    assert format_duration(45 * 60, uk) == "45 хв"
+    assert format_duration(8 * 3600 + 20 * 60, uk) == "8 год 20 хв"
+    assert format_duration(-5, uk) == "0 хв"

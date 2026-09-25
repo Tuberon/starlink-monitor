@@ -36,4 +36,10 @@ def watchdog(db_path):
     wd = Watchdog()
     wd.sent = []
     wd._notify = lambda text: wd.sent.append(text)
+    # Явна передумова наявних тестів: роутер Starlink досяжний (збій dish
+    # = проблема тарілки -> звичайний watchdog). Без цього poll_once()
+    # з offline-статусом робив би РЕАЛЬНЕ TCP-з'єднання з 192.168.1.1
+    # (2 с таймауту, результат залежить від мережі середовища). Тести
+    # стану "Starlink вимкнено" перевизначають це явно.
+    wd.client.router_reachable = lambda timeout=2.0: True
     return wd

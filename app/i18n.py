@@ -450,6 +450,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tg_first_seen_line": {"uk": "Вперше підключено: {ago}", "en": "First connected: {ago}"},
     "tg_last_seen_full_line": {"uk": "Востаннє в мережі: {ago}", "en": "Last seen: {ago}"},
 
+    # ---- monitor.py: Starlink вимкнено/увімкнено (ніч, відключення світла) ----
+    "tg_starlink_back": {"uk": "✅ Starlink знову доступний, був вимкнений {duration}", "en": "✅ Starlink is available again, was off for {duration}"},
+    "dur_hours": {"uk": "год", "en": "h"},
+    "dur_minutes": {"uk": "хв", "en": "min"},
+
     # ---- PWA manifest.json ----
     "manifest_name": {"uk": "Dish Watch — Starlink Monitor", "en": "Dish Watch — Starlink Monitor"},
     "manifest_short_name": {"uk": "Dish Watch", "en": "Dish Watch"},

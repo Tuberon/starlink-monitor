@@ -167,6 +167,10 @@ Long polling (no webhook), in the `starlink-monitor.service` thread.
   a summary follows the lull
 - `STARLINK_MAX_LOGGED_FAILURES` (15) — logging stops, reboot attempts continue
 - Always muted: router check error, "update pending", roaming
+- **Starlink off** (night, power outage): if even the router does not
+  respond, the watchdog does not reboot the dish and does not log a line
+  per poll. In the morning — one message "✅ Starlink is available again,
+  was off for N h" (only if longer than `NOTIFICATIONS_MUTE_AFTER`, 15 min)
 - Firmware rollback (SpaceX occasionally rolls back builds) —
   intentionally not notified, `known_devices` is updated silently
 - **Expected versions** (`/settings`) — comma-separated, only newer ones are accepted
@@ -279,7 +283,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-443 tests (`pytest-randomly` — resilient to execution order), 16
+454 tests (`pytest-randomly` — resilient to execution order), 16
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -302,7 +306,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 443 tests (16 files), pytest-randomly
+├── tests/          # 454 tests (16 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

@@ -13,6 +13,7 @@ reboot_dish(): grpcurl subprocess на dish_addr - dish і router фізично
 import json
 import logging
 import shutil
+import socket
 import subprocess
 import time
 import types
@@ -294,6 +295,20 @@ class StarlinkClient:
                     # для рідкісного edge-case закриття gRPC-каналу,
                     # без підняття рівня й без маскування головної помилки.
                     logger.debug("Не вдалося закрити gRPC-канал: %s", e)
+
+    def router_reachable(self, timeout: float = 2.0) -> bool:
+        """Чи відповідає gRPC-порт роутера Starlink на TCP-з'єднання.
+        Розрізняє "Starlink вимкнено / WiFi Starlink немає" (роутер теж
+        недоступний) від "тарілка зависла" (роутер відповідає, dish ні) -
+        у першому випадку перезавантажувати тарілку безглуздо: команда
+        йде тим самим недоступним шляхом. Без WiFi Starlink у системі
+        немає навіть маршруту до роутера, тож відмова зазвичай миттєва."""
+        host, _, port = self.router_addr.rpartition(":")
+        try:
+            with socket.create_connection((host, int(port)), timeout=timeout):
+                return True
+        except (OSError, ValueError):
+            return False
 
     def get_router_info(self) -> RouterInfo:
         """
