@@ -622,13 +622,12 @@ def test_telegram_test_connection_ok_but_send_fails(client):
 
 # ---- Основні status-endpoints дашборду (реально викликаються щосекунди через tick()) ----
 
-def test_api_status_returns_latest_metric_and_uptime(client):
+def test_api_status_returns_latest_metric(client):
     from app.starlink_client import DishStatus
     db.insert_metric(DishStatus(timestamp=time.time(), online=True, uptime_s=100).to_dict())
     resp = client.get("/api/status")
     data = resp.get_json()
     assert data["latest"]["online"] == 1
-    assert "uptime_24h_pct" in data
 
 
 def test_api_status_no_data_returns_none_latest(client):

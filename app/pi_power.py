@@ -20,7 +20,7 @@ import subprocess
 import time
 from typing import Any, Callable, Optional
 
-from app import config, db, telegram_notify
+from app import config, db, i18n, telegram_notify
 
 logger = logging.getLogger("pi_power")
 
@@ -104,5 +104,5 @@ def execute_pi_power_action(
     if ok:
         notify_fn(success_text)
     else:
-        notify_fn(f"❌ Не вдалося {fail_verb} Raspberry Pi: {msg}")
+        notify_fn(i18n.t("tg_pi_action_failed", verb=fail_verb, msg=msg))
     return ok, msg

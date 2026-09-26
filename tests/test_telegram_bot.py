@@ -498,7 +498,6 @@ def test_reboot_request_cleans_up_expired_pending_from_other_chats(db_path):
 def test_reboot_request_does_not_remove_still_valid_pending(db_path):
     """Контрольний тест: pending-запис, для якого TTL ЩЕ не минув,
     НЕ має видалятись новим /reboot-запитом від іншого chat_id."""
-    from app import config
     bot = telegram_bot.TelegramBot()
     with patch("app.telegram_bot._api_call"):
         bot._pending_reboot_confirm["still-valid-user"] = time.time()

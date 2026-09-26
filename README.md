@@ -210,7 +210,8 @@ backup у Telegram" (незалежно від автоматичного роз
 - **Темна/світла тема** — перемикач на `/settings`, зберігається між
   сесіями.
 - **Мова інтерфейсу** — перемикач на `/settings` (українська/англійська),
-  застосовується разом до веб-дашборду й Telegram-бота.
+  застосовується разом до веб-дашборду й Telegram-бота, включно з
+  автоматичними сповіщеннями.
 
 ## 🛡️ Надійність
 
@@ -288,7 +289,7 @@ mypy app/
 
 ## ✅ Тести
 
-460 тестів (`pytest-randomly` — стійкість до порядку виконання), 16
+474 тести (`pytest-randomly` — стійкість до порядку виконання), 17
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -310,7 +311,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 460 тестів (16 файлів), pytest-randomly
+├── tests/          # 474 тести (17 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

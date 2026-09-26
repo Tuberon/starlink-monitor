@@ -209,7 +209,8 @@ safeguard in case the DB and backup remain on the same SD card.
   "last known state (X min ago)", to avoid confusion with live data.
 - **Dark/light theme** — a switch on `/settings`, persists across sessions.
 - **Interface language** — a switch on `/settings` (Ukrainian/English),
-  applies to the web dashboard and Telegram bot together.
+  applies to the web dashboard and Telegram bot together, including
+  automatic notifications.
 
 ## 🛡️ Reliability
 
@@ -286,7 +287,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-460 tests (`pytest-randomly` — resilient to execution order), 16
+474 tests (`pytest-randomly` — resilient to execution order), 17
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -309,7 +310,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 460 tests (16 files), pytest-randomly
+├── tests/          # 474 tests (17 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

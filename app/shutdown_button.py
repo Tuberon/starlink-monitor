@@ -16,7 +16,7 @@ Pi, як і тут) - цей сервіс тоді одразу завершує
 import logging
 import time
 
-from app import config, db, gpio_utils, pi_power
+from app import config, db, gpio_utils, i18n, pi_power
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,7 +88,7 @@ def _trigger_shutdown(pin: int) -> None:
     pi_power.execute_pi_power_action(
         ["sudo", "systemctl", "poweroff"], "poweroff",
         "pi_shutdown", f"Виключення через фізичну кнопку (GPIO{pin})",
-        f"⏻ Raspberry Pi вимикається через фізичну кнопку (GPIO{pin})", "вимкнути",
+        i18n.t("tg_pi_shutdown_button", pin=pin), i18n.t("verb_shutdown"),
     )
 
 

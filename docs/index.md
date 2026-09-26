@@ -92,6 +92,7 @@
 | `test_monitor.py` | Reboot-спам, дедублікація target-версій, update-state/alerts (dish+router), auto-reboot логіка |
 | `test_monitor_run_forever.py` | Головний watchdog-цикл: periodичні prune/vacuum/integrity/backup, startup-сповіщення |
 | `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
+| `test_i18n.py` | Цілісність перекладів (паритет плейсхолдерів uk/en, наявність кожного ключа з коду), `get_language()` при зламаній БД, англійські Telegram-сповіщення реальними шляхами коду |
 | `test_system_metrics.py` | Кожна метрика (uptime/cpu/memory/disk/temp) незалежно, ніколи не кидає виняток навіть при повному провалі psutil |
 | `test_pi_power.py` | DB-сигнал записаний ДО затримки, очищений ДО systemctl-команди (успіх і провал однаково); lazy notify_fn default, edge cases (subprocess-виняток, DB-провал не блокує реальну дію) |
 | `test_telegram_notify.py` | HTTP-запити, retry; eth0-fallback (усі 3 рівні: звичайний/eth0/manual DNS через eth0); send_document (backup-файл) |

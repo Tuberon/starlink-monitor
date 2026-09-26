@@ -101,6 +101,12 @@ def _validate_value(param: dict, raw_value: str) -> tuple:
     v = raw_value.strip()
     if v == "":
         return True, None  # порожньо = прибрати перевизначення, лишити default
+    # Керуючі символи (перенесення рядка, \r, NUL, табуляція...) - файл
+    # env рядковий: "\n" всередині значення записав би ДОДАТКОВИЙ параметр
+    # в обхід валідації (навіть навмисно прибрані з /settings DB_PATH/
+    # WEBUI_HOST), NUL - зламав би розбір EnvironmentFile у systemd.
+    if any(ord(c) < 32 or ord(c) == 127 for c in v):
+        return False, i18n.t("invalid_control_chars")
     try:
         if t == "int":
             int(v)

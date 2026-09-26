@@ -338,6 +338,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ---- config_editor.py: повідомлення валідації типів ----
     "expected_type": {"uk": "очікується {type}", "en": "expected {type}"},
     "expected_0_or_1": {"uk": "очікується 0 або 1", "en": "expected 0 or 1"},
+    "invalid_control_chars": {"uk": "містить недопустимі керуючі символи (перенесення рядка тощо)", "en": "contains invalid control characters (line breaks etc.)"},
 
     # ---- stats.html ----
     "page_title_stats": {"uk": "Статистика — Dish Watch", "en": "Statistics — Dish Watch"},
@@ -450,6 +451,44 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tg_first_seen_line": {"uk": "Вперше підключено: {ago}", "en": "First connected: {ago}"},
     "tg_last_seen_full_line": {"uk": "Востаннє в мережі: {ago}", "en": "Last seen: {ago}"},
 
+    # ---- Автоматичні Telegram-сповіщення (monitor.py, webapp.py, pi_power.py,
+    # shutdown_button.py). uk - побайтово ті самі тексти, що були в коді. ----
+    "comp_dish": {"uk": "тарілки", "en": "dish"},
+    "comp_router": {"uk": "роутера", "en": "router"},
+    "comp_dish_short": {"uk": "dish", "en": "dish"},
+    "tg_firmware_changed": {"uk": "🔄 Прошивка {component} оновлена: {old} → {new}", "en": "🔄 {component} firmware updated: {old} → {new}"},
+    "tg_target_reached": {"uk": "✅ Останнє оновлення {component} встановлено: версія {version}", "en": "✅ Latest {component} update installed: version {version}"},
+    "tg_both_targets": {"uk": "🎉 Процедуру оновлення завершено: тарілка {dish}, роутер {router}", "en": "🎉 Update procedure complete: dish {dish}, router {router}"},
+    "tg_backup_caption": {"uk": "📦 Backup Starlink Monitor: {name}", "en": "📦 Starlink Monitor backup: {name}"},
+    "tg_db_corrupt": {"uk": "🔴 Виявлено пошкодження БД: {message}. Спроба аварійного backup...", "en": "🔴 Database corruption detected: {message}. Attempting emergency backup..."},
+    "tg_emergency_backup_ok": {"uk": "✅ Аварійний backup виконано, перевір /var/lib/starlink-monitor/backups/", "en": "✅ Emergency backup done, check /var/lib/starlink-monitor/backups/"},
+    "tg_emergency_backup_failed": {"uk": "🔴 Аварійний backup ТЕЖ провалився: {error}", "en": "🔴 Emergency backup ALSO failed: {error}"},
+    "tg_reboot_spam_over": {"uk": "✅ Часті авто-reboot припинились (усього {total} згруповано)", "en": "✅ Frequent auto-reboots have stopped ({total} grouped in total)"},
+    "tg_dish_connected": {"uk": "📡 Підключено Starlink Mini (тарілка), ID: {dish_id}", "en": "📡 Starlink Mini connected (dish), ID: {dish_id}"},
+    "tg_auto_reboot_update": {"uk": "🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ {component} готове: {reason})", "en": "🔁 Starlink Mini rebooted automatically ({component} firmware update ready: {reason})"},
+    "tg_auto_reboot_update_failed": {"uk": "❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ {component} готове): {msg}", "en": "❌ Failed to reboot Starlink Mini ({component} firmware update ready): {msg}"},
+    "tg_auto_reboot_watchdog": {"uk": "🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)", "en": "🔁 Starlink Mini rebooted automatically (dish did not respond {failures} times in a row)"},
+    "tg_pi_started": {"uk": "🟢 Dish Watch запущено (Raspberry Pi перезавантажено)", "en": "🟢 Dish Watch started (Raspberry Pi rebooted)"},
+    "tg_dish_update_ready": {"uk": "🔄 Оновлення ПЗ dish готове — очікує перезавантаження{detail}", "en": "🔄 Dish firmware update ready — reboot pending{detail}"},
+    "tg_router_update_ready": {"uk": "🔄 Оновлення ПЗ роутера готове — очікує перезавантаження{detail}", "en": "🔄 Router firmware update ready — reboot pending{detail}"},
+    "tg_dish_update_error": {"uk": "⚠️ Помилка оновлення ПЗ dish: {label}", "en": "⚠️ Dish firmware update error: {label}"},
+    "tg_router_update_error": {"uk": "⚠️ Помилка оновлення ПЗ роутера: {label}", "en": "⚠️ Router firmware update error: {label}"},
+    "tg_dish_update_started": {"uk": "🔽 Розпочато оновлення ПЗ dish: {label}{detail}", "en": "🔽 Dish firmware update started: {label}{detail}"},
+    "tg_dish_update_done": {"uk": "✅ Оновлення ПЗ dish завершено (нова версія встановлена)", "en": "✅ Dish firmware update complete (new version installed)"},
+    "tg_dish_alert_new": {"uk": "⚠️ Нове попередження dish: {label}", "en": "⚠️ New dish alert: {label}"},
+    "tg_router_alert_new": {"uk": "⚠️ Нове попередження роутера: {label}", "en": "⚠️ New router alert: {label}"},
+    "tg_dish_back_after_mute": {"uk": "✅ Dish знову online (WiFi Starlink була відсутня ~{minutes} хв, сповіщення відновлено)", "en": "✅ Dish back online (Starlink WiFi was absent ~{minutes} min, notifications resumed)"},
+    "tg_dish_back": {"uk": "✅ Dish знову online (після {failures} невдалих спроб)", "en": "✅ Dish back online (after {failures} failed attempts)"},
+    "tg_pi_action_failed": {"uk": "❌ Не вдалося {verb} Raspberry Pi: {msg}", "en": "❌ Failed to {verb} Raspberry Pi: {msg}"},
+    "verb_reboot": {"uk": "перезавантажити", "en": "reboot"},
+    "verb_shutdown": {"uk": "вимкнути", "en": "shut down"},
+    "tg_pi_reboot_web": {"uk": "🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс", "en": "🔁 Raspberry Pi is rebooting manually via the web interface"},
+    "tg_pi_shutdown_web": {"uk": "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "en": "⏻ Raspberry Pi is shutting down manually via the web interface"},
+    "tg_pi_shutdown_button": {"uk": "⏻ Raspberry Pi вимикається через фізичну кнопку (GPIO{pin})", "en": "⏻ Raspberry Pi is shutting down via the physical button (GPIO{pin})"},
+    "tg_manual_dish_reboot": {"uk": "🔁 Starlink Mini перезавантажено вручну через веб-інтерфейс", "en": "🔁 Starlink Mini rebooted manually via the web interface"},
+    "tg_manual_dish_reboot_failed": {"uk": "❌ Не вдалося перезавантажити Starlink Mini вручну: {msg}", "en": "❌ Failed to reboot Starlink Mini manually: {msg}"},
+    "tg_test_message": {"uk": "✅ Тестове повідомлення від Starlink Monitor. Сповіщення налаштовано правильно.", "en": "✅ Test message from Starlink Monitor. Notifications are set up correctly."},
+
     # ---- monitor.py: Starlink вимкнено/увімкнено (ніч, відключення світла) ----
     "tg_starlink_back": {"uk": "✅ Starlink знову доступний, був вимкнений {duration}", "en": "✅ Starlink is available again, was off for {duration}"},
     "dur_hours": {"uk": "год", "en": "h"},
@@ -463,10 +502,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
 
 def get_language() -> str:
-    """Поточна мова інтерфейсу - з БД, дефолт uk. Якщо збережене
-    значення чомусь невідоме (напр. пошкоджений settings-рядок) -
-    падає на дефолт, не кидає виняток."""
-    lang = db.get_setting("ui_language") or DEFAULT_LANG
+    """Поточна мова інтерфейсу - з БД, дефолт uk. НІКОЛИ не кидає
+    виняток: невідоме значення або недоступна/пошкоджена БД -> дефолт.
+    Мову читають і критичні шляхи - сторінки дашборду, Telegram-бот,
+    тексти сповіщень про вимкнення Pi фізичною кнопкою; виняток тут
+    обрушив би їх разом зі зламаною БД (раніше так і було: no such
+    table -> OperationalError)."""
+    try:
+        lang = db.get_setting("ui_language") or DEFAULT_LANG
+    except Exception:
+        return DEFAULT_LANG
     return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
 

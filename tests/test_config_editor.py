@@ -285,3 +285,28 @@ def test_intentionally_excluded_settings_are_still_read_by_config():
     editable_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
     assert "STARLINK_DB_PATH" not in editable_keys
     assert "STARLINK_WEBUI_HOST" not in editable_keys
+
+
+# ---- керуючі символи у значенні не потрапляють у файл env ----
+
+@pytest.mark.parametrize("value", [
+    "192.168.100.1:9200\nSTARLINK_WEBUI_PORT=1",   # вставка з буфера: другий рядок
+    "192.168.100.1:9200\rX=1",                     # \r з буфера Windows
+    "192.168.100.1\x009200",                        # NUL ламає EnvironmentFile
+    "a\tb",
+])
+def test_control_characters_rejected_and_file_untouched(env_file, db_path, value):
+    env_file.write_text("STARLINK_POLL_INTERVAL=10\n")
+    original = env_file.read_text()
+    ok, msg = config_editor.save_values({"STARLINK_DISH_ADDR": value})
+    assert ok is False
+    assert "керуючі символи" in msg
+    assert env_file.read_text() == original
+
+
+def test_trailing_newline_from_paste_still_accepted(env_file, db_path):
+    """Перенесення лише по краях (типова вставка) - обрізається strip(),
+    не вважається помилкою."""
+    ok, _ = config_editor.save_values({"STARLINK_DISH_ADDR": "192.168.100.1:9200\n"})
+    assert ok is True
+    assert "STARLINK_DISH_ADDR=192.168.100.1:9200\n" in env_file.read_text()

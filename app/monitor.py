@@ -48,6 +48,16 @@ def version_in_target_list(current_version: Optional[str], target_raw: Optional[
     return current_version in db.parse_version_list(target_raw)
 
 
+# Назви компонентів у викликах - українські відмінкові форми (історично);
+# для Telegram перекладаються тут, сигнатури функцій не змінюються.
+_COMPONENT_KEYS = {"тарілки": "comp_dish", "роутера": "comp_router", "dish": "comp_dish_short"}
+
+
+def _component_t(label: str) -> str:
+    key = _COMPONENT_KEYS.get(label)
+    return i18n.t(key) if key else label
+
+
 def check_target_version_reached(
     component_label: str, current_version: Optional[str], target_key: str,
     notified_key: str, dish_id: Optional[str], notify_fn: Callable[[str], None],
@@ -74,7 +84,7 @@ def check_target_version_reached(
     notified_value = f"{dish_id}|{current_version}|{target_raw}"
     if db.get_setting(notified_key) == notified_value:
         return
-    notify_fn(f"✅ Останнє оновлення {component_label} встановлено: версія {current_version}")
+    notify_fn(i18n.t("tg_target_reached", component=_component_t(component_label), version=current_version))
     db.set_setting(notified_key, notified_value)
 
 
@@ -116,7 +126,7 @@ def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Cal
     if db.get_setting("both_targets_notified") == combo_key:
         return
 
-    notify_fn(f"🎉 Процедуру оновлення завершено: тарілка {dish_current}, роутер {router_current}")
+    notify_fn(i18n.t("tg_both_targets", dish=dish_current, router=router_current))
     db.set_setting("both_targets_notified", combo_key)
 
 
@@ -130,7 +140,7 @@ def _format_firmware_change_message(component_label: str, old_version: str, new_
     пропускається для цього напрямку)."""
     if db.is_older_version(new_version, old_version):
         return None
-    return f"🔄 Прошивка {component_label} оновлена: {old_version} → {new_version}"
+    return i18n.t("tg_firmware_changed", component=_component_t(component_label), old=old_version, new=new_version)
 
 
 def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None]) -> None:
@@ -272,7 +282,7 @@ def send_latest_backup_to_telegram() -> tuple[bool, str]:
     latest = max(backups, key=lambda f: os.path.getmtime(os.path.join(config.AUTO_BACKUP_DIR, f)))
     path = os.path.join(config.AUTO_BACKUP_DIR, latest)
 
-    ok, msg = telegram_notify.send_document(path, caption=f"📦 Backup Starlink Monitor: {latest}")
+    ok, msg = telegram_notify.send_document(path, caption=i18n.t("tg_backup_caption", name=latest))
     db.insert_event("telegram_backup_sent", f"Backup у Telegram ({latest}): {msg}", success=ok)
     return ok, f"{latest}: {msg}"
 
@@ -289,13 +299,13 @@ def check_db_integrity_and_notify(notify_fn: Callable[[str], None]) -> None:
     if ok:
         return
     logger.error("PRAGMA quick_check виявив пошкодження БД: %s", message)
-    notify_fn(f"🔴 Виявлено пошкодження БД: {message}. Спроба аварійного backup...")
+    notify_fn(i18n.t("tg_db_corrupt", message=message))
     try:
         perform_auto_backup()
-        notify_fn("✅ Аварійний backup виконано, перевір /var/lib/starlink-monitor/backups/")
+        notify_fn(i18n.t("tg_emergency_backup_ok"))
     except Exception as e:
         logger.error("Аварійний backup теж провалився: %s", e)
-        notify_fn(f"🔴 Аварійний backup ТЕЖ провалився: {e}")
+        notify_fn(i18n.t("tg_emergency_backup_failed", error=e))
 
 
 def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) -> tuple[DishStatus, RouterInfo]:
@@ -470,7 +480,7 @@ class Watchdog:
         if time.time() - self.reboot_notify_ts[-1] < config.REBOOT_SPAM_WINDOW_SEC:
             return
         total = self.muted_reboot_count
-        self._notify(f"✅ Часті авто-reboot припинились (усього {total} згруповано)")
+        self._notify(i18n.t("tg_reboot_spam_over", total=total))
         self.reboot_spam_muted = False
         self.muted_reboot_count = 0
         self.reboot_notify_ts = []
@@ -534,9 +544,9 @@ class Watchdog:
                 if config.NOTIFY_DISH_RECOVERY:
                     if downtime_sec >= config.NOTIFICATIONS_MUTE_AFTER_SEC:
                         downtime_min = round(downtime_sec / 60)
-                        self._notify(f"✅ Dish знову online (WiFi Starlink була відсутня ~{downtime_min} хв, сповіщення відновлено)")
+                        self._notify(i18n.t("tg_dish_back_after_mute", minutes=downtime_min))
                     else:
-                        self._notify(f"✅ Dish знову online (після {self.consecutive_failures} невдалих спроб)")
+                        self._notify(i18n.t("tg_dish_back", failures=self.consecutive_failures))
             self.consecutive_failures = 0
             self.first_failure_ts = None
             self._notify_first_dish_connection(status)
@@ -613,13 +623,13 @@ class Watchdog:
             was_active = self.prev_update_state in self.ACTIVE_UPDATE_STATES
 
             if state == "REBOOT_REQUIRED":
-                self._notify(f"🔄 Оновлення ПЗ dish готове — очікує перезавантаження{detail}")
+                self._notify(i18n.t("tg_dish_update_ready", detail=detail))
             elif state == "FAULTED":
-                self._notify(f"⚠️ Помилка оновлення ПЗ dish: {label}")
+                self._notify(i18n.t("tg_dish_update_error", label=label))
             elif self.prev_update_state is not None and not was_active and state in self.DOWNLOADING_UPDATE_STATES:
-                self._notify(f"🔽 Розпочато оновлення ПЗ dish: {label}{detail}")
+                self._notify(i18n.t("tg_dish_update_started", label=label, detail=detail))
             elif was_active and state == "IDLE":
-                self._notify("✅ Оновлення ПЗ dish завершено (нова версія встановлена)")
+                self._notify(i18n.t("tg_dish_update_done"))
         self.prev_update_state = state
 
     def _log_alerts_change(self, status: DishStatus) -> None:
@@ -640,7 +650,7 @@ class Watchdog:
                     success=False,
                 )
                 if alert not in self.MUTED_DISH_ALERTS:
-                    self._notify(f"⚠️ Нове попередження dish: {label}")
+                    self._notify(i18n.t("tg_dish_alert_new", label=label))
             for alert in sorted(resolved):
                 # obstruction_map_reset - Starlink періодично скидає
                 # карту перешкод сам по собі як частину нормальної
@@ -679,7 +689,7 @@ class Watchdog:
         known_ids.append(status.dish_id)
         db.set_setting("known_dish_ids", json.dumps(known_ids, ensure_ascii=False))
         db.insert_event("dish_connected", f"Підключено Starlink Mini, ID: {status.dish_id}", success=True)
-        self._notify(f"📡 Підключено Starlink Mini (тарілка), ID: {status.dish_id}")
+        self._notify(i18n.t("tg_dish_connected", dish_id=status.dish_id))
 
     def poll_system_metrics(self) -> None:
         try:
@@ -734,9 +744,9 @@ class Watchdog:
                 success=(not is_failure),
             )
             if state == "REBOOT_PENDING":
-                self._notify(f"🔄 Оновлення ПЗ роутера готове — очікує перезавантаження{detail}")
+                self._notify(i18n.t("tg_router_update_ready", detail=detail))
             elif is_failure and state not in self.MUTED_ROUTER_UPDATE_STATES:
-                self._notify(f"⚠️ Помилка оновлення ПЗ роутера: {label}")
+                self._notify(i18n.t("tg_router_update_error", label=label))
         self.prev_router_update_state = state
 
     def _log_router_alerts_change(self, info: RouterInfo) -> None:
@@ -756,7 +766,7 @@ class Watchdog:
                     success=False,
                 )
                 if alert not in self.MUTED_ROUTER_ALERTS:
-                    self._notify(f"⚠️ Нове попередження роутера: {label}")
+                    self._notify(i18n.t("tg_router_alert_new", label=label))
             for alert in sorted(resolved):
                 label = labels.router_alert_label(alert)
                 db.insert_event(
@@ -798,9 +808,9 @@ class Watchdog:
         # спробу негайно, а почекати MIN_REBOOT_INTERVAL_SEC).
         self.last_reboot_ts = now
         if ok:
-            self._notify_reboot(f"🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ {component_label} готове: {reason})")
+            self._notify_reboot(i18n.t("tg_auto_reboot_update", component=_component_t(component_label), reason=reason))
         else:
-            self._notify(f"❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ {component_label} готове): {msg}")
+            self._notify(i18n.t("tg_auto_reboot_update_failed", component=_component_t(component_label), msg=msg))
 
     def _maybe_reboot_for_router_update(self, info: RouterInfo) -> None:
         """Автоматичний reboot усього Starlink Mini, коли роутерний компонент
@@ -897,7 +907,7 @@ class Watchdog:
         if ok:
             self.consecutive_failures = 0
             if not self._notifications_muted():
-                self._notify_reboot(f"🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)")
+                self._notify_reboot(i18n.t("tg_auto_reboot_watchdog", failures=failures))
 
     def run_forever(self) -> None:
         db.init_db()
@@ -938,7 +948,7 @@ class Watchdog:
         signal.signal(signal.SIGINT, _handle_shutdown_signal)
 
         if config.NOTIFY_PI_STARTUP and pi_just_booted():
-            self._notify("🟢 Dish Watch запущено (Raspberry Pi перезавантажено)")
+            self._notify(i18n.t("tg_pi_started"))
 
         telegram_bot.start()
 

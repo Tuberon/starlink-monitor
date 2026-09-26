@@ -305,7 +305,7 @@ if [[ "$MODE" == "install" ]]; then
     # STARLINK" мав ПОРОЖНЮ interface-name). Якщо існує РІВНО ОДИН
     # профіль потрібного ТИПУ з'єднання - на Pi з одним WiFi-чіпом і
     # одним USB-Ethernet це надійна, однозначна евристика.
-    local wanted_type name_and_type ctype matches=()
+    local wanted_type ctype matches=()
     case "$iface" in
       wlan*) wanted_type="802-11-wireless" ;;
       eth*|usb*) wanted_type="802-3-ethernet" ;;

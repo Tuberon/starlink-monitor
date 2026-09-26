@@ -443,19 +443,6 @@ def check_integrity() -> tuple[bool, str]:
     return False, "; ".join(messages)
 
 
-def uptime_stats_24h() -> Optional[float]:
-    """Частка часу online за останні 24 години (для дашборду)."""
-    cutoff = time.time() - 86400
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) as total, SUM(online) as up FROM metrics WHERE ts > ?",
-            (cutoff,),
-        ).fetchone()
-        if not row or not row["total"]:
-            return None
-        return round(100.0 * (row["up"] or 0) / row["total"], 2)
-
-
 def _upsert_known_device(dish_id: str, component: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
     """Спільна логіка для upsert_known_device_dish()/_router() -
     обидві були продубльовані майже ідентично, відрізняючись лише

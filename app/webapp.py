@@ -184,8 +184,10 @@ def healthz() -> ResponseReturnValue:
 @app.route("/api/status")
 def api_status() -> ResponseReturnValue:
     latest = db.get_latest_metric()
-    uptime_pct = db.uptime_stats_24h()
-    return jsonify({"latest": latest, "uptime_24h_pct": uptime_pct})
+    # uptime_24h_pct прибрано: поле не читали ні дашборд, ні Telegram, а
+    # COUNT по metrics за 24 год займав ~70% часу цього запиту (кожні
+    # 1.5 с). До того ж щонічне вимкнення Starlink робило цифру хибною.
+    return jsonify({"latest": latest})
 
 
 @app.route("/api/events")
@@ -210,9 +212,9 @@ def api_reboot_dish() -> ResponseReturnValue:
     ok, msg = client.reboot_dish()
     db.insert_event("dish_reboot", f"Ручний reboot через веб-інтерфейс: {msg}", success=ok)
     if ok:
-        telegram_notify.send_message("🔁 Starlink Mini перезавантажено вручну через веб-інтерфейс")
+        telegram_notify.send_message(i18n.t("tg_manual_dish_reboot"))
     else:
-        telegram_notify.send_message(f"❌ Не вдалося перезавантажити Starlink Mini вручну: {msg}")
+        telegram_notify.send_message(i18n.t("tg_manual_dish_reboot_failed", msg=msg))
     return jsonify({"success": ok, "message": msg})
 
 
@@ -462,7 +464,7 @@ def api_telegram_test() -> ResponseReturnValue:
     ok, msg = telegram_notify.test_connection()
     if ok:
         send_ok, send_msg = telegram_notify.send_message(
-            "✅ Тестове повідомлення від Starlink Monitor. Сповіщення налаштовано правильно."
+            i18n.t("tg_test_message")
         )
         return jsonify({"success": ok and send_ok, "message": f"{msg}; {send_msg}"})
     return jsonify({"success": False, "message": msg})
@@ -579,7 +581,7 @@ def api_system_reboot() -> ResponseReturnValue:
     ok, msg = pi_power.execute_pi_power_action(
         ["sudo", "systemctl", "reboot"], "reboot", "pi_reboot",
         "Ручне перезавантаження Raspberry Pi через веб-інтерфейс",
-        "🔁 Raspberry Pi перезавантажується вручну через веб-інтерфейс", "перезавантажити",
+        i18n.t("tg_pi_reboot_web"), i18n.t("verb_reboot"),
     )
     return jsonify({"success": ok, "message": msg})
 
@@ -589,7 +591,7 @@ def api_system_shutdown() -> ResponseReturnValue:
     ok, msg = pi_power.execute_pi_power_action(
         ["sudo", "systemctl", "poweroff"], "poweroff", "pi_shutdown",
         "Ручне виключення Raspberry Pi через веб-інтерфейс",
-        "⏻ Raspberry Pi вимикається вручну через веб-інтерфейс", "вимкнути",
+        i18n.t("tg_pi_shutdown_web"), i18n.t("verb_shutdown"),
     )
     return jsonify({"success": ok, "message": msg})
 

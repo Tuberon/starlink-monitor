@@ -657,20 +657,17 @@ def test_check_db_integrity_corrupted_notifies_and_attempts_backup(watchdog, tmp
 # ---- _notifications_muted() ----
 
 def test_notifications_not_muted_when_no_failures(watchdog):
-    from app.starlink_client import DishStatus
     watchdog.first_failure_ts = None
     assert watchdog._notifications_muted() is False
 
 
 def test_notifications_not_muted_before_threshold(watchdog):
-    from app.starlink_client import DishStatus
     config.NOTIFICATIONS_MUTE_AFTER_SEC = 900
     watchdog.first_failure_ts = time.time() - 100
     assert watchdog._notifications_muted() is False
 
 
 def test_notifications_muted_after_threshold(watchdog):
-    from app.starlink_client import DishStatus
     config.NOTIFICATIONS_MUTE_AFTER_SEC = 900
     watchdog.first_failure_ts = time.time() - 1000
     assert watchdog._notifications_muted() is True
@@ -679,14 +676,12 @@ def test_notifications_muted_after_threshold(watchdog):
 # ---- poll_system_metrics() ----
 
 def test_poll_system_metrics_writes_to_db(watchdog):
-    from app.starlink_client import DishStatus
     watchdog.poll_system_metrics()
     latest = db.get_latest_system_metric()
     assert latest is not None
 
 
 def test_poll_system_metrics_error_does_not_raise(watchdog):
-    from app.starlink_client import DishStatus
     with patch("app.monitor.get_system_metrics", side_effect=RuntimeError("psutil помилка")):
         watchdog.poll_system_metrics()  # не мало кинути виняток
 

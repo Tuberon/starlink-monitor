@@ -58,7 +58,9 @@ def test_network_error_then_success_retries_and_succeeds(db_path):
         resp.json.return_value = {"ok": True}
         return resp
 
-    with patch("requests.request", side_effect=fake_request), patch("time.sleep") as mock_sleep:
+    # без реальної мережі: інакше резервний шлях через eth0 робив справжні
+    # DNS-запити (1.1.1.1, 8.8.8.8) і HTTPS до Telegram (мережевий аудит)
+    with patch("requests.request", side_effect=fake_request), patch("time.sleep") as mock_sleep, patch("app.telegram_notify._get_eth0_ip", return_value=None):
         ok, msg = telegram_notify.send_message("тест")
 
     assert ok is True
@@ -93,8 +95,10 @@ def test_all_retries_exhausted_reports_network_error(db_path):
     _setup_telegram()
     import requests
 
+    # без реальної мережі: інакше резервний шлях через eth0 робив справжні
+    # DNS-запити (1.1.1.1, 8.8.8.8) і HTTPS до Telegram (мережевий аудит)
     with patch("requests.request", side_effect=requests.exceptions.Timeout("timeout")), \
-         patch("time.sleep"):
+         patch("time.sleep"), patch("app.telegram_notify._get_eth0_ip", return_value=None):
         ok, msg = telegram_notify.send_message("тест")
 
     assert ok is False
@@ -114,7 +118,9 @@ def test_retries_respect_configured_count(db_path):
         raise requests.exceptions.Timeout("timeout")
 
     try:
-        with patch("requests.request", side_effect=fake_request), patch("time.sleep"):
+        # без реальної мережі: інакше резервний шлях через eth0 робив справжні
+        # DNS-запити (1.1.1.1, 8.8.8.8) і HTTPS до Telegram (мережевий аудит)
+        with patch("requests.request", side_effect=fake_request), patch("time.sleep"), patch("app.telegram_notify._get_eth0_ip", return_value=None):
             telegram_notify.send_message("тест")
         assert call_count[0] == 4, "1 початкова спроба + 3 повтори = 4 виклики"
     finally:
@@ -327,7 +333,7 @@ def test_fallback_level1_normal_request_succeeds():
     """Рівень 1: дефолтний маршрут (звичайний WiFi Starlink) працює -
     eth0-логіка взагалі не викликається."""
     fake_response = MagicMock()
-    with patch("requests.request", return_value=fake_response) as mock_req, \
+    with patch("requests.request", return_value=fake_response), \
          patch("app.telegram_notify._get_eth0_ip") as mock_eth0:
         result = telegram_notify._request_with_eth0_fallback("get", "https://api.telegram.org/test")
     assert result is fake_response
