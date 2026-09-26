@@ -167,6 +167,9 @@ Long polling (no webhook), in the `starlink-monitor.service` thread.
   a summary follows the lull
 - `STARLINK_MAX_LOGGED_FAILURES` (15) — logging stops, reboot attempts continue
 - Always muted: router check error, "update pending", roaming
+- Never logged or shown: the "obstruction map reset" dish alert and the
+  router "update download failed" state (a transient SpaceX cloud error,
+  the router retries on its own)
 - **Starlink off** (night, power outage): if even the router does not
   respond (3 polls in a row, ~30 s; shorter WiFi drops are ignored), the watchdog does not reboot the dish and does not log a line
   per poll. In the morning — one message "✅ Starlink is available again,
@@ -283,7 +286,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-456 tests (`pytest-randomly` — resilient to execution order), 16
+460 tests (`pytest-randomly` — resilient to execution order), 16
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -306,7 +309,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 456 tests (16 files), pytest-randomly
+├── tests/          # 460 tests (16 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

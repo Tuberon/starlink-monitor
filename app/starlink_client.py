@@ -32,6 +32,16 @@ def _snake_to_camel(name: str) -> str:
     parts = name.split("_")
     return parts[0] + "".join(p.title() for p in parts[1:])
 
+# Попередження dish, які відкидаються вже тут, у джерелі: не пишуться
+# в БД/журнал подій, не показуються на дашборді/дисплеї, не рахуються
+# в Telegram /status. Фільтр саме тут (а не в monitor.py), бо /status і
+# check_updates_now() читають стан напряму, в обхід poll_once() -
+# той самий клас пропуску, що колись був з IGNORED_ROUTER_ALERTS.
+# obstruction_map_reset - Starlink скидає карту перешкод сам як частину
+# нормальної роботи; на станції оновлення прошивок (3-12 різних
+# тарілок на день) це шум на кожному підключенні (рішення користувача).
+IGNORED_DISH_ALERTS = frozenset({"obstruction_map_reset"})
+
 # Точна відповідність до enum SpaceX.API.Device.SoftwareUpdateState
 SOFTWARE_UPDATE_STATE_NAMES = {
     0: "SOFTWARE_UPDATE_STATE_UNKNOWN",
@@ -257,7 +267,7 @@ class StarlinkClient:
             update_install_pending = False
             if alerts_obj is not None:
                 for name in ALERT_FIELD_NAMES:
-                    if bool(getattr(alerts_obj, name, False)):
+                    if name not in IGNORED_DISH_ALERTS and bool(getattr(alerts_obj, name, False)):
                         active_alerts.append(name)
                 update_install_pending = bool(getattr(alerts_obj, "install_pending", False))
 

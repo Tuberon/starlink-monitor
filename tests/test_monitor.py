@@ -872,9 +872,11 @@ def test_log_router_update_state_reboot_pending_notifies(watchdog):
 
 
 def test_log_router_update_state_failure_notifies_and_logs_failure(watchdog):
+    # FLASHING_FAILED, не DOWNLOADING_UPDATE_IMAGE_FAILED: останній свідомо
+    # прихований (HIDDEN_ROUTER_UPDATE_STATES) - див. окремий тест нижче
     from app.starlink_client import RouterInfo
     watchdog.prev_router_update_state = "FLASHING"
-    info = RouterInfo(timestamp=time.time(), online=True, update_state="DOWNLOADING_UPDATE_IMAGE_FAILED")
+    info = RouterInfo(timestamp=time.time(), online=True, update_state="FLASHING_FAILED")
     watchdog._log_router_update_state_change(info)
     assert any("Помилка оновлення" in s for s in watchdog.sent)
     events = db.get_recent_events(10)
@@ -1311,3 +1313,30 @@ def test_blip_then_dish_hang_counts_normally(watchdog):
     assert watchdog._router_down_polls == 0
     mock_maybe.assert_called_once()
     assert _events("starlink_offline") == []
+
+
+# ---- приховані події (рішення користувача): не пишуться й не показуються ----
+
+def test_hidden_router_update_state_not_logged_nor_notified(watchdog):
+    """DOWNLOADING_UPDATE_IMAGE_FAILED: без події, без Telegram, попередній
+    стан не змінюється - тож повернення до завантаження теж тихе."""
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_update_state = "DOWNLOADING_UPDATE_IMAGE"
+    for st in ("DOWNLOADING_UPDATE_IMAGE_FAILED", "DOWNLOADING_UPDATE_IMAGE"):
+        watchdog._log_router_update_state_change(RouterInfo(timestamp=time.time(), online=True, update_state=st))
+    assert db.get_recent_events(10) == []
+    assert watchdog.sent == []
+    assert watchdog.prev_router_update_state == "DOWNLOADING_UPDATE_IMAGE"
+
+
+def test_hidden_router_state_does_not_swallow_next_real_change(watchdog):
+    """Контроль: після прихованого стану справжня зміна (REBOOT_PENDING)
+    і далі пишеться й сповіщається."""
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_update_state = "DOWNLOADING_UPDATE_IMAGE"
+    for st in ("DOWNLOADING_UPDATE_IMAGE_FAILED", "REBOOT_PENDING"):
+        watchdog._log_router_update_state_change(RouterInfo(timestamp=time.time(), online=True, update_state=st))
+    events = db.get_recent_events(10)
+    assert len(events) == 1
+    assert "помилка завантаження" not in events[0]["message"]
+    assert any("очікує перезавантаження" in m for m in watchdog.sent)

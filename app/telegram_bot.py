@@ -53,6 +53,12 @@ def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Op
         return None
 
 
+def _shown_router_state(state: str) -> str:
+    """Прихований стан (monitor.HIDDEN_ROUTER_UPDATE_STATES) показується як
+    "немає оновлень" - так само, як на дашборді й TFT-дисплеї."""
+    return "NOT_RUN" if state in monitor.HIDDEN_ROUTER_UPDATE_STATES else state
+
+
 class TelegramBot:
     def __init__(self) -> None:
         self.client = StarlinkClient()
@@ -223,7 +229,7 @@ class TelegramBot:
         lines.append("")
 
         if router.online:
-            router_label = labels.router_update_state_label(router.update_state) if router.update_state else i18n.t('not_available_short')
+            router_label = labels.router_update_state_label(_shown_router_state(router.update_state)) if router.update_state else i18n.t('not_available_short')
             lines.append(i18n.t("tg_router_online_line", sw=router.software_version or "?"))
             lines.append(
                 i18n.t("tg_update_line", label=router_label)
@@ -261,7 +267,7 @@ class TelegramBot:
         lines.append("")
 
         if router.online:
-            router_label = labels.router_update_state_label(router.update_state) if router.update_state else i18n.t('not_available_short')
+            router_label = labels.router_update_state_label(_shown_router_state(router.update_state)) if router.update_state else i18n.t('not_available_short')
             lines.append(i18n.t("tg_router_line_short", sw=router.software_version or "?"))
             lines.append(
                 i18n.t("tg_update_line", label=router_label)

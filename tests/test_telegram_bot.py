@@ -678,3 +678,19 @@ def test_stop_sets_stop_event_and_shuts_down_executor(db_path):
         bot.stop()
     assert bot._stop_event.is_set()
     mock_shutdown.assert_called_once_with(wait=False)
+
+
+def test_cmd_status_hidden_router_state_shown_as_no_updates(db_path):
+    """DOWNLOADING_UPDATE_IMAGE_FAILED у /status показується як "немає
+    оновлень" - так само, як на дашборді й TFT-дисплеї."""
+    from unittest.mock import patch
+    from app.starlink_client import DishStatus, RouterInfo
+    bot = telegram_bot.TelegramBot()
+    bot.client.get_status = lambda: DishStatus(timestamp=1.0, online=True, software_version="v1")
+    bot.client.get_router_info = lambda: RouterInfo(timestamp=1.0, online=True, software_version="r1",
+                                                    update_state="DOWNLOADING_UPDATE_IMAGE_FAILED")
+    sent = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda m, tok, to, **kw: sent.append(kw.get("text")) or {"ok": True}):
+        bot._cmd_status("token", "chat1")
+    assert "немає оновлень" in sent[0]
+    assert "помилка завантаження" not in sent[0]

@@ -553,3 +553,13 @@ def test_router_reachable_false_for_closed_port_and_bad_addr():
     s.close()   # порт гарантовано вільний -> connection refused
     assert StarlinkClient(router_addr=f"127.0.0.1:{port}").router_reachable(timeout=1.0) is False
     assert StarlinkClient(router_addr="не-адреса").router_reachable(timeout=1.0) is False
+
+
+
+def test_obstruction_map_reset_dropped_at_source(client_with_resp):
+    """obstruction_map_reset відкидається вже в get_status(): не потрапляє
+    в БД, журнал, дашборд, дисплей і лічильник Telegram /status. Інші
+    попередження з тієї самої відповіді - на місці."""
+    resp = make_resp(alerts=SimpleNamespace(obstruction_map_reset=True, thermal_throttle=True))
+    s = client_with_resp(resp)
+    assert s.active_alerts == ["thermal_throttle"]

@@ -187,6 +187,15 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
 # poll_router() (~35с), який знову коректно його прибирав.
 IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
 
+# Стани оновлення ПЗ роутера, які не пишуться в журнал подій, не
+# надсилаються в Telegram і показуються як "немає оновлень" (дашборд і
+# TFT-дисплей ховають їх так само). DOWNLOADING_UPDATE_IMAGE_FAILED -
+# тимчасова хмарна помилка завантаження на боці SpaceX, роутер сам
+# повторює спробу; на станції оновлення прошивок - шум (рішення
+# користувача). Попередній стан при цьому НЕ змінюється, тож
+# повернення до завантаження після такої помилки теж не логується.
+HIDDEN_ROUTER_UPDATE_STATES = frozenset({"DOWNLOADING_UPDATE_IMAGE_FAILED"})
+
 
 def build_backup_dict() -> dict[str, Any]:
     """Формує повний backup-словник (Telegram config, auto-reboot,
@@ -706,6 +715,8 @@ class Watchdog:
 
     def _log_router_update_state_change(self, info: RouterInfo) -> None:
         """Пише подію в журнал кожного разу, коли змінюється стан оновлення ПЗ роутера."""
+        if info.update_state in HIDDEN_ROUTER_UPDATE_STATES:
+            return
         state = info.update_state or "NOT_RUN"
         if state == self.prev_router_update_state:
             return
