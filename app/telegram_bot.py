@@ -20,6 +20,11 @@ from app.starlink_client import StarlinkClient
 
 logger = logging.getLogger("telegram_bot")
 
+# Паузи циклу опитування бота, с
+_DISABLED_RECHECK_SEC = 10     # бот вимкнений/не налаштований - як часто перевіряти налаштування
+_LOOP_ERROR_PAUSE_SEC = 5      # після неочікуваної помилки в циклі
+_POLL_ERROR_PAUSE_SEC = 3      # після невдалого getUpdates (мережа, відмова API)
+
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 
 # Скільки секунд діє запит підтвердження /reboot, перш ніж вважати його
@@ -117,12 +122,12 @@ class TelegramBot:
                 if not enabled or not token:
                     # Бот вимкнений/не налаштований - не опитуємо API даремно,
                     # перевіряємо періодично, чи налаштування з'явились.
-                    time.sleep(10)
+                    time.sleep(_DISABLED_RECHECK_SEC)
                     continue
                 self._poll_once(token, set(allowed_chat_ids))
             except Exception:
                 logger.exception("Неочікувана помилка в циклі Telegram-бота")
-                time.sleep(5)
+                time.sleep(_LOOP_ERROR_PAUSE_SEC)
 
     def _poll_once(self, token: str, allowed_chat_ids: set[str]) -> None:
         if self._poll_session is None:
@@ -140,7 +145,7 @@ class TelegramBot:
             # перемикання WAN-failover старе могло лишитись на мертвому маршруті)
             self._reset_poll_session()
         if not data or not data.get("ok"):
-            time.sleep(3)
+            time.sleep(_POLL_ERROR_PAUSE_SEC)
             return
 
         for update in data.get("result", []):

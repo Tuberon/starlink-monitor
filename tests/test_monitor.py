@@ -213,7 +213,7 @@ def test_dish_recovery_notification_disabled_via_config(watchdog):
 
 def test_target_version_no_target_set_is_silent(watchdog):
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert watchdog.sent == []
@@ -222,7 +222,7 @@ def test_target_version_no_target_set_is_silent(watchdog):
 def test_target_version_mismatch_is_silent(watchdog):
     db.set_setting("dish_target_version", "2026.04.01")
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert watchdog.sent == []
@@ -231,7 +231,7 @@ def test_target_version_mismatch_is_silent(watchdog):
 def test_target_version_match_sends_notification(watchdog):
     db.set_setting("dish_target_version", "2026.04.01")
     monitor.check_target_version_reached(
-                "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 1
@@ -241,11 +241,11 @@ def test_target_version_match_sends_notification(watchdog):
 def test_target_version_repeat_match_does_not_spam(watchdog):
     db.set_setting("dish_target_version", "2026.04.01")
     monitor.check_target_version_reached(
-                "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     monitor.check_target_version_reached(
-                "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 1
@@ -256,12 +256,12 @@ def test_target_version_new_target_resets_dedup(watchdog):
     (порівняння значень, не boolean-прапорець)."""
     db.set_setting("dish_target_version", "2026.04.01")
     monitor.check_target_version_reached(
-                "тарілки", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.04.01", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     db.set_setting("dish_target_version", "2026.05.01")
     monitor.check_target_version_reached(
-                "тарілки", "2026.05.01", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.05.01", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 2
@@ -273,7 +273,7 @@ def test_target_version_multiple_candidates_matches_any(watchdog):
     БУДЬ-ЯКУ з перелічених, не лише першу."""
     db.set_setting("dish_target_version", "2026.03.03.mr75126.1, 2026.03.03.mr75130.1")
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03.mr75130.1", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.03.03.mr75130.1", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 1
@@ -283,7 +283,7 @@ def test_target_version_multiple_candidates_matches_any(watchdog):
 def test_target_version_multiple_candidates_none_matching_is_silent(watchdog):
     db.set_setting("dish_target_version", "v1, v2, v3")
     monitor.check_target_version_reached(
-                "тарілки", "v4", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "v4", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert watchdog.sent == []
@@ -296,14 +296,14 @@ def test_target_version_different_dish_id_gets_fresh_notification(watchdog):
     вважається дублікатом, отримує своє власне, свіже сповіщення."""
     db.set_setting("dish_target_version", "2026.03.03")
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-OLD",
+                "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-OLD",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 1
 
     # Той самий target, та сама версія, АЛЕ ІНШИЙ фізичний dish_id
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-NEW",
+                "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-NEW",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 2, "новий dish_id мав отримати власне сповіщення, не заблоковане дедублікацією попереднього"
@@ -315,11 +315,11 @@ def test_target_version_same_dish_id_still_deduplicates(watchdog):
     ізоляцію МІЖ різними фізичними пристроями)."""
     db.set_setting("dish_target_version", "2026.03.03")
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     monitor.check_target_version_reached(
-                "тарілки", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
+                "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish1",
         watchdog._notify,
     )
     assert len(watchdog.sent) == 1
@@ -468,30 +468,7 @@ def test_firmware_router_backward_change_does_not_notify(db_path):
     assert sent == []
 
 
-# ---- check_updates_now() фільтрує IGNORED_ROUTER_ALERTS (реальний баг, знайдений на запиті користувача) ----
-
-def test_check_updates_now_filters_ignored_router_alert(db_path):
-    """Реальний баг: check_updates_now() записувала router-статус
-    БЕЗ IGNORED_ROUTER_ALERTS-фільтра (той самий фільтр, що вже мав
-    poll_router()) - alert повертався щоразу, коли user тиснув
-    "Перевірити оновлення" вручну, аж до наступного фонового циклу
-    poll_router(), який знову коректно його прибирав."""
-    from unittest.mock import patch
-    from app.starlink_client import DishStatus, RouterInfo
-
-    dish = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="d1",
-                       hardware_version="rev3", software_version="v1")
-    router = RouterInfo(timestamp=time.time(), online=True, hardware_version="rev2",
-                         software_version="v1", active_alerts=["wired_mesh_not_using_wan_iface"])
-
-    with patch("app.telegram_notify.send_message"), \
-         patch.object(monitor.StarlinkClient, "get_status", return_value=dish), \
-         patch.object(monitor.StarlinkClient, "get_router_info", return_value=router):
-        monitor.check_updates_now(monitor.StarlinkClient(), lambda t: None)
-
-    router_in_db = db.get_router_status()
-    assert "wired_mesh_not_using_wan_iface" not in router_in_db["active_alerts"]
-
+# ---- check_updates_now(): ігноровані попередження роутера відкидаються в джерелі (starlink_client) ----
 
 def test_check_updates_now_keeps_other_router_alerts(db_path):
     """Контрольний тест: фільтр прибирає ЛИШЕ wired_mesh_not_using_
@@ -514,7 +491,8 @@ def test_check_updates_now_keeps_other_router_alerts(db_path):
 
 
 def test_ignored_router_alerts_contains_expected_value():
-    assert monitor.IGNORED_ROUTER_ALERTS == {"wired_mesh_not_using_wan_iface"}
+    from app import starlink_client
+    assert starlink_client.IGNORED_ROUTER_ALERTS == {"wired_mesh_not_using_wan_iface"}
 
 
 # ---- Буферизація dish-метрик (SD-card-wear reduction) ----
@@ -837,20 +815,6 @@ def test_poll_router_exception_does_not_raise(watchdog):
         watchdog.poll_router()  # не мало кинути виняток
 
 
-def test_poll_router_filters_ignored_alerts(watchdog):
-    from app.starlink_client import RouterInfo
-    from app.monitor import IGNORED_ROUTER_ALERTS
-    ignored = next(iter(IGNORED_ROUTER_ALERTS))
-    info = RouterInfo(timestamp=time.time(), online=True, active_alerts=[ignored, "thermal_shutdown"])
-    with patch.object(watchdog.client, "get_router_info", return_value=info):
-        watchdog.poll_router()
-    stored = db.get_router_status()
-    assert ignored not in stored["active_alerts"]
-    assert "thermal_shutdown" in stored["active_alerts"]
-
-
-# ---- _log_router_update_state_change() ----
-
 def test_log_router_update_state_first_call_not_run_is_silent(watchdog):
     from app.starlink_client import RouterInfo
     info = RouterInfo(timestamp=time.time(), online=True, update_state=None)
@@ -972,7 +936,7 @@ def test_maybe_reboot_for_router_update_triggers_when_ready(watchdog):
     info = RouterInfo(timestamp=time.time(), online=True, update_state="REBOOT_PENDING")
     with patch.object(watchdog, "_reboot_for_update_ready") as mock_reboot:
         watchdog._maybe_reboot_for_router_update(info)
-    mock_reboot.assert_called_once_with("роутера", "REBOOT_PENDING")
+    mock_reboot.assert_called_once_with("router", "REBOOT_PENDING")
 
 
 def test_maybe_reboot_for_router_update_install_pending_triggers(watchdog):
@@ -981,7 +945,7 @@ def test_maybe_reboot_for_router_update_install_pending_triggers(watchdog):
     info = RouterInfo(timestamp=time.time(), online=True, update_state=None, update_install_pending=True)
     with patch.object(watchdog, "_reboot_for_update_ready") as mock_reboot:
         watchdog._maybe_reboot_for_router_update(info)
-    mock_reboot.assert_called_once_with("роутера", "install_pending")
+    mock_reboot.assert_called_once_with("router", "install_pending")
 
 
 # ---- poll_once() ----
@@ -1510,3 +1474,23 @@ def test_sender_job_exception_does_not_kill_worker(db_path):
     sender.submit(lambda: got.append("далі"), "наступне")
     sender.stop(timeout=5)
     assert got == ["далі"]
+
+
+# ---- компоненти - ідентифікатори, опечатка не проходить тихо ----
+
+@pytest.mark.parametrize("bad", ["тарілки", "тарiлки", "Dish", "роутера", ""])
+def test_unknown_component_raises_instead_of_raw_text(db_path, bad):
+    """Раніше невідома назва (напр. "тарiлки" з латинською i) тихо ставала
+    сирим текстом у сповіщенні; тепер - явна помилка."""
+    from app import monitor
+    with pytest.raises(ValueError):
+        monitor._format_firmware_change_message(bad, "a", "b")
+
+
+def test_component_texts_keep_both_grammatical_forms(db_path):
+    """Тексти - побайтово ті самі, що були до переходу на ідентифікатори."""
+    from app import monitor
+    assert monitor._format_firmware_change_message("dish", "a", "b") == "🔄 Прошивка тарілки оновлена: a → b"
+    assert monitor._format_firmware_change_message("router", "a", "b") == "🔄 Прошивка роутера оновлена: a → b"
+    assert monitor._component_text("dish", monitor._COMPONENT_UPDATE) == "dish"
+    assert monitor._component_text("router", monitor._COMPONENT_UPDATE) == "роутера"

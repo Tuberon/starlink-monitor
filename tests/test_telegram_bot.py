@@ -798,3 +798,23 @@ def test_command_replies_do_not_use_poll_session(db_path):
     with patch("app.telegram_bot._api_call", side_effect=lambda *a, **kw: calls.append(kw) or {"ok": True}):
         bot._cmd_help("TOKEN", "1")
     assert calls and all(kw.get("session") is None for kw in calls)
+
+
+def test_cmd_status_does_not_count_ignored_router_alert(db_path):
+    """Було: "⚠️ Попереджень: 1" для попередження, прихованого на дашборді,
+    у журналі й сповіщеннях - /status читає роутер напряму, в обхід
+    монітора, де раніше стояв фільтр. Стан роутера тут - через СПРАВЖНІЙ
+    розбір відповіді (не мок RouterInfo, що оминав би джерело)."""
+    import json
+    from unittest.mock import patch
+    from app.starlink_client import DishStatus
+    from test_starlink_client import make_router_payload, run_router_info
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["alerts"] = {"wiredMeshNotUsingWanIface": True}
+    bot = telegram_bot.TelegramBot()
+    bot.client.get_status = lambda: DishStatus(timestamp=1.0, online=True, software_version="v1")
+    bot.client.get_router_info = lambda: run_router_info(stdout=json.dumps(payload))
+    sent = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda m, tok, to, **kw: sent.append(kw.get("text")) or {"ok": True}):
+        bot._cmd_status("token", "chat1")
+    assert "Попереджень" not in sent[0]

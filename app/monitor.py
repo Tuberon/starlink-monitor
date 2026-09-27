@@ -50,18 +50,25 @@ def version_in_target_list(current_version: Optional[str], target_raw: Optional[
     return current_version in db.parse_version_list(target_raw)
 
 
-# Назви компонентів у викликах - українські відмінкові форми (історично);
-# для Telegram перекладаються тут, сигнатури функцій не змінюються.
-_COMPONENT_KEYS = {"тарілки": "comp_dish", "роутера": "comp_router", "dish": "comp_dish_short"}
+# Компоненти Starlink Mini передаються як ІДЕНТИФІКАТОРИ ("dish"/"router"),
+# людські назви - лише тут, через i18n. Раніше в коді ходили українські
+# граматичні форми ("тарілки"/"роутера", а подекуди "dish" для того самого
+# компонента), і опечатка тихо ставала сирим текстом у сповіщенні.
+# Дві форми, бо так склались тексти (і вони лишились побайтово тими самими):
+#   _COMPONENT_NAME   - "Останнє оновлення тарілки...", "Прошивка роутера..."
+#   _COMPONENT_UPDATE - "оновлення ПЗ dish готове", "оновлення ПЗ роутера готове"
+_COMPONENT_NAME = {"dish": "comp_dish", "router": "comp_router"}
+_COMPONENT_UPDATE = {"dish": "comp_dish_short", "router": "comp_router"}
 
 
-def _component_t(label: str) -> str:
-    key = _COMPONENT_KEYS.get(label)
-    return i18n.t(key) if key else label
+def _component_text(component: str, forms: dict[str, str], tr: Callable[..., str] = i18n.t) -> str:
+    if component not in forms:
+        raise ValueError(f"невідомий компонент Starlink: {component!r} (очікується 'dish' або 'router')")
+    return tr(forms[component])
 
 
 def check_target_version_reached(
-    component_label: str, current_version: Optional[str], target_key: str,
+    component: str, current_version: Optional[str], target_key: str,
     notified_key: str, dish_id: Optional[str], notify_fn: Callable[[str], None],
 ) -> None:
     """Порівнює встановлену версію (current_version) з очікуваними
@@ -86,7 +93,7 @@ def check_target_version_reached(
     notified_value = f"{dish_id}|{current_version}|{target_raw}"
     if db.get_setting(notified_key) == notified_value:
         return
-    notify_fn(i18n.t("tg_target_reached", component=_component_t(component_label), version=current_version))
+    notify_fn(i18n.t("tg_target_reached", component=_component_text(component, _COMPONENT_NAME), version=current_version))
     db.set_setting(notified_key, notified_value)
 
 
@@ -132,7 +139,7 @@ def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Cal
     db.set_setting("both_targets_notified", combo_key)
 
 
-def _format_firmware_change_message(component_label: str, old_version: str, new_version: str) -> Optional[str]:
+def _format_firmware_change_message(component: str, old_version: str, new_version: str) -> Optional[str]:
     """Формує повідомлення про зміну прошивки - лише для реального
     ОНОВЛЕННЯ (нова версія новіша). db.is_older_version() (толерантний
     компаратор, вже перевірений на реалістичних версіях) визначає
@@ -142,7 +149,7 @@ def _format_firmware_change_message(component_label: str, old_version: str, new_
     пропускається для цього напрямку)."""
     if db.is_older_version(new_version, old_version):
         return None
-    return i18n.t("tg_firmware_changed", component=_component_t(component_label), old=old_version, new=new_version)
+    return i18n.t("tg_firmware_changed", component=_component_text(component, _COMPONENT_NAME), old=old_version, new=new_version)
 
 
 def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None]) -> None:
@@ -160,11 +167,11 @@ def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None])
         return
     real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
     if real_change and old_version:
-        msg = _format_firmware_change_message("тарілки", old_version, status.software_version)
+        msg = _format_firmware_change_message("dish", old_version, status.software_version)
         if msg:
             notify_fn(msg)
     check_target_version_reached(
-        "тарілки", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id, notify_fn
+        "dish", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id, notify_fn
     )
     check_both_targets_reached(status.dish_id, notify_fn)
 
@@ -178,26 +185,17 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
     if dish_id:
         real_change, old_version = db.upsert_known_device_router(dish_id, info.hardware_version, info.software_version)
         if real_change and old_version:
-            msg = _format_firmware_change_message("роутера", old_version, info.software_version)
+            msg = _format_firmware_change_message("router", old_version, info.software_version)
             if msg:
                 notify_fn(msg)
     check_target_version_reached(
-        "роутера", info.software_version, "router_target_version", "router_target_notified", dish_id, notify_fn
+        "router", info.software_version, "router_target_version", "router_target_notified", dish_id, notify_fn
     )
     check_both_targets_reached(dish_id, notify_fn)
 
 
-# Попередження, які навмисно ігноруються (не пишуться в БД, журнал,
-# Telegram, дашборд) - шумні для конкретної конфігурації мережі, без
-# практичної цінності. Module-level (не атрибут класу Watchdog) -
-# потрібна і в Watchdog.poll_router() (фоновий watchdog-цикл), і в
-# check_updates_now() нижче (ручна перевірка через веб-кнопку/
-# /checkupdates) - реальний баг, знайдений на запиті користувача:
-# check_updates_now() записувала router-статус БЕЗ цього фільтра,
-# тому "прибраний" alert повертався щоразу, коли user тиснув
-# "Перевірити оновлення" вручну, аж до наступного фонового циклу
-# poll_router() (~35с), який знову коректно його прибирав.
-IGNORED_ROUTER_ALERTS = {"wired_mesh_not_using_wan_iface"}
+# Ігноровані попередження dish і роутера відкидаються в джерелі -
+# starlink_client.IGNORED_DISH_ALERTS / IGNORED_ROUTER_ALERTS.
 
 # Стани оновлення ПЗ роутера, які не пишуться в журнал подій, не
 # надсилаються в Telegram і показуються як "немає оновлень" (дашборд і
@@ -330,7 +328,6 @@ def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) 
     db.insert_metric(dish_status.to_dict())
 
     router_info = client.get_router_info()
-    router_info.active_alerts = [a for a in router_info.active_alerts if a not in IGNORED_ROUTER_ALERTS]
     db.set_router_status(router_info.to_dict())
 
     # dish_id для router - якщо dish зараз online, беремо ЙОГО
@@ -362,6 +359,10 @@ def format_duration(seconds: float, tr: Callable[..., str]) -> str:
     if hours:
         return f"{hours} {tr('dur_hours')} {minutes} {tr('dur_minutes')}"
     return f"{minutes} {tr('dur_minutes')}"
+
+
+# Скільки при зупинці сервісу чекати відправки вже поставлених сповіщень, с
+_NOTIFY_DRAIN_TIMEOUT_SEC = 10
 
 
 class _BackgroundSender:
@@ -787,7 +788,6 @@ class Watchdog:
         лише останній відомий стан (singleton-таблиця, не історія по часу)."""
         try:
             info = self.client.get_router_info()
-            info.active_alerts = [a for a in info.active_alerts if a not in IGNORED_ROUTER_ALERTS]
             db.set_router_status(info.to_dict())
             if not info.online:
                 logger.debug("Роутер недоступний: %s", info.error)
@@ -827,7 +827,7 @@ class Watchdog:
 
     def _log_router_alerts_change(self, info: RouterInfo) -> None:
         """Пише окрему подію для кожного попередження роутера, яке з'явилось або зникло.
-        info.active_alerts тут уже профільтровано від IGNORED_ROUTER_ALERTS (poll_router)."""
+        Ігноровані попередження відкинуто вже в джерелі (starlink_client)."""
         current = set(info.active_alerts or [])
         previous = self.prev_router_alerts
 
@@ -853,27 +853,28 @@ class Watchdog:
 
         self.prev_router_alerts = current
 
-    def _reboot_for_update_ready(self, component_label: str, reason: str) -> None:
+    def _reboot_for_update_ready(self, component: str, reason: str) -> None:
         """Спільна логіка для _maybe_reboot_for_update/_maybe_reboot_for_router_update:
         обидва мають ідентичну послідовність дій (лише текст сповіщень
         відрізняється), винесено сюди, щоб не дублювати - зокрема захист
         MIN_REBOOT_INTERVAL_SEC/last_reboot_ts, який критично мати
         однаковим в обох місцях (див. reboot-loop баг у _maybe_reboot)."""
+        name_uk = _component_text(component, _COMPONENT_UPDATE, i18n.translator("uk"))
         now = time.time()
         if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
             logger.info(
                 "Оновлення ПЗ %s готове до встановлення, але пропускаю авто-reboot: "
                 "останній reboot був %.0f с тому (мін. інтервал %d с)",
-                component_label,
+                name_uk,
                 now - self.last_reboot_ts,
                 config.MIN_REBOOT_INTERVAL_SEC,
             )
             return
 
-        logger.warning("Оновлення ПЗ %s готове до встановлення (%s) — ініціюю reboot Starlink Mini", component_label, reason)
+        logger.warning("Оновлення ПЗ %s готове до встановлення (%s) — ініціюю reboot Starlink Mini", name_uk, reason)
         self._event(
             "watchdog_trigger",
-            f"Оновлення ПЗ {component_label} готове до встановлення ({reason}) — ініціюю reboot",
+            f"Оновлення ПЗ {name_uk} готове до встановлення ({reason}) — ініціюю reboot",
             success=True,
         )
         ok, msg = self.client.reboot_dish()
@@ -884,9 +885,9 @@ class Watchdog:
         # спробу негайно, а почекати MIN_REBOOT_INTERVAL_SEC).
         self.last_reboot_ts = now
         if ok:
-            self._notify_reboot(i18n.t("tg_auto_reboot_update", component=_component_t(component_label), reason=reason))
+            self._notify_reboot(i18n.t("tg_auto_reboot_update", component=_component_text(component, _COMPONENT_UPDATE), reason=reason))
         else:
-            self._notify(i18n.t("tg_auto_reboot_update_failed", component=_component_t(component_label), msg=msg))
+            self._notify(i18n.t("tg_auto_reboot_update_failed", component=_component_text(component, _COMPONENT_UPDATE), msg=msg))
 
     def _maybe_reboot_for_router_update(self, info: RouterInfo) -> None:
         """Автоматичний reboot усього Starlink Mini, коли роутерний компонент
@@ -899,7 +900,7 @@ class Watchdog:
         if not update_ready:
             return
         reason = info.update_state if info.update_state == "REBOOT_PENDING" else "install_pending"
-        self._reboot_for_update_ready("роутера", reason)
+        self._reboot_for_update_ready("router", reason)
 
     def _maybe_reboot_for_update(self, status: DishStatus) -> None:
         if not db.get_auto_reboot_enabled():
@@ -1138,7 +1139,7 @@ class Watchdog:
             # уже поставлених сповіщень (не довше 10 с) і зупинити потік.
             sender, self._sender = self._sender, None
             if sender is not None:
-                sender.stop(timeout=10)
+                sender.stop(timeout=_NOTIFY_DRAIN_TIMEOUT_SEC)
 
 
 def main() -> None:

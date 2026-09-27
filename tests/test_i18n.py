@@ -76,13 +76,13 @@ def test_target_version_notification_in_english(en):
     from app import monitor
     sent = []
     db.set_setting("dish_target_version", "v2.0")
-    monitor.check_target_version_reached("тарілки", "v2.0", "dish_target_version", "dish_target_notified", "d1", sent.append)
+    monitor.check_target_version_reached("dish", "v2.0", "dish_target_version", "dish_target_notified", "d1", sent.append)
     assert sent == ["✅ Latest dish update installed: version v2.0"]
 
 
 def test_firmware_change_message_in_english(en):
     from app import monitor
-    assert monitor._format_firmware_change_message("роутера", "r1", "r2") == "🔄 router firmware updated: r1 → r2"
+    assert monitor._format_firmware_change_message("router", "r1", "r2") == "🔄 router firmware updated: r1 → r2"
 
 
 def test_pi_reboot_failure_via_web_in_english(client, en):

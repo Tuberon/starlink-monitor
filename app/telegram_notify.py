@@ -19,6 +19,7 @@ logger = logging.getLogger("telegram_notify")
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 
 # DNS-сервери для ручного резолвінгу через eth0.
+_DNS_TIMEOUT_SEC = 5  # на кожен резервний DNS-сервер при запиті через eth0
 _FALLBACK_DNS_SERVERS = ["8.8.8.8", "1.1.1.1"]
 _ETH0_IFACE = b"eth0"
 
@@ -77,8 +78,8 @@ def _resolve_via_eth0(hostname: str) -> Optional[str]:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             _bind_to_eth0(sock)
-            sock.settimeout(5)
-            response = dns.query.udp(query, dns_server, timeout=5, sock=sock)
+            sock.settimeout(_DNS_TIMEOUT_SEC)
+            response = dns.query.udp(query, dns_server, timeout=_DNS_TIMEOUT_SEC, sock=sock)
             for rrset in response.answer:
                 for item in rrset:
                     if item.rdtype == dns.rdatatype.A:

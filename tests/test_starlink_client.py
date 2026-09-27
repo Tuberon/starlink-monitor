@@ -563,3 +563,14 @@ def test_obstruction_map_reset_dropped_at_source(client_with_resp):
     resp = make_resp(alerts=SimpleNamespace(obstruction_map_reset=True, thermal_throttle=True))
     s = client_with_resp(resp)
     assert s.active_alerts == ["thermal_throttle"]
+
+
+def test_router_ignored_alert_dropped_at_source():
+    """wired_mesh_not_using_wan_iface відкидається вже при розборі відповіді
+    роутера - одна точка для всіх читань (монітор, check_updates_now,
+    Telegram /status). Інші попередження з тієї ж відповіді - на місці."""
+    import json
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["alerts"] = {"wiredMeshNotUsingWanIface": True, "thermalThrottle": True}
+    r = run_router_info(stdout=json.dumps(payload))
+    assert r.active_alerts == ["thermal_throttle"]

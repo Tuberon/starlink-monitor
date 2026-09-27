@@ -41,6 +41,13 @@ def _snake_to_camel(name: str) -> str:
 # нормальної роботи; на станції оновлення прошивок (3-12 різних
 # тарілок на день) це шум на кожному підключенні (рішення користувача).
 IGNORED_DISH_ALERTS = frozenset({"obstruction_map_reset"})
+# Те саме для роутера: wired_mesh_not_using_wan_iface - шумне для цієї
+# конфігурації мережі, без практичної цінності. Раніше фільтр стояв у
+# monitor.py на двох шляхах запису, і третій шлях його оминав: спершу
+# check_updates_now() (виправлено точково), потім Telegram /status
+# ("⚠️ Попереджень: 1" при порожньому списку на дашборді). У джерелі -
+# одна точка, через яку проходять УСІ читання стану роутера.
+IGNORED_ROUTER_ALERTS = frozenset({"wired_mesh_not_using_wan_iface"})
 
 # Точна відповідність до enum SpaceX.API.Device.SoftwareUpdateState
 SOFTWARE_UPDATE_STATE_NAMES = {
@@ -374,6 +381,8 @@ class StarlinkClient:
             alerts_obj = wifi_status.get("alerts", {})
             if alerts_obj:
                 for name in ROUTER_ALERT_FIELD_NAMES:
+                    if name in IGNORED_ROUTER_ALERTS:
+                        continue
                     camel = _snake_to_camel(name)
                     if bool(alerts_obj.get(camel, False)):
                         active_alerts.append(name)
