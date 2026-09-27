@@ -59,6 +59,12 @@ def _shown_router_state(state: str) -> str:
     return "NOT_RUN" if state in monitor.HIDDEN_ROUTER_UPDATE_STATES else state
 
 
+def _obj(value: Any) -> dict[str, Any]:
+    """Словник або {}: `.get("chat", {})` не рятує, коли ключ є зі
+    значенням None - тоді наступний .get() падав AttributeError."""
+    return value if isinstance(value, dict) else {}
+
+
 class TelegramBot:
     def __init__(self) -> None:
         self.client = StarlinkClient()
@@ -135,9 +141,9 @@ class TelegramBot:
     @staticmethod
     def _extract_chat_id(update: dict) -> str:
         if "callback_query" in update:
-            return str(update["callback_query"].get("message", {}).get("chat", {}).get("id", ""))
-        message = update.get("message") or update.get("edited_message") or {}
-        return str(message.get("chat", {}).get("id", ""))
+            return str(_obj(_obj(_obj(update["callback_query"]).get("message")).get("chat")).get("id", ""))
+        message = _obj(update.get("message") or update.get("edited_message"))
+        return str(_obj(message.get("chat")).get("id", ""))
 
     def _handle_updates_sequential(self, token: str, allowed_chat_ids: set[str], updates: list[dict[str, Any]]) -> None:
         for update in updates:
@@ -151,14 +157,15 @@ class TelegramBot:
             self._handle_callback(token, allowed_chat_ids, update["callback_query"])
             return
 
-        message = update.get("message") or update.get("edited_message")
+        message = _obj(update.get("message") or update.get("edited_message"))
         if not message:
             return
 
-        chat_id = str(message.get("chat", {}).get("id", ""))
-        text = (message.get("text") or "").strip()
-        if not text:
+        chat_id = str(_obj(message.get("chat")).get("id", ""))
+        text = message.get("text")
+        if not isinstance(text, str) or not text.strip():
             return
+        text = text.strip()
 
         if chat_id not in allowed_chat_ids:
             logger.info("Ігноровано команду від неавторизованого chat_id=%s", chat_id)
@@ -173,7 +180,11 @@ class TelegramBot:
         elif command == "/reboot":
             self._cmd_reboot_request(token, chat_id)
         elif command == "/id":
-            arg = text[len(command):].strip()
+            # Аргумент - усе після ПЕРШОГО слова, а не після len(command):
+            # command уже без суфікса @botname, тож для "/id@Bot X" зріз за
+            # довжиною давав аргумент "@Bot X" (групові чати).
+            parts = text.split(maxsplit=1)
+            arg = parts[1].strip() if len(parts) > 1 else ""
             self._cmd_id(token, chat_id, arg)
         elif command in ("/help", "/start"):
             self._cmd_help(token, chat_id)
@@ -181,7 +192,7 @@ class TelegramBot:
             self._send(token, chat_id, i18n.t("tg_unknown_command"))
 
     def _handle_callback(self, token: str, allowed_chat_ids: set[str], callback: dict[str, Any]) -> None:
-        chat_id = str(callback.get("message", {}).get("chat", {}).get("id", ""))
+        chat_id = str(_obj(_obj(callback.get("message")).get("chat")).get("id", ""))
         data = callback.get("data", "")
         callback_id = callback.get("id")
 

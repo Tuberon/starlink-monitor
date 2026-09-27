@@ -11,7 +11,9 @@
 function t(key, vars) {
   let text = (window.I18N && window.I18N[key]) || key;
   if (vars) {
-    for (const k in vars) text = text.replace(`{${k}}`, vars[k]);
+    // split/join, не replace(): replace() з рядком замінює лише ПЕРШЕ
+    // входження і трактує $&, $1, $$ у значенні як спецсимволи.
+    for (const k in vars) text = text.split(`{${k}}`).join(String(vars[k]));
   }
   return text;
 }

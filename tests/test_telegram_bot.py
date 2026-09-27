@@ -693,3 +693,42 @@ def test_cmd_status_hidden_router_state_shown_as_no_updates(db_path):
         bot._cmd_status("token", "chat1")
     assert "немає оновлень" in sent[0]
     assert "помилка завантаження" not in sent[0]
+
+
+@pytest.mark.parametrize("text,expected_arg", [
+    ("/id ut51c88d90", "ut51c88d90"),
+    ("/id@DishWatchBot ut51c88d90", "ut51c88d90"),   # групові чати: команда з @ботом
+    ("/ID   ut51c88d90  ", "ut51c88d90"),
+    ("/id@DishWatchBot", ""),                        # без аргументу -> список, не пошук "@DishWatchBot"
+    ("/id", ""),
+])
+def test_id_argument_parsing_with_bot_suffix(db_path, text, expected_arg):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    got = []
+    with patch.object(bot, "_cmd_id", side_effect=lambda tok, chat, arg: got.append(arg)):
+        bot._handle_update("tok", {"1"}, {"message": {"chat": {"id": 1}, "text": text}})
+    assert got == [expected_arg]
+
+
+@pytest.mark.parametrize("update", [
+    {"message": {"chat": None, "text": "/status"}},
+    {"message": {"chat": {"id": 1}, "text": 123}},
+    {"callback_query": {"message": None, "data": None}},
+    {"message": "x"},
+])
+def test_malformed_updates_do_not_raise(db_path, update):
+    """`.get("chat", {})` не рятує, коли ключ є зі значенням None."""
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    with patch("app.telegram_bot._api_call", return_value={"ok": True}):
+        bot._handle_update("tok", {"1"}, update)
+    telegram_bot.TelegramBot._extract_chat_id(update)
+
+
+def test_normal_command_still_handled_after_hardening(db_path):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    with patch.object(bot, "_cmd_help") as mock_help:
+        bot._handle_update("tok", {"1"}, {"message": {"chat": {"id": 1}, "text": "  /help  "}})
+    mock_help.assert_called_once()

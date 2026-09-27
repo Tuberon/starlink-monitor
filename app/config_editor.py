@@ -98,6 +98,8 @@ _KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 def _validate_value(param: dict, raw_value: str) -> tuple:
     """Перевіряє значення проти заявленого типу. Повертає (ok, error_or_value)."""
     t = param["type"]
+    if not isinstance(raw_value, str):  # напр. число з JSON - дашборд надсилає рядки
+        return False, i18n.t("expected_type", type=t)
     v = raw_value.strip()
     if v == "":
         return True, None  # порожньо = прибрати перевизначення, лишити default

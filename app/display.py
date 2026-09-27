@@ -216,11 +216,24 @@ def _create_canvas(display: Any, Image: Any, ImageDraw: Any) -> tuple[tuple[int,
     return canvas_size, img, draw
 
 
-def _redraw(display: Any, Image: Any, ImageDraw: Any, font_status: Any, font_update: Any, font_tiny: Any) -> None:
-    latest = db.get_latest_metric()
-    router_status = db.get_router_status()
+def _redraw(
+    display: Any, Image: Any, ImageDraw: Any, font_status: Any, font_update: Any, font_tiny: Any,
+    data: Optional[tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]] = None,
+    prev_frame: Optional[tuple[Any, ...]] = None,
+) -> tuple[Any, ...]:
+    """Малює стан на екрані й повертає "кадр" - те, що на ньому видно.
+    Якщо кадр той самий, що prev_frame, рендеринг і передача по SPI
+    (~109 КБ) пропускаються: uptime показується з точністю до хвилини,
+    тож при оновленні кожні 5 с ~11 з 12 перемальовувань були марними,
+    а вночі (Starlink вимкнено) екран годинами не змінюється. data -
+    (latest, router_status), уже прочитані циклом (без повторного
+    читання БД); без data - читає сама (зворотна сумісність)."""
+    latest, router_status = data if data is not None else (db.get_latest_metric(), db.get_router_status())
     lines = _status_lines(latest, router_status)
     online = bool(latest and latest.get("online"))
+    frame = (online, tuple((ln["kind"], ln["text"], ln.get("progress")) for ln in lines))
+    if frame == prev_frame:
+        return frame
 
     canvas_size, img, draw = _create_canvas(display, Image, ImageDraw)
     max_width = canvas_size[0] - 20  # відступи по 10px з кожного боку
@@ -248,6 +261,7 @@ def _redraw(display: Any, Image: Any, ImageDraw: Any, font_status: Any, font_upd
             y += bar_h + 8
 
     display.image(img)
+    return frame
 
 
 def _draw_power_action_message(display: Any, Image: Any, ImageDraw: Any, font: Any, action: str) -> None:
@@ -347,6 +361,7 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     # спалахував би підсвіткою, навіть якщо реальних змін не було).
     prev_dish_state: Optional[str] = None
     prev_router_state: Optional[str] = None
+    frame: Optional[tuple[Any, ...]] = None
     flash_until_ts: Optional[float] = None
 
     try:
@@ -429,7 +444,8 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
                         )
                     prev_dish_state, prev_router_state = dish_state, router_state
 
-                    _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny)
+                    frame = _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny,
+                                    data=(latest, router_status), prev_frame=frame)
                 except Exception:
                     logger.exception("Помилка оновлення дисплея")
                 last_redraw = now

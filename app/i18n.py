@@ -338,6 +338,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ---- config_editor.py: повідомлення валідації типів ----
     "expected_type": {"uk": "очікується {type}", "en": "expected {type}"},
     "expected_0_or_1": {"uk": "очікується 0 або 1", "en": "expected 0 or 1"},
+    "invalid_field": {"uk": "Некоректне значення поля {field}", "en": "Invalid value for field {field}"},
     "invalid_control_chars": {"uk": "містить недопустимі керуючі символи (перенесення рядка тощо)", "en": "contains invalid control characters (line breaks etc.)"},
 
     # ---- stats.html ----

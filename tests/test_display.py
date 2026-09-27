@@ -348,3 +348,63 @@ def test_redraw_update_progress_bar_renders(db_path):
     font = _real_font()
     _redraw(disp, Image, ImageDraw, font, font, font)
     assert disp.last_image is not None
+
+
+# ---- _redraw(): пропуск незмінного кадру й дані без повторного читання БД ----
+
+class _CountingDisplay(_FakeDisplay):
+    def __init__(self):
+        super().__init__()
+        self.pushes = 0
+
+    def image(self, img):
+        self.pushes += 1
+        super().image(img)
+
+
+def _online(uptime_s):
+    return ({"online": 1, "uptime_s": uptime_s, "update_state": "IDLE", "software_version": "v1"}, None)
+
+
+def test_redraw_skips_unchanged_frame():
+    """Той самий текст (uptime у межах тієї ж хвилини) - без рендерингу
+    й передачі по SPI; зміна хвилини - перемальовується."""
+    from PIL import Image, ImageDraw
+    from app.display import _redraw
+    disp, font = _CountingDisplay(), _real_font()
+    frame = _redraw(disp, Image, ImageDraw, font, font, font, data=_online(3600), prev_frame=None)
+    frame = _redraw(disp, Image, ImageDraw, font, font, font, data=_online(3630), prev_frame=frame)
+    assert disp.pushes == 1
+    _redraw(disp, Image, ImageDraw, font, font, font, data=_online(3660), prev_frame=frame)
+    assert disp.pushes == 2
+
+
+def test_redraw_status_change_forces_redraw():
+    from PIL import Image, ImageDraw
+    from app.display import _redraw
+    disp, font = _CountingDisplay(), _real_font()
+    frame = _redraw(disp, Image, ImageDraw, font, font, font, data=_online(3600))
+    _redraw(disp, Image, ImageDraw, font, font, font, data=({"online": 0, "uptime_s": 3600}, None), prev_frame=frame)
+    assert disp.pushes == 2
+
+
+def test_redraw_with_data_does_not_read_db():
+    """Цикл уже прочитав дані - _redraw() не читає БД повторно."""
+    from unittest.mock import patch
+    from PIL import Image, ImageDraw
+    from app.display import _redraw
+    with patch("app.db.get_latest_metric", side_effect=AssertionError("повторне читання БД")), \
+         patch("app.db.get_router_status", side_effect=AssertionError("повторне читання БД")):
+        _redraw(_CountingDisplay(), Image, ImageDraw, _real_font(), _real_font(), _real_font(), data=_online(60))
+
+
+def test_display_and_button_processes_do_not_load_http_stack():
+    """pi_power імпортує telegram_notify лише в момент сповіщення:
+    процеси дисплея й кнопки не тримають requests у пам'яті."""
+    import os
+    import subprocess
+    import sys
+    code = "import sys, app.display, app.shutdown_button; print('requests' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         cwd=os.path.join(os.path.dirname(__file__), ".."))
+    assert out.stdout.strip() == "False", out.stdout + out.stderr

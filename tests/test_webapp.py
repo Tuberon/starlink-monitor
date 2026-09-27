@@ -820,3 +820,60 @@ def test_every_js_i18n_key_is_embedded_in_pages(client):
         html = client.get(page).get_data(as_text=True)
         blob = json.loads(re.search(r"window\.I18N = (\{.*?\});</script>", html).group(1))
         assert set(blob) == set(webapp._JS_I18N_KEYS), page
+
+
+# ---- стійкість до поламаних запитів (знайдено фазингом) ----
+
+_BAD_BODIES = ["[1,2]", "\"str\"", "123", "true", "null", "not json"]
+
+
+@pytest.mark.parametrize("rule", ["/api/auto-reboot", "/api/telegram-config", "/api/target-versions",
+                                  "/api/settings-restore", "/api/env-config", "/api/set-language"])
+@pytest.mark.parametrize("body", _BAD_BODIES)
+def test_non_object_json_body_never_500(client, rule, body):
+    """Валідний JSON, що не є об'єктом, раніше давав 500 з трейсбеком
+    (payload.get на list/str/int)."""
+    r = client.post(rule, data=body, content_type="application/json")
+    assert r.status_code < 500
+
+
+@pytest.mark.parametrize("rule,payload,field", [
+    ("/api/telegram-config", {"token": 123}, "token"),
+    ("/api/telegram-config", {"chat_ids": 5}, "chat_ids"),
+    ("/api/env-config", {"values": [1, 2]}, "values"),
+    ("/api/env-config", {"values": "x"}, "values"),
+    ("/api/target-versions", {"dish_target": ["a"]}, "dish_target"),
+    ("/api/target-versions", {"router_target": 5}, "router_target"),
+])
+def test_wrong_field_types_rejected_with_400(client, rule, payload, field):
+    r = client.post(rule, json=payload)
+    assert r.status_code == 400
+    assert field in r.get_json()["message"]
+
+
+def test_env_config_non_string_value_rejected_not_500(client):
+    r = client.post("/api/env-config", json={"values": {"STARLINK_WEBUI_PORT": 123}})
+    assert r.status_code == 200
+    assert r.get_json()["success"] is False
+
+
+def test_telegram_numeric_chat_ids_accepted(client):
+    r = client.post("/api/telegram-config", json={"token": "t", "chat_ids": [123, 456]})
+    assert r.get_json()["success"] is True
+    assert db.get_setting("telegram_chat_ids") == "123,456"
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("limit=-1", 1),          # раніше LIMIT -1 = "без обмеження" -> увесь журнал (700)
+    ("limit=0", 1),
+    ("limit=100000", 500),
+    ("limit=abc", 30),        # раніше 500
+    ("limit=1.5", 30),
+])
+def test_events_limit_clamped(client, query, expected):
+    with db.get_conn() as c:
+        c.executemany("INSERT INTO events (ts, kind, message, success, count) VALUES (?, 'k', ?, 1, 1)",
+                      [(i, f"m{i}") for i in range(700)])
+    r = client.get(f"/api/events?{query}")
+    assert r.status_code == 200
+    assert len(r.get_json()) == expected

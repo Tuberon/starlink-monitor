@@ -8,6 +8,14 @@ Type=oneshot
 ExecStart=/opt/starlink-monitor/scripts/wan_failover_check.sh
 StandardOutput=journal
 StandardError=journal
+# Таймер запускає юніт тисячі разів на добу; systemd пише 3 рядки
+# (Starting/Deactivated/Finished, рівень info) на КОЖЕН запуск - ~13 000
+# рядків/добу на SD-картку від двох таймерів. LogLevelMax=notice відсікає
+# їх (systemd >= 248 застосовує фільтр і до повідомлень PID 1 про юніт),
+# а SyslogLevel=notice піднімає власний вивід скрипта до notice, щоб
+# корисні рядки ("==> ...") і помилки не відсіклись разом із шумом.
+LogLevelMax=notice
+SyslogLevel=notice
 
 # Потребує root для зміни таблиці маршрутизації (ip route) - на
 # відміну від решти сервісів проєкту (ті працюють як RUN_USER з
@@ -20,7 +28,7 @@ ProtectSystem=strict
 ProtectHome=true
 # RuntimeDirectoryPreserve=yes - без цього systemd видаляє директорію
 # одразу після кожного завершення oneshot-сервісу, а timer запускає
-# цей сервіс заново кожні ~20с - файл стану (потрібен для гістерезису
+# цей сервіс заново кожні ~30с - файл стану (потрібен для гістерезису
 # між запусками) був би втрачений щоразу без цього прапорця.
 RuntimeDirectory=starlink-wan-failover
 RuntimeDirectoryPreserve=yes

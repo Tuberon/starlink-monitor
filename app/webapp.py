@@ -83,6 +83,19 @@ def _inject_i18n() -> dict[str, Any]:
     }
 
 
+def _json_body() -> dict[str, Any]:
+    """Тіло запиту як JSON-об'єкт. Відсутнє/некоректне тіло або валідний
+    JSON, що НЕ є об'єктом ([1,2], "str", 123) -> {}. Раніше обробники
+    брали get_json() і далі payload.get(...) - на не-об'єктному JSON це
+    давало 500 з трейсбеком (знайдено фазингом ендпоінтів)."""
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _bad_request(field: str) -> ResponseReturnValue:
+    return jsonify({"success": False, "message": i18n.t("invalid_field", field=field)}), 400
+
+
 @app.route("/")
 def index() -> ResponseReturnValue:
     return render_template("index.html")
@@ -129,7 +142,7 @@ def api_set_language() -> ResponseReturnValue:
     одна людина/сім'я керує одним Pi. Валідність значення перевіряється
     тут (не покладаємось на frontend), щоб db.get_setting("ui_language")
     ніколи не міг повернути щось поза SUPPORTED_LANGS."""
-    lang = (request.get_json(silent=True) or {}).get("lang", "")
+    lang = _json_body().get("lang", "")
     if lang not in i18n.SUPPORTED_LANGS:
         return jsonify({"success": False, "message": f"Непідтримувана мова: {lang}"}), 400
     db.set_setting("ui_language", lang)
@@ -192,8 +205,14 @@ def api_status() -> ResponseReturnValue:
 
 @app.route("/api/events")
 def api_events() -> ResponseReturnValue:
-    limit = min(int(request.args.get("limit", 30)), 500)
-    return jsonify(db.get_recent_events(limit))
+    # Межі 1..500 з обох боків: раніше min(int(...), 500) пропускав
+    # від'ємне значення, а LIMIT -1 у SQLite означає "без обмеження" -
+    # ?limit=-1 віддавав увесь журнал; нечислове значення давало 500.
+    try:
+        limit = int(request.args.get("limit", 30))
+    except ValueError:
+        limit = 30
+    return jsonify(db.get_recent_events(max(1, min(limit, 500))))
 
 
 @app.route("/api/system-status")
@@ -261,7 +280,7 @@ def api_set_auto_reboot() -> ResponseReturnValue:
     """Вмикає/вимикає автоматичний reboot dish/router при готовому
     оновленні. Зберігається в БД (не в env-файлі), тож застосовується
     одразу, без перезапуску сервісу."""
-    payload = request.get_json(silent=True) or {}
+    payload = _json_body()
     enabled = bool(payload.get("enabled"))
     db.set_auto_reboot_enabled(enabled)
     db.insert_event(
@@ -291,17 +310,22 @@ def api_get_telegram_config() -> ResponseReturnValue:
 
 @app.route("/api/telegram-config", methods=["POST"])
 def api_set_telegram_config() -> ResponseReturnValue:
-    payload = request.get_json(silent=True) or {}
+    payload = _json_body()
     token = payload.get("token")
     chat_ids_raw = payload.get("chat_ids")
     enabled = payload.get("enabled")
+    if token is not None and not isinstance(token, str):
+        return _bad_request("token")
 
     chat_ids = None
     if chat_ids_raw is not None:
         if isinstance(chat_ids_raw, str):
             chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
         elif isinstance(chat_ids_raw, list):
-            chat_ids = chat_ids_raw
+            # chat_id у Telegram числовий - клієнт може надіслати числа
+            chat_ids = [str(c).strip() for c in chat_ids_raw if str(c).strip()]
+        else:
+            return _bad_request("chat_ids")
 
     telegram_notify.set_telegram_config(
         token=token if token else None,
@@ -424,9 +448,12 @@ def api_set_target_versions() -> ResponseReturnValue:
     відхиляється ВЕСЬ список для цього поля (не часткове прийняття
     окремих кандидатів - простіша, чіткіша семантика для
     користувача)."""
-    payload = request.get_json(silent=True) or {}
+    payload = _json_body()
     dish_target = payload.get("dish_target")
     router_target = payload.get("router_target")
+    for field, value in (("dish_target", dish_target), ("router_target", router_target)):
+        if value is not None and not isinstance(value, str):
+            return _bad_request(field)
     latest = db.get_latest_metric()
     router_status = db.get_router_status()
 
@@ -499,7 +526,7 @@ def api_settings_restore() -> ResponseReturnValue:
     як через панель "Параметри моніторингу" - застосовуються лише після
     перезапуску сервісів (окрема кнопка на дашборді, тут не робимо цього
     автоматично, бо restore може виконуватись без наміру одразу рестартити)."""
-    payload = request.get_json(silent=True) or {}
+    payload = _json_body()
     if "format_version" not in payload:
         return jsonify({"success": False, "message": "Некоректний формат файлу backup"})
 
@@ -557,8 +584,10 @@ def api_get_env_config() -> ResponseReturnValue:
 
 @app.route("/api/env-config", methods=["POST"])
 def api_set_env_config() -> ResponseReturnValue:
-    payload = request.get_json(silent=True) or {}
+    payload = _json_body()
     values = payload.get("values", {})
+    if not isinstance(values, dict):
+        return _bad_request("values")
     ok, msg = config_editor.save_values(values)
     db.insert_event("env_config_updated", f"Параметри config.py оновлено: {msg}", success=ok)
     return jsonify({"success": ok, "message": msg})

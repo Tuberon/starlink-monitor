@@ -20,7 +20,7 @@ import subprocess
 import time
 from typing import Any, Callable, Optional
 
-from app import config, db, i18n, telegram_notify
+from app import config, db, i18n
 
 logger = logging.getLogger("pi_power")
 
@@ -68,6 +68,11 @@ def execute_pi_power_action(
     неефективним), але приймає інший callback (напр. з shutdown_
     button.py, де немає різниці, окрім джерела виклику)."""
     if notify_fn is None:
+        # Імпорт тут, а не на рівні модуля: pi_power імпортують процеси
+        # display/shutdown_button, яким Telegram потрібен лише в момент
+        # вимкнення Pi - модульний імпорт тягнув у них увесь HTTP-стек
+        # (requests/urllib3, ~20 МБ RSS у вимірі) назавжди.
+        from app import telegram_notify
         notify_fn = telegram_notify.send_message
     try:
         db.set_setting(PENDING_ACTION_SETTING_KEY, action)
