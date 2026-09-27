@@ -108,3 +108,14 @@ def test_get_system_metrics_never_raises_when_everything_fails():
         result = get_system_metrics()
     assert result["uptime_s"] == 0
     assert result["temp_c"] is None
+
+
+def test_cpu_percent_primed_at_import():
+    """Перший cpu_percent(interval=None) у процесі - беззмістовний 0.0;
+    модуль прогріває лічильник при імпорті."""
+    import importlib
+    from unittest.mock import patch
+    from app import system_metrics
+    with patch("psutil.cpu_percent") as mock_cpu:
+        importlib.reload(system_metrics)
+    mock_cpu.assert_called_once_with(interval=None)

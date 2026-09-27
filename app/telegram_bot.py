@@ -24,7 +24,9 @@ API_BASE = "https://api.telegram.org/bot{token}/{method}"
 
 # Скільки секунд діє запит підтвердження /reboot, перш ніж вважати його
 # застарілим (захист від випадкового підтвердження старого запиту)
-def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Optional[dict[str, Any]]:
+def _api_call(
+    method: str, token: str, http_timeout: float, *, session: Optional[requests.Session] = None, **params: Any,
+) -> Optional[dict[str, Any]]:
     """Викликає Telegram Bot API, повертає розпарсений JSON або None
     при мережевій помилці. ВАЖЛИВО: Telegram API повертає ВАЛІДНИЙ
     JSON навіть для відхилених запитів (напр. `{"ok": false,
@@ -40,6 +42,7 @@ def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Op
             API_BASE.format(token=token, method=method),
             json=params,
             timeout=http_timeout,
+            session=session,
         )
         data = resp.json()
         if not data.get("ok"):
@@ -70,6 +73,11 @@ class TelegramBot:
         self.client = StarlinkClient()
         self._last_update_id = 0
         self._stop_event = threading.Event()
+        # Постійне HTTP-з'єднання ЛИШЕ для getUpdates у потоці _run_loop:
+        # ~3500 довгих запитів на добу (таймаут 25 с) раніше щоразу робили
+        # нове TLS-рукостискання. Відповіді на команди йдуть з пулу
+        # потоків - без сесії (requests.Session не гарантує потокобезпеки).
+        self._poll_session: Optional[requests.Session] = None
         self._thread: Optional[threading.Thread] = None
         # Очікуючі підтвердження /reboot: chat_id -> час запиту (для TTL)
         self._pending_reboot_confirm: dict[str, float] = {}
@@ -92,6 +100,15 @@ class TelegramBot:
     def stop(self) -> None:
         self._stop_event.set()
         self._executor.shutdown(wait=False)
+        self._reset_poll_session()
+
+    def _reset_poll_session(self) -> None:
+        session, self._poll_session = self._poll_session, None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -108,13 +125,20 @@ class TelegramBot:
                 time.sleep(5)
 
     def _poll_once(self, token: str, allowed_chat_ids: set[str]) -> None:
+        if self._poll_session is None:
+            self._poll_session = requests.Session()
         data = _api_call(
             "getUpdates",
             token,
             (config.TELEGRAM_POLL_TIMEOUT_SEC + 5),
+            session=self._poll_session,
             offset=self._last_update_id + 1,
             timeout=config.TELEGRAM_POLL_TIMEOUT_SEC,
         )
+        if data is None:
+            # мережева помилка - нове з'єднання наступного разу (напр. після
+            # перемикання WAN-failover старе могло лишитись на мертвому маршруті)
+            self._reset_poll_session()
         if not data or not data.get("ok"):
             time.sleep(3)
             return

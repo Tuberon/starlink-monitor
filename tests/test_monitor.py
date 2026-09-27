@@ -1346,3 +1346,167 @@ def test_getting_target_version_failed_still_logged_but_not_notified(watchdog):
         RouterInfo(timestamp=time.time(), online=True, update_state="GETTING_TARGET_VERSION_FAILED"))
     assert any("помилка перевірки оновлення" in e["message"] for e in db.get_recent_events(10))
     assert watchdog.sent == []
+
+
+# ---- зміна стану скидає буфер метрик у БД одразу ----
+
+def _st(online=True, update_state="IDLE"):
+    from app.starlink_client import DishStatus
+    return DishStatus(timestamp=time.time(), online=online, uptime_s=100, update_state=update_state)
+
+
+def test_state_change_flushes_buffer_immediately(watchdog):
+    """Заміна Starlink на станції: offline -> online має з'явитись у БД
+    (а отже на дашборді й дисплеї) на тому ж опитуванні, не через 30 с."""
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    for status in (_st(online=False), _st(online=True)):
+        with patch.object(watchdog.client, "get_status", return_value=status):
+            watchdog.poll_once()
+    assert watchdog.metrics_buffer == []
+    assert db.get_latest_metric()["online"] == 1
+
+
+def test_update_state_change_flushes_buffer(watchdog):
+    for status in (_st(update_state="IDLE"), _st(update_state="FETCHING")):
+        with patch.object(watchdog.client, "get_status", return_value=status):
+            watchdog.poll_once()
+    assert db.get_latest_metric()["update_state"] == "FETCHING"
+
+
+def test_unchanged_state_stays_batched(watchdog):
+    """Контроль: однакові опитування й далі йдуть пакетом (SD-картка)."""
+    for _ in range(5):
+        with patch.object(watchdog.client, "get_status", return_value=_st()):
+            watchdog.poll_once()
+    assert len(watchdog.metrics_buffer) == 5
+    assert db.get_latest_metric() is None
+
+
+def test_db_failure_on_state_change_does_not_block_watchdog(watchdog):
+    """Регресія: негайний запис зміни стану падав разом із БД і обривав
+    poll_once() ДО лічильника збоїв - зависла тарілка не
+    перезавантажувалась, поки БД недоступна."""
+    import sqlite3
+    watchdog.last_reboot_ts = 0.0
+    with patch.object(watchdog.client, "get_status", return_value=_st(online=True)):
+        watchdog.poll_once()
+    with patch("app.db.insert_metrics_batch", side_effect=sqlite3.OperationalError("database is locked")), \
+         patch.object(watchdog.client, "get_status", return_value=_st(online=False)), \
+         patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as mock_reboot:
+        for _ in range(config.MAX_CONSECUTIVE_FAILURES):
+            watchdog.poll_once()
+    mock_reboot.assert_called_once()
+    assert len(watchdog.metrics_buffer) > 0   # дані не втрачені - чекають планового запису
+
+
+# ---- watchdog працює при недоступній БД (журнал не блокує reboot) ----
+
+def _break_db(tmp_path):
+    import sqlite3
+    p = tmp_path / "broken.db"
+    sqlite3.connect(p).close()          # файл є, таблиць немає - падає будь-яка операція
+    config.DB_PATH = str(p)
+
+
+def test_broken_db_does_not_prevent_watchdog_reboot(watchdog, tmp_path):
+    """Раніше подія watchdog_trigger писалась ДО reboot_dish() і падала
+    разом із БД - зависла тарілка не перезавантажувалась ніколи."""
+    watchdog.last_reboot_ts = 0.0
+    watchdog.consecutive_failures = config.MAX_CONSECUTIVE_FAILURES
+    _break_db(tmp_path)
+    with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as mock_reboot:
+        watchdog._maybe_reboot()
+    mock_reboot.assert_called_once()
+
+
+def test_broken_db_keeps_min_reboot_interval(watchdog, tmp_path):
+    """Раніше подія dish_reboot писалась ДО last_reboot_ts = now - при
+    зламаній БД це дало б reboot на кожному опитуванні."""
+    watchdog.last_reboot_ts = 0.0
+    _break_db(tmp_path)
+    with patch.object(watchdog.client, "reboot_dish", return_value=(False, "timeout")) as mock_reboot, \
+         patch("time.time", return_value=10_000.0):
+        for _ in range(5):
+            watchdog.consecutive_failures = config.MAX_CONSECUTIVE_FAILURES
+            watchdog._maybe_reboot()
+    assert mock_reboot.call_count == 1
+    assert watchdog.last_reboot_ts == 10_000.0
+
+
+def test_broken_db_does_not_prevent_update_ready_reboot(watchdog, tmp_path):
+    watchdog.last_reboot_ts = 0.0
+    _break_db(tmp_path)
+    with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as mock_reboot:
+        watchdog._reboot_for_update_ready("dish", "REBOOT_REQUIRED")
+    mock_reboot.assert_called_once()
+    assert watchdog.last_reboot_ts > 0
+
+
+# ---- фонова відправка сповіщень: цикл монітора не чекає на мережу ----
+
+def test_notify_with_sender_does_not_block_on_dead_network(db_path):
+    """Без інтернету одне сповіщення раніше блокувало цикл монітора до
+    ~2 хв (watchdog стояв, healthcheck перезапускав монітор)."""
+    import threading
+    from app.monitor import Watchdog, _BackgroundSender
+    release, sent = threading.Event(), []
+    def slow_send(text):
+        release.wait(10)
+        sent.append(text)
+        return True, "ok"
+    with patch("app.telegram_notify.send_message", side_effect=slow_send):
+        wd = Watchdog()
+        wd._sender = _BackgroundSender()
+        t0 = time.monotonic()
+        wd._notify("x")
+        assert time.monotonic() - t0 < 0.5
+        release.set()
+        wd._sender.stop(timeout=5)
+    assert sent == ["x"]
+
+
+def test_sender_preserves_order_and_drains_on_stop(db_path):
+    from app.monitor import _BackgroundSender
+    got = []
+    sender = _BackgroundSender()
+    for i in range(10):
+        sender.submit(lambda i=i: got.append(i), str(i))
+    sender.stop(timeout=5)
+    assert got == list(range(10))
+    assert not sender.is_alive()
+
+
+def test_sender_full_queue_drops_without_blocking(db_path, caplog):
+    import threading
+    from app.monitor import _BackgroundSender
+    gate = threading.Event()
+    sender = _BackgroundSender(maxsize=1)
+    sender.submit(lambda: gate.wait(10), "займає потік")
+    time.sleep(0.1)                                     # потік узяв перше завдання
+    sender.submit(lambda: None, "у черзі")
+    t0 = time.monotonic()
+    with caplog.at_level("WARNING", logger="monitor"):
+        sender.submit(lambda: None, "зайве")            # черга повна
+    assert time.monotonic() - t0 < 0.5
+    assert "переповнена" in caplog.text
+    gate.set()
+    sender.stop(timeout=5)
+
+
+def test_notify_without_sender_stays_synchronous(db_path):
+    """Прямі виклики й тести (без run_forever) - синхронно, як раніше."""
+    from app.monitor import Watchdog
+    sent = []
+    with patch("app.telegram_notify.send_message", side_effect=lambda t: sent.append(t) or (True, "ok")):
+        Watchdog()._notify("x")
+        assert sent == ["x"]
+
+
+def test_sender_job_exception_does_not_kill_worker(db_path):
+    from app.monitor import _BackgroundSender
+    got = []
+    sender = _BackgroundSender()
+    sender.submit(lambda: 1 / 0, "падає")
+    sender.submit(lambda: got.append("далі"), "наступне")
+    sender.stop(timeout=5)
+    assert got == ["далі"]

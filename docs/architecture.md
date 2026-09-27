@@ -74,7 +74,8 @@ starlink_grpc` з graceful fallback (`starlink_grpc = None` при
 **Starlink вимкнено** (`_enter_starlink_offline()`/`_exit_starlink_
 offline()`): коли dish не відповідає, `poll_once()` перевіряє TCP-
 з'єднання з gRPC-портом роутера (`StarlinkClient.router_reachable()`,
-2 с; без WiFi Starlink немає навіть маршруту, відмова миттєва). Роутер
+2 с; без WiFi Starlink пакети йдуть маршрутом за замовчуванням через
+eth0 і чекають повний timeout). Роутер
 теж мовчить — це вимкнений Starlink (ніч, відключення світла), а не
 зависання тарілки: reboot не шлеться (команда йде тим самим
 недоступним шляхом), `consecutive_failures` не росте, рядок на кожне

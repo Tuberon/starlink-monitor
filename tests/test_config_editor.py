@@ -310,3 +310,22 @@ def test_trailing_newline_from_paste_still_accepted(env_file, db_path):
     ok, _ = config_editor.save_values({"STARLINK_DISH_ADDR": "192.168.100.1:9200\n"})
     assert ok is True
     assert "STARLINK_DISH_ADDR=192.168.100.1:9200\n" in env_file.read_text()
+
+
+def test_no_exec_or_eval_in_app_code():
+    """config.py колись виконував як Python-код будь-який вміст
+    /etc/starlink-monitor/config.local.py (незадокументований залишок,
+    0 використань) - у КОЖНОМУ процесі, в обхід валідації /settings, а
+    теку може писати користувач сервісів. Прибрано; тест не дає
+    exec()/eval() тихо повернутись у код застосунку."""
+    import ast
+    import glob
+    import os
+    app_dir = os.path.join(os.path.dirname(__file__), "..", "app")
+    found = []
+    for path in glob.glob(os.path.join(app_dir, "*.py")):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval"):
+                found.append(f"{os.path.basename(path)}:{node.lineno} {node.func.id}()")
+    assert found == [], found

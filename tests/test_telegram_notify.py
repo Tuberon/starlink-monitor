@@ -398,3 +398,22 @@ def test_fallback_all_levels_fail_raises_last_error():
          patch("app.telegram_notify._resolve_via_eth0", return_value=None):
         with pytest.raises(requests.exceptions.ConnectionError, match="eth0 теж без інтернету"):
             telegram_notify._request_with_eth0_fallback("get", "https://api.telegram.org/test")
+
+
+def test_request_uses_given_session_for_primary_path():
+    from unittest.mock import MagicMock
+    session = MagicMock()
+    telegram_notify._request_with_eth0_fallback("post", "https://example/x", session=session, timeout=5)
+    session.request.assert_called_once_with("post", "https://example/x", timeout=5)
+
+
+def test_session_error_still_falls_back_to_eth0_path():
+    """Помилка через сесію - так само резервний шлях через eth0."""
+    import requests
+    from unittest.mock import MagicMock
+    session = MagicMock()
+    session.request.side_effect = requests.exceptions.ConnectionError("dead route")
+    with patch("app.telegram_notify._get_eth0_ip", return_value=None) as mock_eth0, \
+         pytest.raises(requests.exceptions.ConnectionError):
+        telegram_notify._request_with_eth0_fallback("post", "https://example/x", session=session, timeout=5)
+    mock_eth0.assert_called_once()

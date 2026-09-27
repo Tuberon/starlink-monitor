@@ -141,3 +141,23 @@ def test_run_forever_no_startup_notification_on_plain_restart(db_path):
     with patch("app.monitor.pi_just_booted", return_value=False):
         _run_one_iteration(wd)
     assert sent == []
+
+
+def test_run_forever_starts_and_stops_background_sender(db_path):
+    """Відправник працює лише всередині run_forever(); SystemExit (як з
+    обробника SIGTERM) проходить через finally - потік зупинено, черга
+    вичерпана, наступні _notify() знову синхронні."""
+    config.ACTIVITY_LED_PIN = 0
+    config.NOTIFY_PI_STARTUP = False
+    wd = monitor.Watchdog()
+    seen = {}
+    def during_poll():
+        seen["sender"] = wd._sender
+        wd._notify("з циклу")
+    sent = []
+    with patch("app.telegram_notify.send_message", side_effect=lambda t: sent.append(t) or (True, "ok")):
+        _run_one_iteration(wd, poll_once_side_effect=during_poll)
+    assert seen["sender"] is not None
+    assert not seen["sender"].is_alive()
+    assert wd._sender is None
+    assert sent == ["з циклу"]

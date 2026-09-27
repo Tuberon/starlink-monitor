@@ -147,7 +147,9 @@ def _request_via_eth0(method: str, url: str, resolved_ip: Optional[str] = None, 
     return session.request(method, ip_url, headers=headers, verify=False, **kwargs)
 
 
-def _request_with_eth0_fallback(method: str, url: str, **kwargs: Any) -> requests.Response:
+def _request_with_eth0_fallback(
+    method: str, url: str, *, session: Optional[requests.Session] = None, **kwargs: Any,
+) -> requests.Response:
     """Виконує HTTP-запит: спочатку звичайним способом (дефолтний
     маршрут - зазвичай wlan0/WiFi Starlink, нижчий route-metric). Якщо
     це провалюється мережевою помилкою - пробує через eth0
@@ -158,7 +160,12 @@ def _request_with_eth0_fallback(method: str, url: str, **kwargs: Any) -> request
     напряму на резолвлений IP. Без цього Telegram-сповіщення мовчали б
     саме тоді, коли вони найпотрібніші - сповістити про проблему
     зі зв'язком."""
+    # session - лише для основного шляху й лише з одного потоку (цикл
+    # getUpdates бота): постійне з'єднання без TLS-рукостискання на
+    # кожен запит. Резервний шлях через eth0 - завжди окремий.
     try:
+        if session is not None:
+            return session.request(method, url, **kwargs)
         return requests.request(method, url, **kwargs)
     except requests.RequestException as e:
         eth0_ip = _get_eth0_ip()

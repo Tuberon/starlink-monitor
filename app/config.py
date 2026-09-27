@@ -1,6 +1,7 @@
 """
 Конфігурація Starlink Monitor. Перевизначається через змінні
-середовища (systemd EnvironmentFile) або /etc/starlink-monitor/config.local.py.
+середовища (systemd EnvironmentFile /etc/starlink-monitor/env; редагується
+на сторінці /settings).
 Повний опис змінних - README.md, таблиця "Конфігурація".
 """
 import os
@@ -228,8 +229,3 @@ DISPLAY_UPDATE_FLASH_SEC = int(os.environ.get("STARLINK_DISPLAY_UPDATE_FLASH_SEC
 # від SHUTDOWN_BUTTON_POLL_INTERVAL_SEC вище (та сама роль, інший
 # сервіс/файл - shutdown_button.py, не display.py).
 DISPLAY_BUTTON_POLL_INTERVAL_SEC = float(os.environ.get("STARLINK_DISPLAY_BUTTON_POLL_INTERVAL_SEC", "0.1"))
-
-_local_cfg = "/etc/starlink-monitor/config.local.py"
-if os.path.exists(_local_cfg):
-    with open(_local_cfg) as f:
-        exec(f.read())

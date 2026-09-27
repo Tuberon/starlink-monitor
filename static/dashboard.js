@@ -508,7 +508,7 @@ async function handleCheckUpdates() {
     } else {
       hint.textContent = t('check_error');
     }
-    tick();
+    tick(true);
   } catch (e) {
     hint.textContent = t('network_error_checking');
     console.error('check updates failed', e);
@@ -558,11 +558,23 @@ async function handleAutoRebootToggle(e) {
   }
 }
 
-function tick() {
+// Рідше опитуються дані, що рідко змінюються: стан роутера (монітор
+// опитує його раз на 35 с), метрики Pi (раз на 60 с), журнал подій.
+// Раніше всі 4 запити йшли кожні 1.5 с (~9600/год на вкладку), хоча 3
+// з них майже завжди повертали те саме. force - оновити все одразу
+// (відкриття сторінки, повернення на вкладку, після дій користувача).
+const EVENTS_EVERY_TICKS = 4;   // ~6 с
+const SLOW_EVERY_TICKS = 10;    // ~15 с
+let tickCount = 0;
+
+function tick(force) {
   refreshStatus();
-  refreshSystemStatus();
-  refreshRouterStatus();
-  refreshEvents();
+  if (force === true || tickCount % EVENTS_EVERY_TICKS === 0) refreshEvents();
+  if (force === true || tickCount % SLOW_EVERY_TICKS === 0) {
+    refreshSystemStatus();
+    refreshRouterStatus();
+  }
+  tickCount++;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -586,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', () => {
     clearInterval(refreshTimer);
     if (document.visibilityState === 'visible') {
-      tick(); // одразу освіжити дані після повернення на вкладку
+      tick(true); // одразу освіжити ВСІ дані після повернення на вкладку
       refreshTimer = setInterval(tick, REFRESH_MS);
     } else {
       refreshTimer = setInterval(tick, HIDDEN_REFRESH_MS);

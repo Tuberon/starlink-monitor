@@ -760,3 +760,41 @@ def test_router_hidden_states_in_sync_with_dashboard():
     js_list = re.search(r"const HIDDEN_ROUTER_STATES = \[([^\]]*)\]", js).group(1)
     assert set(re.findall(r"'([A-Z_]+)'", js_list)) == set(labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES)
     assert display.HIDDEN_ROUTER_STATES is labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES
+
+
+# ---- постійна сесія лише для getUpdates у циклі бота ----
+
+def test_poll_once_reuses_one_session_across_polls(db_path):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    sessions = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda *a, **kw: sessions.append(kw.get("session")) or {"ok": True, "result": []}):
+        for _ in range(3):
+            bot._poll_once("TOKEN", {"1"})
+    assert sessions[0] is not None
+    assert all(s is sessions[0] for s in sessions)
+
+
+def test_poll_once_recreates_session_after_network_error(db_path):
+    """Після мережевої помилки - нове з'єднання (напр. після перемикання
+    WAN-failover старе могло лишитись на мертвому маршруті)."""
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    sessions = []
+    results = iter([None, {"ok": True, "result": []}])
+    with patch("app.telegram_bot._api_call", side_effect=lambda *a, **kw: sessions.append(kw.get("session")) or next(results)), \
+         patch("time.sleep"):
+        bot._poll_once("TOKEN", {"1"})
+        bot._poll_once("TOKEN", {"1"})
+    assert sessions[0] is not sessions[1]
+
+
+def test_command_replies_do_not_use_poll_session(db_path):
+    """Відповіді йдуть з пулу потоків - без спільної сесії
+    (requests.Session не гарантує потокобезпеки)."""
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    calls = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda *a, **kw: calls.append(kw) or {"ok": True}):
+        bot._cmd_help("TOKEN", "1")
+    assert calls and all(kw.get("session") is None for kw in calls)

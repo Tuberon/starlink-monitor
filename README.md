@@ -289,7 +289,7 @@ mypy app/
 
 ## ✅ Тести
 
-540 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
+560 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -311,7 +311,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 540 тестів (17 файлів), pytest-randomly
+├── tests/          # 560 тестів (17 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

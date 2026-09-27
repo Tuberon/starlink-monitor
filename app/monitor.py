@@ -9,7 +9,9 @@ Telegram (не блокує цикл при помилках відправки)
 import json
 import logging
 import os
+import queue
 import signal
+import threading
 import time
 from typing import Any, Callable, Optional
 
@@ -362,6 +364,50 @@ def format_duration(seconds: float, tr: Callable[..., str]) -> str:
     return f"{minutes} {tr('dur_minutes')}"
 
 
+class _BackgroundSender:
+    """Фонова відправка в Telegram: один потік, обмежена черга, порядок
+    повідомлень зберігається. Раніше сповіщення йшли синхронно в циклі
+    монітора: без інтернету одне проходило всі таймаути й повтори (~62 с
+    на чат, ~2 хв на 2 чати) - watchdog стояв, /healthz перевищував поріг
+    свіжості (60 с) і healthcheck примусово перезапускав монітор посеред
+    відправки. Circuit breaker цього не розв'язав би: перше блокування
+    однаково відбулось би до розмикання."""
+
+    def __init__(self, maxsize: int = 50) -> None:
+        self._queue: "queue.Queue[Optional[Callable[[], None]]]" = queue.Queue(maxsize=maxsize)
+        self._thread = threading.Thread(target=self._run, daemon=True, name="tg-notify")
+        self._thread.start()
+
+    def submit(self, job: Callable[[], None], label: str) -> None:
+        try:
+            self._queue.put_nowait(job)
+        except queue.Full:
+            logger.warning("Черга Telegram-сповіщень переповнена - відкинуто: %s", label[:80])
+
+    def _run(self) -> None:
+        while True:
+            job = self._queue.get()
+            if job is None:
+                return
+            try:
+                job()
+            except Exception:
+                logger.exception("Помилка фонової відправки в Telegram")
+
+    def stop(self, timeout: float) -> None:
+        """Дочекатись уже поставлених повідомлень (не довше timeout) і
+        зупинити потік; без мережі решта черги губиться разом із
+        процесом (потік - daemon)."""
+        try:
+            self._queue.put(None, timeout=1)
+        except queue.Full:
+            pass
+        self._thread.join(timeout)
+
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+
 class Watchdog:
     # Скільки опитувань поспіль роутер має мовчати, щоб стан "Starlink
     # вимкнено" зафіксувався (~30 с при інтервалі 10 с). Короткі розриви
@@ -422,13 +468,26 @@ class Watchdog:
         # недоступним шляхом) і не пише рядок на кожне опитування.
         self.starlink_offline_since: Optional[float] = None
         self._router_down_polls = 0
+        # (online, update_state) попереднього опитування - зміна скидає
+        # буфер у БД одразу (див. poll_once)
+        self._last_state_key: Optional[tuple[bool, str]] = None
+        # Фоновий відправник запускається лише в run_forever(); без нього
+        # (прямі виклики, тести) _notify() надсилає синхронно, як раніше.
+        self._sender: Optional[_BackgroundSender] = None
         # last_reboot_ts, для якого вже записано "Пропускаю авто-reboot" -
         # один рядок на вікно очікування замість рядка щоопитування.
         self._reboot_skip_logged_for: Optional[float] = None
 
     def _notify(self, text: str) -> None:
-        """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток
-        назовні і не блокує основний цикл моніторингу."""
+        """Telegram-сповіщення: у робочому циклі - у фонову чергу (цикл
+        монітора не чекає на мережу), інакше - одразу."""
+        if self._sender is not None:
+            self._sender.submit(lambda: self._send_now(text), text)
+        else:
+            self._send_now(text)
+
+    def _send_now(self, text: str) -> None:
+        """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток."""
         try:
             ok, msg = telegram_notify.send_message(text)
             if not ok and msg not in ("Telegram сповіщення вимкнені", "Не вказано bot token", "Не вказано жодного chat_id"):
@@ -533,6 +592,23 @@ class Watchdog:
         self._check_reboot_spam_recovery()
         status = self.client.get_status()
         self.metrics_buffer.append(status.to_dict())
+        # Метрики пишуться пакетом раз на DISH_METRICS_BATCH_INTERVAL_SEC
+        # (менше записів на SD), але дашборд і TFT-дисплей читають БД - тож
+        # новий стан (online/offline, оновлення прошивки; на станції - заміна
+        # Starlink) з'являвся там із затримкою до 30 с. Зміна стану - рідкісна
+        # подія: її скидаємо одразу, однакові опитування й далі йдуть пакетом.
+        # Збій запису тут лише логується: недоступна БД (заблокована, повна
+        # SD-картка) не має обривати опитування - інакше watchdog нижче
+        # ніколи не дійшов би до лічильника збоїв і перезавантаження
+        # зависшої тарілки. Буфер лишається для планового запису.
+        state_key = (status.online, status.update_state)
+        changed = self._last_state_key is not None and state_key != self._last_state_key
+        self._last_state_key = state_key
+        if changed:
+            try:
+                self.flush_metrics_buffer()
+            except Exception as e:
+                logger.warning("Не вдалося одразу записати зміну стану в БД: %s", e)
 
         if status.online:
             self._router_down_polls = 0
@@ -795,13 +871,13 @@ class Watchdog:
             return
 
         logger.warning("Оновлення ПЗ %s готове до встановлення (%s) — ініціюю reboot Starlink Mini", component_label, reason)
-        db.insert_event(
+        self._event(
             "watchdog_trigger",
             f"Оновлення ПЗ {component_label} готове до встановлення ({reason}) — ініціюю reboot",
             success=True,
         )
         ok, msg = self.client.reboot_dish()
-        db.insert_event("dish_reboot", msg, success=ok)
+        self._event("dish_reboot", msg, success=ok)
         # last_reboot_ts оновлюється завжди, навіть при невдачі - той самий
         # захист від reboot-loop, що й у _maybe_reboot() (якщо dish саме в
         # цю мить недоступний, наступний цикл не повинен повторювати
@@ -855,9 +931,26 @@ class Watchdog:
         # чекати до наступного повного інтервалу.
         self.last_telegram_backup_sent_ts = now
 
-        ok, msg = send_latest_backup_to_telegram()
-        if not ok:
-            logger.warning("Не вдалося надіслати backup у Telegram: %s", msg)
+        def job() -> None:
+            ok, msg = send_latest_backup_to_telegram()
+            if not ok:
+                logger.warning("Не вдалося надіслати backup у Telegram: %s", msg)
+
+        if self._sender is not None:
+            self._sender.submit(job, "backup")
+        else:
+            job()
+
+    def _event(self, kind: str, message: str, success: bool = True) -> None:
+        """Запис у журнал подій на шляхах перезавантаження, що ніколи не
+        кидає виняток. Журнал не має блокувати рятувальну дію: раніше при
+        недоступній БД подія "watchdog_trigger" падала ДО reboot_dish()
+        (зависла тарілка не перезавантажувалась ніколи), а "dish_reboot" -
+        ДО оновлення last_reboot_ts (reboot на кожному опитуванні)."""
+        try:
+            db.insert_event(kind, message, success=success)
+        except Exception as e:
+            logger.warning("Не вдалося записати подію %s у журнал: %s", kind, e)
 
     def _maybe_reboot(self) -> None:
         if self.consecutive_failures < config.MAX_CONSECUTIVE_FAILURES:
@@ -882,13 +975,13 @@ class Watchdog:
 
         logger.warning("Ініціюю автоматичний reboot dish після %d невдалих спроб", failures)
         if should_log:
-            db.insert_event(
+            self._event(
                 "watchdog_trigger",
                 f"{failures} послідовних невдалих опитувань — ініціюю reboot",
                 success=True,
             )
         elif is_final_marker:
-            db.insert_event(
+            self._event(
                 "watchdog_trigger",
                 f"Понад {config.MAX_LOGGED_CONSECUTIVE_FAILURES} послідовних невдалих опитувань — "
                 "подальші спроби reboot не записуються в журнал до відновлення зв'язку",
@@ -897,7 +990,7 @@ class Watchdog:
 
         ok, msg = self.client.reboot_dish()
         if should_log or is_final_marker:
-            db.insert_event("dish_reboot", msg, success=ok)
+            self._event("dish_reboot", msg, success=ok)
         # last_reboot_ts оновлюється завжди, навіть при невдачі: якщо dish
         # ще перезавантажується з попередньої спроби, команда reboot теж
         # провалиться (grpcurl: connection refused) - без цього watchdog
@@ -961,83 +1054,91 @@ class Watchdog:
         last_auto_backup = 0.0  # 0 гарантує перший backup одразу після старту сервісу
         last_router_poll = 0.0  # 0 гарантує негайне перше опитування роутера
         last_system_metrics_poll = 0.0  # 0 гарантує негайний перший запис
-        while True:
-            try:
-                self.poll_once()
-            except Exception as e:
-                logger.exception("Неочікувана помилка в циклі опитування: %s", e)
-
-            # SD-card-wear reduction: batch-flush накопичених dish-
-            # зчитувань замість запису кожного окремо кожні 10с. Той
-            # самий таймер-паттерн, що system_metrics/router нижче.
-            if time.time() - self.last_batch_flush_ts > config.DISH_METRICS_BATCH_INTERVAL_SEC:
-                self.flush_metrics_buffer()
-
-            # CPU/температура/пам'ять змінюються повільно - окремий,
-            # довший інтервал (STARLINK_SYSTEM_METRICS_INTERVAL_SEC),
-            # не той самий, що критичні dish-метрики кожні 10с - без
-            # цього SD-картка отримувала б зайві записи без практичної
-            # користі (той самий принцип, що вже застосований до
-            # router нижче).
-            if time.time() - last_system_metrics_poll > config.SYSTEM_METRICS_INTERVAL_SEC:
-                self.poll_system_metrics()
-                last_system_metrics_poll = time.time()
-
-            # Роутерний компонент опитуємо рідше, ніж dish (окремий,
-            # довший інтервал, STARLINK_ROUTER_POLL_INTERVAL_SEC) - його
-            # версія прошивки змінюється нечасто, і зайве навантаження
-            # на WiFi-канал непотрібне при опитуванні dish кожні 10с.
-            if time.time() - last_router_poll > config.ROUTER_POLL_INTERVAL_SEC:
-                self.poll_router()
-                last_router_poll = time.time()
-
-            if time.time() - last_prune > 3600:
+        self._sender = _BackgroundSender()
+        try:
+            while True:
                 try:
-                    db.prune_old()
-                except Exception:
-                    logger.exception("Помилка очищення старих записів")
-                last_prune = time.time()
+                    self.poll_once()
+                except Exception as e:
+                    logger.exception("Неочікувана помилка в циклі опитування: %s", e)
 
-            if time.time() - last_vacuum > 86400:
+                # SD-card-wear reduction: batch-flush накопичених dish-
+                # зчитувань замість запису кожного окремо кожні 10с. Той
+                # самий таймер-паттерн, що system_metrics/router нижче.
+                if time.time() - self.last_batch_flush_ts > config.DISH_METRICS_BATCH_INTERVAL_SEC:
+                    self.flush_metrics_buffer()
+
+                # CPU/температура/пам'ять змінюються повільно - окремий,
+                # довший інтервал (STARLINK_SYSTEM_METRICS_INTERVAL_SEC),
+                # не той самий, що критичні dish-метрики кожні 10с - без
+                # цього SD-картка отримувала б зайві записи без практичної
+                # користі (той самий принцип, що вже застосований до
+                # router нижче).
+                if time.time() - last_system_metrics_poll > config.SYSTEM_METRICS_INTERVAL_SEC:
+                    self.poll_system_metrics()
+                    last_system_metrics_poll = time.time()
+
+                # Роутерний компонент опитуємо рідше, ніж dish (окремий,
+                # довший інтервал, STARLINK_ROUTER_POLL_INTERVAL_SEC) - його
+                # версія прошивки змінюється нечасто, і зайве навантаження
+                # на WiFi-канал непотрібне при опитуванні dish кожні 10с.
+                if time.time() - last_router_poll > config.ROUTER_POLL_INTERVAL_SEC:
+                    self.poll_router()
+                    last_router_poll = time.time()
+
+                if time.time() - last_prune > 3600:
+                    try:
+                        db.prune_old()
+                    except Exception:
+                        logger.exception("Помилка очищення старих записів")
+                    last_prune = time.time()
+
+                if time.time() - last_vacuum > 86400:
+                    try:
+                        logger.info("Періодична оптимізація БД (VACUUM + ANALYZE)")
+                        db.vacuum_and_analyze()
+                    except Exception:
+                        logger.exception("Помилка VACUUM/ANALYZE")
+                    last_vacuum = time.time()
+
+                # Окремий інтервал від VACUUM (типово той самий 86400с, але
+                # реально конфігурований через DB_INTEGRITY_CHECK_INTERVAL_SEC,
+                # не жорстко прив'язаний до VACUUM-таймера) - виявляє мовчазну
+                # деградацію БД до того, як вона стане критичною.
+                if time.time() - last_integrity_check > config.DB_INTEGRITY_CHECK_INTERVAL_SEC:
+                    try:
+                        check_db_integrity_and_notify(self._notify)
+                    except Exception:
+                        logger.exception("Помилка перевірки цілісності БД")
+                    last_integrity_check = time.time()
+
+                # Автоматичний періодичний backup - страховка від втрати
+                # known_devices/налаштувань, незалежно від того, чи user
+                # робив ручний backup через веб-кнопку (міг не робити
+                # місяцями).
+                if config.AUTO_BACKUP_ENABLED and time.time() - last_auto_backup > config.AUTO_BACKUP_INTERVAL_SEC:
+                    try:
+                        perform_auto_backup()
+                        logger.info("Автоматичний backup виконано")
+                    except Exception:
+                        logger.exception("Помилка автоматичного backup")
+                    last_auto_backup = time.time()
+
+                # Окремий, незалежний таймер від створення backup вище -
+                # власна логіка (не try/except тут) вже обробляє помилки
+                # й оновлює власний таймер безумовно всередині методу.
                 try:
-                    logger.info("Періодична оптимізація БД (VACUUM + ANALYZE)")
-                    db.vacuum_and_analyze()
+                    self._maybe_send_backup_to_telegram()
                 except Exception:
-                    logger.exception("Помилка VACUUM/ANALYZE")
-                last_vacuum = time.time()
+                    logger.exception("Помилка відправки backup у Telegram")
 
-            # Окремий інтервал від VACUUM (типово той самий 86400с, але
-            # реально конфігурований через DB_INTEGRITY_CHECK_INTERVAL_SEC,
-            # не жорстко прив'язаний до VACUUM-таймера) - виявляє мовчазну
-            # деградацію БД до того, як вона стане критичною.
-            if time.time() - last_integrity_check > config.DB_INTEGRITY_CHECK_INTERVAL_SEC:
-                try:
-                    check_db_integrity_and_notify(self._notify)
-                except Exception:
-                    logger.exception("Помилка перевірки цілісності БД")
-                last_integrity_check = time.time()
-
-            # Автоматичний періодичний backup - страховка від втрати
-            # known_devices/налаштувань, незалежно від того, чи user
-            # робив ручний backup через веб-кнопку (міг не робити
-            # місяцями).
-            if config.AUTO_BACKUP_ENABLED and time.time() - last_auto_backup > config.AUTO_BACKUP_INTERVAL_SEC:
-                try:
-                    perform_auto_backup()
-                    logger.info("Автоматичний backup виконано")
-                except Exception:
-                    logger.exception("Помилка автоматичного backup")
-                last_auto_backup = time.time()
-
-            # Окремий, незалежний таймер від створення backup вище -
-            # власна логіка (не try/except тут) вже обробляє помилки
-            # й оновлює власний таймер безумовно всередині методу.
-            try:
-                self._maybe_send_backup_to_telegram()
-            except Exception:
-                logger.exception("Помилка відправки backup у Telegram")
-
-            time.sleep(config.POLL_INTERVAL_SEC)
+                time.sleep(config.POLL_INTERVAL_SEC)
+        finally:
+            # SystemExit з обробника SIGTERM теж проходить сюди: дочекатись
+            # уже поставлених сповіщень (не довше 10 с) і зупинити потік.
+            sender, self._sender = self._sender, None
+            if sender is not None:
+                sender.stop(timeout=10)
 
 
 def main() -> None:

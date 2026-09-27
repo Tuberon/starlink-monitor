@@ -27,6 +27,15 @@ def _read_temp_c() -> Optional[float]:
         return None
 
 
+# Прогрів: cpu_percent(interval=None) рахує завантаження відносно
+# ПОПЕРЕДНЬОГО виклику, тож перший виклик у процесі повертає беззмістовний
+# 0.0 - раніше це давало хибну нульову точку CPU після кожного запуску.
+try:
+    psutil.cpu_percent(interval=None)
+except Exception:
+    pass
+
+
 def get_system_metrics() -> dict[str, Any]:
     """Збирає поточні системні метрики. Ніколи не кидає виняток -
     відсутні/недоступні метрики просто лишаються None/0."""
