@@ -30,7 +30,7 @@ import threading
 import time
 from typing import Any, Optional
 
-from app import config, db, gpio_utils, pi_power
+from app import config, db, gpio_utils, labels, pi_power
 from app.shutdown_button import _trigger_shutdown
 
 logging.basicConfig(
@@ -83,7 +83,7 @@ ROUTER_UPDATE_STATE_LABELS = {
 # Стани, повністю приховані з дисплея (не лише текст мітки, а й сам
 # рядок update_state) - "тимчасова хмарна помилка перевірки/
 # завантаження оновлення на боці SpaceX", не проблема моніторингу.
-HIDDEN_ROUTER_STATES = ("DOWNLOADING_UPDATE_IMAGE_FAILED", "GETTING_TARGET_VERSION_FAILED")
+HIDDEN_ROUTER_STATES = labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES
 
 
 def _fmt_uptime(uptime_s: Optional[float]) -> str:

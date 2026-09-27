@@ -1335,3 +1335,14 @@ def test_hidden_router_state_does_not_swallow_next_real_change(watchdog):
     assert len(events) == 1
     assert "помилка завантаження" not in events[0]["message"]
     assert any("очікує перезавантаження" in m for m in watchdog.sent)
+
+
+def test_getting_target_version_failed_still_logged_but_not_notified(watchdog):
+    """Рішення користувача: у /status і на дашборді - "немає оновлень",
+    але в ЖУРНАЛ подій стан і далі пишеться (без Telegram)."""
+    from app.starlink_client import RouterInfo
+    watchdog.prev_router_update_state = "NOT_RUN"
+    watchdog._log_router_update_state_change(
+        RouterInfo(timestamp=time.time(), online=True, update_state="GETTING_TARGET_VERSION_FAILED"))
+    assert any("помилка перевірки оновлення" in e["message"] for e in db.get_recent_events(10))
+    assert watchdog.sent == []

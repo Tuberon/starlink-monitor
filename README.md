@@ -289,7 +289,7 @@ mypy app/
 
 ## ✅ Тести
 
-537 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
+540 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -311,7 +311,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 537 тестів (17 файлів), pytest-randomly
+├── tests/          # 540 тестів (17 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
@@ -362,10 +362,11 @@ Telegram-налаштування видаляє лише після окрем�
 Telegram/GPIO) або вручну в `/etc/starlink-monitor/env`. Повний
 список з коментарями — у `app/config.py`.
 
-2 параметри навмисно недоступні через `/settings` (лише ручне
+3 параметри навмисно недоступні через `/settings` (лише ручне
 редагування `.env`-файлу) — `STARLINK_DB_PATH` (зміна шляху до БД
-без міграції даних) і `STARLINK_WEBUI_HOST` (self-lockout — можна
-відрізати себе від `/settings`, змінивши адресу прослуховування).
+без міграції даних), `STARLINK_WEBUI_HOST` (self-lockout — можна
+відрізати себе від `/settings`, змінивши адресу прослуховування) і
+`STARLINK_AUTO_BACKUP_DIR` (дефолт обчислюється поруч із БД).
 
 Найважливіші для першого налаштування:
 

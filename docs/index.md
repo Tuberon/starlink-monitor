@@ -101,6 +101,7 @@
 | `test_display.py` | update_state/auto-off/power-message + _redraw, _load_font, _truncate_to_width, _set_backlight |
 | `test_activity_led.py` | Неблокуюче blink/close, послідовні виклики без блимання, callback-помилки не поширюються |
 | `test_gpio_utils.py` | find_gpio_chip, ButtonPressTracker (short/long_press), open_input/output_line через fake gpiod v1/v2 |
+| `test_shutdown_button.py` | Фізична кнопка вимкнення: пін 0/відсутній gpiod/збій GPIO — вихід без падіння; довге/коротке натискання; поступається дисплею при `DISPLAY_ENABLED`; зламана БД не блокує вимкнення |
 | `test_display_run_forever.py` | Повна ініціалізація дисплея через fake CircuitPython-модулі, stop_event, pending-shutdown, кнопка, auto-off |
 | `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |
 | `test_starlink_client.py` | Парсинг gRPC-відповіді dish (enum-мапінг, getattr-fallback'и, конвертація одиниць) і router (subprocess+JSON шлях, snake→camelCase, clients) |

@@ -287,7 +287,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-537 tests (`pytest-randomly` — resilient to execution order), 17
+540 tests (`pytest-randomly` — resilient to execution order), 17
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -310,7 +310,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 537 tests (17 files), pytest-randomly
+├── tests/          # 540 tests (17 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
@@ -361,11 +361,12 @@ Edited on the `/settings` page ("Monitoring parameters" panel,
 Telegram/GPIO) or manually in `/etc/starlink-monitor/env`. Full list
 with comments — in `app/config.py`.
 
-2 parameters are intentionally unavailable via `/settings` (manual
+3 parameters are intentionally unavailable via `/settings` (manual
 `.env`-file editing only) — `STARLINK_DB_PATH` (changing the DB path
-without migrating data) and `STARLINK_WEBUI_HOST` (self-lockout —
-you could cut yourself off from `/settings` by changing the listen
-address).
+without migrating data), `STARLINK_WEBUI_HOST` (self-lockout — you
+could cut yourself off from `/settings` by changing the listen
+address) and `STARLINK_AUTO_BACKUP_DIR` (default is computed next to
+the DB).
 
 Most important for initial setup:
 

@@ -732,3 +732,31 @@ def test_normal_command_still_handled_after_hardening(db_path):
     with patch.object(bot, "_cmd_help") as mock_help:
         bot._handle_update("tok", {"1"}, {"message": {"chat": {"id": 1}, "text": "  /help  "}})
     mock_help.assert_called_once()
+
+
+def test_cmd_status_getting_target_version_failed_shown_as_no_updates(db_path):
+    """GETTING_TARGET_VERSION_FAILED у /status - "немає оновлень", як на
+    бейджі дашборду й TFT-дисплеї (рішення користувача)."""
+    from unittest.mock import patch
+    from app.starlink_client import DishStatus, RouterInfo
+    bot = telegram_bot.TelegramBot()
+    bot.client.get_status = lambda: DishStatus(timestamp=1.0, online=True, software_version="v1")
+    bot.client.get_router_info = lambda: RouterInfo(timestamp=1.0, online=True, software_version="r1",
+                                                    update_state="GETTING_TARGET_VERSION_FAILED")
+    sent = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda m, tok, to, **kw: sent.append(kw.get("text")) or {"ok": True}):
+        bot._cmd_status("token", "chat1")
+    assert "немає оновлень" in sent[0]
+    assert "помилка перевірки" not in sent[0]
+
+
+def test_router_hidden_states_in_sync_with_dashboard():
+    """static/dashboard.js тримає копію списку (JS не імпортує Python) -
+    розбіжність означала б різний стан на дашборді й у Telegram/дисплеї."""
+    import os
+    import re
+    from app import display, labels
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "dashboard.js"), encoding="utf-8").read()
+    js_list = re.search(r"const HIDDEN_ROUTER_STATES = \[([^\]]*)\]", js).group(1)
+    assert set(re.findall(r"'([A-Z_]+)'", js_list)) == set(labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES)
+    assert display.HIDDEN_ROUTER_STATES is labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES

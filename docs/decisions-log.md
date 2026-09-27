@@ -890,3 +890,17 @@ DB_PATH/WEBUI_HOST), NUL ламав би EnvironmentFile. Краї обріза�
   обробки, кожне оновлення в окремому try — "отруйне" повідомлення бота
   не блокує.
 537 тестів (+59), нові перевірено негативно.
+
+## Узгодження документації з кодом
+
+Скриптова звірка (параметри config.py ↔ /settings ↔ README ↔ i18n;
+docs/index.md ↔ реальні файли; README uk ↔ en за розділами й числами;
+таймери ↔ описи; юніти ↔ install/uninstall). Виправлено: README казав
+"2 параметри поза /settings", насправді 3 — `STARLINK_AUTO_BACKUP_DIR`
+(обчислюваний дефолт, виняток уже зафіксовано в тесті); у
+docs/index.md не було `test_shutdown_button.py`. Стан роутера
+`GETTING_TARGET_VERSION_FAILED` на дашборді/дисплеї був прихований, а в
+Telegram /status — ні: тепер спільний список
+`labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES` (дисплей і бот; копія в
+dashboard.js звіряється тестом), журнал подій стан і далі пише без
+Telegram (рішення користувача).

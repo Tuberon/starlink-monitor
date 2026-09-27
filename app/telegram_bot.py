@@ -54,9 +54,9 @@ def _api_call(method: str, token: str, http_timeout: float, **params: Any) -> Op
 
 
 def _shown_router_state(state: str) -> str:
-    """Прихований стан (monitor.HIDDEN_ROUTER_UPDATE_STATES) показується як
-    "немає оновлень" - так само, як на дашборді й TFT-дисплеї."""
-    return "NOT_RUN" if state in monitor.HIDDEN_ROUTER_UPDATE_STATES else state
+    """Тимчасові хмарні помилки показуються як "немає оновлень" - так
+    само, як на дашборді й TFT-дисплеї (спільний список у labels.py)."""
+    return "NOT_RUN" if state in labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES else state
 
 
 def _obj(value: Any) -> dict[str, Any]:

@@ -19,6 +19,17 @@ Module-level dict обчислився б ОДИН раз при імпорті 
 
 from app import i18n
 
+# Стани оновлення роутера, які ПОКАЗУЮТЬСЯ як "немає оновлень" (NOT_RUN)
+# усюди, де стан відображається: TFT-дисплей, Telegram /status і
+# /checkupdates, бейдж на дашборді (static/dashboard.js тримає копію -
+# JS не імпортує Python; розбіжність ловить test_router_hidden_states_
+# in_sync_with_dashboard). Обидва - тимчасові хмарні помилки SpaceX,
+# роутер повторює сам. Чи писати такий стан у ЖУРНАЛ подій - окреме
+# рішення: monitor.HIDDEN_ROUTER_UPDATE_STATES (там лише
+# DOWNLOADING_UPDATE_IMAGE_FAILED; GETTING_TARGET_VERSION_FAILED у журнал
+# пишеться, але в Telegram не надсилається - рішення користувача).
+ROUTER_STATES_SHOWN_AS_NO_UPDATES = ("DOWNLOADING_UPDATE_IMAGE_FAILED", "GETTING_TARGET_VERSION_FAILED")
+
 
 def update_state_label(code: str) -> str:
     """Людська назва стану оновлення dish (enum SpaceX.API.Device.
