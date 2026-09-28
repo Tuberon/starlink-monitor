@@ -4,6 +4,8 @@
 """
 import time
 
+import pytest
+
 from app import config, db
 from app.starlink_client import DishStatus
 
@@ -154,3 +156,63 @@ def test_no_activity_callback_is_safe_default(db_path):
     помилки через відсутність callback."""
     db.set_activity_callback(None)
     db.insert_event("test", "звичайний запис без LED", success=True)
+
+
+def test_upsert_known_device_rejects_unknown_component_without_assert(db_path):
+    """Захист f-рядка з назвами колонок у SQL - через if/raise, не assert
+    (`python -O` прибрав би assert повністю)."""
+    import pytest
+    with pytest.raises(ValueError):
+        db._upsert_known_device("d1", "dish; DROP TABLE known_devices", "h", "s")
+
+
+# ---- "якір": WAL живе весь час роботи процесу ----
+
+def test_anchor_keeps_wal_alive_and_close_checkpoints(db_path):
+    """Без якоря кожне закриття останнього з'єднання робило повний
+    checkpoint і видаляло -wal (fsync на кожен запис)."""
+    import os
+    wal = db_path + "-wal"
+    db.insert_event("t", "x", success=True)
+    assert not os.path.exists(wal)                 # поведінка без якоря
+    db.open_anchor()
+    try:
+        db.insert_event("t", "y", success=True)
+        assert os.path.exists(wal)                 # WAL не видалено
+        assert db.check_integrity()[0] is True
+        with db.get_conn() as c:
+            c.execute("VACUUM")                    # щоденне обслуговування працює з якорем
+    finally:
+        db.close_anchor()
+    assert not os.path.exists(wal)                 # штатне завершення - checkpoint
+    assert [e["message"] for e in db.get_recent_events(10)][:2] == ["y", "x"]
+
+
+def test_anchor_open_is_idempotent_and_close_is_safe(db_path):
+    db.close_anchor()                              # без відкритого - без помилки
+    db.open_anchor()
+    first = db._anchor
+    db.open_anchor()
+    assert db._anchor is first
+    db.close_anchor()
+    assert db._anchor is None
+
+
+@pytest.mark.parametrize("call", [
+    lambda: db.set_setting("ui_language", "en"),
+    lambda: db._upsert_known_device("d1", "dish", "rev3", "v1"),
+    lambda: db.merge_known_devices([{"dish_id": "d2", "component": "dish", "hardware_version": "h",
+                                     "software_version": "s", "first_seen_ts": 1, "last_seen_ts": 2}]),
+])
+def test_settings_and_device_history_writes_are_durable(db_path, call):
+    """Налаштування й історія пристроїв синхронізуються одразу
+    (synchronous=FULL), не через ~30 с, як метрики."""
+    from unittest.mock import patch
+    real = db.get_conn
+    flags = []
+    def spy(*a, **kw):
+        flags.append(kw.get("durable", False))
+        return real(*a, **kw)
+    with patch.object(db, "get_conn", side_effect=spy):
+        call()
+    assert True in flags

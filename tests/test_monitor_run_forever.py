@@ -161,3 +161,14 @@ def test_run_forever_starts_and_stops_background_sender(db_path):
     assert not seen["sender"].is_alive()
     assert wd._sender is None
     assert sent == ["з циклу"]
+
+
+def test_run_forever_holds_db_anchor_and_releases_it(db_path):
+    config.ACTIVITY_LED_PIN = 0
+    config.NOTIFY_PI_STARTUP = False
+    wd = monitor.Watchdog()
+    wd._notify = lambda t: None
+    seen = {}
+    _run_one_iteration(wd, poll_once_side_effect=lambda: seen.setdefault("anchor", db.__dict__["_anchor"]))
+    assert seen["anchor"] is not None
+    assert db._anchor is None

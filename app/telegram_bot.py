@@ -164,7 +164,7 @@ class TelegramBot:
             chat_id = self._extract_chat_id(update)
             groups.setdefault(chat_id, []).append(update)
 
-        for chat_id, updates in groups.items():
+        for updates in groups.values():
             self._executor.submit(self._handle_updates_sequential, token, allowed_chat_ids, updates)
 
     @staticmethod

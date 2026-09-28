@@ -1059,6 +1059,7 @@ class Watchdog:
         last_router_poll = 0.0  # 0 гарантує негайне перше опитування роутера
         last_system_metrics_poll = 0.0  # 0 гарантує негайний перший запис
         self._sender = _BackgroundSender()
+        db.open_anchor()   # WAL "живе" весь час роботи - див. db.open_anchor()
         try:
             while True:
                 try:
@@ -1143,6 +1144,7 @@ class Watchdog:
             sender, self._sender = self._sender, None
             if sender is not None:
                 sender.stop(timeout=_NOTIFY_DRAIN_TIMEOUT_SEC)
+            db.close_anchor()   # після відправника: його завдання ще можуть читати БД
 
 
 def main() -> None:

@@ -85,7 +85,7 @@ def test_watch_button_long_press_triggers_shutdown():
         try:
             return next(values)
         except StopIteration:
-            raise SystemExit()
+            raise SystemExit() from None   # заглушка: значення закінчились - зупинити цикл
 
     triggered = []
     with patch("app.gpio_utils.open_input_line",
@@ -115,7 +115,7 @@ def test_watch_button_short_press_does_not_trigger_shutdown():
         try:
             return next(values)
         except StopIteration:
-            raise SystemExit()
+            raise SystemExit() from None   # заглушка: значення закінчились - зупинити цикл
 
     triggered = []
     with patch("app.gpio_utils.open_input_line", return_value=(fake_get_value, lambda: None)), \

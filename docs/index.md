@@ -12,9 +12,10 @@
 | `README.md` | Опис проєкту, встановлення, конфігурація, усі env-параметри |
 | `README.en.md` | Той самий README англійською - синхронізувати вручну при зміні README.md |
 | `requirements.txt` | Python-залежності (pip), встановлюються на Pi |
-| `requirements-dev.txt` | Залежності розробки (mypy) - НЕ встановлюються на Pi |
+| `requirements-dev.txt` | Залежності розробки (mypy, pytest, ruff) - НЕ встановлюються на Pi |
 | `mypy.ini` | Конфігурація статичної типізації (виключає `app/vendor/`) |
 | `pytest.ini` | Мінімальна конфігурація pytest (`testpaths = tests`) |
+| `ruff.toml` | Правила `ruff check` (F, B, E9, PLE, S; виключає `app/vendor/`); без `ruff format` |
 | `.gitignore` | `__pycache__/`, `.mypy_cache/`, `.pytest_cache/`, `*.db` — не мають потрапляти в архів |
 | `LICENSE` | Ліцензія |
 

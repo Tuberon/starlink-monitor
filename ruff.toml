@@ -1,0 +1,22 @@
+# ruff check - перевірка коду (не форматування: `ruff format` свідомо не
+# використовується - переписав би ~3-7 тис. рядків без функціональної
+# користі, див. docs/decisions-log.md). Запуск: `ruff check .`
+target-version = "py311"
+extend-exclude = ["app/vendor"]   # сторонній starlink_grpc.py - не наш код
+
+[lint]
+select = [
+    "F",    # pyflakes: невикористані імпорти/змінні, невизначені імена
+    "B",    # bugbear: типові пастки (змінювані дефолти, замикання в циклах...)
+    "E9",   # синтаксичні помилки
+    "PLE",  # pylint-помилки
+    "S",    # безпека (bandit)
+]
+ignore = [
+    "S101",  # assert - у тестах основний інструмент; у app/ assert не використовується для захисту
+    "S404", "S603", "S607",  # subprocess - навмисний (systemctl, grpcurl) з фіксованими аргументами
+    "S110", "S112",          # try-except-pass/continue - навмисний у прибиранні ресурсів і GPIO
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S"]   # тести: тимчасові файли, тестові токени, subprocess - не про безпеку

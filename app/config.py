@@ -135,7 +135,7 @@ HISTORY_RETENTION_DAYS = int(os.environ.get("STARLINK_HISTORY_DAYS", "14"))
 # відрізати користувача від доступу до /settings з іншого пристрою
 # в мережі (напр. звуження на 127.0.0.1). Редагування - лише вручну
 # в /etc/starlink-monitor/env, з розумінням наслідків.
-WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")
+WEBUI_HOST = os.environ.get("STARLINK_WEBUI_HOST", "0.0.0.0")  # noqa: S104 - усі інтерфейси: рішення власника (docs/decisions-log.md)
 WEBUI_PORT = int(os.environ.get("STARLINK_WEBUI_PORT", "8080"))
 
 # GPIO BCM pin для фізичної кнопки виключення; 0 = вимкнено, 27 = дефолт

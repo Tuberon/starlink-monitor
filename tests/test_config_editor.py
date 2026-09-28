@@ -329,3 +329,18 @@ def test_no_exec_or_eval_in_app_code():
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval"):
                 found.append(f"{os.path.basename(path)}:{node.lineno} {node.func.id}()")
     assert found == [], found
+
+
+def test_ruff_check_clean():
+    """`ruff check .` (правила в ruff.toml) - частина звичайного прогону
+    тестів. Пропускається, якщо ruff не встановлено (requirements-dev.txt)."""
+    import os
+    import shutil
+    import subprocess
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        pytest.skip("ruff не встановлено (pip install -r requirements-dev.txt)")
+    root = os.path.join(os.path.dirname(__file__), "..")
+    r = subprocess.run([ruff, "check", ".", "--no-cache", "--output-format", "concise"],
+                       cwd=root, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr

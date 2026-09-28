@@ -220,7 +220,9 @@ backup у Telegram" (незалежно від автоматичного роз
 - **Менше записів на SD-картку** — dish-метрики batch-INSERT раз на
   `DISH_METRICS_BATCH_INTERVAL_SEC` (30с), не щоразу (зміна стану
   online/offline чи оновлення — одразу); graceful shutdown записує
-  буфер перед завершенням
+  буфер перед завершенням; WAL-журнал SQLite не скидається на диск після
+  кожного запису (у ~150 разів менше примусових синхронізацій), а
+  налаштування синхронізуються одразу
 - **VACUUM/ANALYZE + перевірка цілісності БД** — раз на добу;
   пошкодження → Telegram-сповіщення й аварійний backup
 - **Автоматичний backup** — раз на тиждень, зберігає останні
@@ -282,15 +284,18 @@ IPv4 через `eth0`. На вже встановленій системі (м�
 ```bash
 pip install -r requirements-dev.txt
 mypy app/
+ruff check .
 ```
-Не `--strict` і без CI — для одноосібного hobby-проєкту такого
+`ruff check` — перевірка коду (невикористане, типові пастки, безпека;
+правила в `ruff.toml`), також виконується як один із тестів. Не
+автоформатування: `ruff format` свідомо не використовується. Не `--strict` і без CI — для одноосібного hobby-проєкту такого
 масштабу пропорційніше запускати локально як ще одну живу перевірку
 поруч із `py_compile`, ніж інвестувати в повноцінну CI-інфраструктуру
 (деталі рішення — `docs/decisions-log.md`).
 
 ## ✅ Тести
 
-577 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
+586 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -312,7 +317,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 577 тестів (17 файлів), pytest-randomly
+├── tests/          # 586 тестів (17 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

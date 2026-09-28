@@ -120,7 +120,11 @@ def _ensure_dir() -> None:
 
 
 @contextmanager
-def get_conn() -> Iterator[sqlite3.Connection]:
+def get_conn(durable: bool = False) -> Iterator[sqlite3.Connection]:
+    """durable=True - commit синхронізується з диском одразу (synchronous=
+    FULL). Для рідкісних записів, які не можна втратити при раптовому
+    вимкненні живлення: налаштування (/settings) та історія пристроїв.
+    Решта (метрики) - NORMAL: див. коментар нижче і open_anchor()."""
     _ensure_dir()
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -135,7 +139,7 @@ def get_conn() -> Iterator[sqlite3.Connection]:
     # на SD-картку. БД лишається захищеною від пошкодження (WAL це
     # гарантує); ризик - втрата лише кількох останніх транзакцій при
     # раптовому вимкненні живлення, не критично для метрик моніторингу.
-    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA synchronous=FULL" if durable else "PRAGMA synchronous=NORMAL")
     try:
         yield conn
         conn.commit()
@@ -153,6 +157,44 @@ def get_conn() -> Iterator[sqlite3.Connection]:
     finally:
         conn.close()
 
+
+
+# "Якір": одне незадіяне з'єднання, відкрите на весь час роботи процесу
+# монітора. Без нього WAL фактично не працював: кожна операція відкриває
+# і закриває з'єднання, а закриття ОСТАННЬОГО з'єднання змушує SQLite
+# зробити повний checkpoint і видалити файл -wal - тобто кожен запис
+# проходив цикл "WAL -> fsync -> копія в БД -> fsync -> видалення WAL".
+# Вимір (симульована доба записів): fdatasync ~21600 -> ~144 (-99%),
+# видалень WAL ~10800 -> ~48, обсяг записів ~94 -> ~48 МБ, час x4.7.
+# Компроміс: з synchronous=NORMAL звичайні записи потрапляють на SD
+# протягом ~30 с (скидання буферів ядра) - при раптовому вимкненні
+# можна втратити останні ~30 с метрик; БД не пошкоджується (контрольні
+# суми WAL). Налаштування й історія пристроїв - get_conn(durable=True).
+_anchor: Optional[sqlite3.Connection] = None
+
+
+def open_anchor() -> None:
+    global _anchor
+    if _anchor is not None:
+        return
+    _ensure_dir()
+    conn = sqlite3.connect(config.DB_PATH, timeout=10)
+    # Файл БД SQLite відкриває ліниво - без запиту незадіяне з'єднання не
+    # приєднується до WAL і нічого не утримує (перевірено виміром).
+    conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
+    _anchor = conn
+
+
+def close_anchor() -> None:
+    """Закриття - штатне завершення: останнє з'єднання робить checkpoint,
+    WAL записується в основний файл і видаляється."""
+    global _anchor
+    conn, _anchor = _anchor, None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 def init_db() -> None:
     with get_conn() as conn:
@@ -452,16 +494,19 @@ def _upsert_known_device(dish_id: str, component: str, hardware_version: str, so
     підставляються через f-string - `component` МАЄ бути internal
     literal ("dish"/"router"), НЕ user input; явний `assert` тут -
     останній захист навіть для internal-виклику."""
-    assert component in ("dish", "router"), f"невідомий компонент: {component!r}"
+    # if/raise, не assert: `python -O` прибирає assert повністю, а від цієї
+    # перевірки залежить безпека f-рядка з назвами колонок у SQL нижче.
+    if component not in ("dish", "router"):
+        raise ValueError(f"невідомий компонент: {component!r}")
     if not dish_id:
         return False, None
     now = time.time()
     hw_col = f"{component}_hardware_version"
     sw_col = f"{component}_software_version"
     ts_col = f"{component}_software_updated_ts"
-    with get_conn() as conn:
+    with get_conn(durable=True) as conn:
         existing = conn.execute(
-            f"SELECT {sw_col} FROM known_devices WHERE dish_id = ?", (dish_id,)
+            f"SELECT {sw_col} FROM known_devices WHERE dish_id = ?", (dish_id,)  # noqa: S608 - колонки лише з "dish"/"router" (перевірка вище)
         ).fetchone()
         old_version = existing[sw_col] if existing else None
         version_changed = existing is None or old_version != software_version
@@ -476,7 +521,7 @@ def _upsert_known_device(dish_id: str, component: str, hardware_version: str, so
                  {hw_col} = excluded.{hw_col},
                  {sw_col} = excluded.{sw_col},
                  {ts_col} = CASE WHEN ? THEN excluded.{ts_col}
-                                  ELSE known_devices.{ts_col} END""",
+                                  ELSE known_devices.{ts_col} END""",  # noqa: S608 - колонки лише з "dish"/"router" (перевірка вище)
             (dish_id, now, now, hardware_version, software_version, now if version_changed else None,
              int(version_changed)),
         )
@@ -529,7 +574,7 @@ def merge_known_devices(devices: list[dict[str, Any]]) -> int:
     (не перезаписувати потенційно свіжіший стан старішими даними).
     Повертає кількість РЕАЛЬНО доданих (нових) dish_id."""
     added = 0
-    with get_conn() as conn:
+    with get_conn(durable=True) as conn:
         for d in devices:
             if "dish_id" not in d:
                 continue
@@ -609,7 +654,7 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def set_setting(key: str, value: str) -> None:
-    with get_conn() as conn:
+    with get_conn(durable=True) as conn:
         conn.execute(
             """INSERT INTO settings (key, value) VALUES (?, ?)
                ON CONFLICT(key) DO UPDATE SET value=excluded.value""",

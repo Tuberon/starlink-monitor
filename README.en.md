@@ -219,7 +219,9 @@ safeguard in case the DB and backup remain on the same SD card.
 - **Fewer writes to the SD card** — dish metrics are batch-INSERTed
   once per `DISH_METRICS_BATCH_INTERVAL_SEC` (30s), not every time (a
   state change — online/offline or update — is written at once); a
-  graceful shutdown flushes the buffer before exiting
+  graceful shutdown flushes the buffer before exiting; the SQLite WAL is
+  not flushed to disk after every write (~150× fewer forced syncs), while
+  settings are synced at once
 - **VACUUM/ANALYZE + DB integrity check** — once a day; corruption →
   Telegram notification and an emergency backup
 - **Automatic backup** — once a week, keeps the last
@@ -280,15 +282,18 @@ is typed and passes `mypy` cleanly. Check before committing/updating:
 ```bash
 pip install -r requirements-dev.txt
 mypy app/
+ruff check .
 ```
-Not `--strict` and no CI — for a solo hobby project of this scale,
+`ruff check` is code linting (unused code, common pitfalls, security;
+rules in `ruff.toml`), also run as one of the tests. Not
+auto-formatting: `ruff format` is deliberately not used. Not `--strict` and no CI — for a solo hobby project of this scale,
 running it locally as one more live check alongside `py_compile` is
 more proportionate than investing in a full CI setup (details of the
 decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-577 tests (`pytest-randomly` — resilient to execution order), 17
+586 tests (`pytest-randomly` — resilient to execution order), 17
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -311,7 +316,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 577 tests (17 files), pytest-randomly
+├── tests/          # 586 tests (17 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

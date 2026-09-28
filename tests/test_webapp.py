@@ -877,3 +877,15 @@ def test_events_limit_clamped(client, query, expected):
     r = client.get(f"/api/events?{query}")
     assert r.status_code == 200
     assert len(r.get_json()) == expected
+
+
+def test_settings_restore_router_target_and_env_error_branches(client):
+    """Гілки відновлення, що раніше перевірялись лише разовим зліпком."""
+    r = client.post("/api/settings-restore", json={
+        "format_version": 1, "router_target_version": "2026.09.09.mr85833",
+        "env_params": {"STARLINK_WEBUI_PORT": "не число"},
+    }).get_json()
+    assert r["success"] is True
+    assert "очікувана версія роутера" in r["message"]
+    assert "параметри моніторингу - помилка:" in r["message"]
+    assert db.get_setting("router_target_version") == "2026.09.09.mr85833"

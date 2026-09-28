@@ -167,7 +167,7 @@ def _request_with_eth0_fallback(
     try:
         if session is not None:
             return session.request(method, url, **kwargs)
-        return requests.request(method, url, **kwargs)
+        return requests.request(method, url, **kwargs)  # noqa: S113 - timeout приходить у **kwargs (передають усі виклики)
     except requests.RequestException as e:
         eth0_ip = _get_eth0_ip()
         if not eth0_ip:
