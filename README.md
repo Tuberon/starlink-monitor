@@ -218,8 +218,9 @@ backup у Telegram" (незалежно від автоматичного роз
 - **Watchdog для watchdog-а** — `healthcheck.timer` (раз/хв) опитує
   `/healthz`, примусовий restart при зависанні (не crash)
 - **Менше записів на SD-картку** — dish-метрики batch-INSERT раз на
-  `DISH_METRICS_BATCH_INTERVAL_SEC` (30с), не щоразу; graceful
-  shutdown записує буфер перед завершенням
+  `DISH_METRICS_BATCH_INTERVAL_SEC` (30с), не щоразу (зміна стану
+  online/offline чи оновлення — одразу); graceful shutdown записує
+  буфер перед завершенням
 - **VACUUM/ANALYZE + перевірка цілісності БД** — раз на добу;
   пошкодження → Telegram-сповіщення й аварійний backup
 - **Автоматичний backup** — раз на тиждень, зберігає останні
@@ -289,7 +290,7 @@ mypy app/
 
 ## ✅ Тести
 
-566 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
+577 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -311,7 +312,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 566 тестів (17 файлів), pytest-randomly
+├── tests/          # 577 тестів (17 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

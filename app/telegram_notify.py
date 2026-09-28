@@ -12,7 +12,7 @@ from typing import Any, Callable, Optional
 import requests
 from requests.adapters import HTTPAdapter
 
-from app import config, db
+from app import config, db, i18n
 
 logger = logging.getLogger("telegram_notify")
 
@@ -245,10 +245,33 @@ def _send_to_all_chats(chat_ids: list[str], method_label: str, make_request: Cal
             errors.append(f"{chat_id}: {last_network_error}")
 
     if any_ok and not errors:
-        return True, "надіслано"
+        return True, i18n.t("api_sent")
     if any_ok and errors:
-        return True, f"надіслано частково, помилки: {'; '.join(errors)}"
-    return False, "; ".join(errors) if errors else "невідома помилка"
+        return True, i18n.t("api_sent_partially", errors="; ".join(errors))
+    return False, "; ".join(errors) if errors else i18n.t("api_unknown_error")
+
+
+# Код стану конфігурації -> ключ перекладу повідомлення про нього.
+_CONFIG_PROBLEM_KEYS = {"disabled": "tg_cfg_disabled", "no_token": "tg_cfg_no_token", "no_chat_ids": "tg_cfg_no_chat_ids"}
+
+
+def _problem_code(token: Optional[str], chat_ids: Optional[list[str]], enabled: bool) -> Optional[str]:
+    if not enabled:
+        return "disabled"
+    if not token:
+        return "no_token"
+    if not chat_ids:
+        return "no_chat_ids"
+    return None
+
+
+def config_problem() -> Optional[str]:
+    """Чому Telegram зараз не може надсилати - КОД ("disabled"/"no_token"/
+    "no_chat_ids"), None якщо налаштовано. Для рішень у коді (напр.
+    monitor не логує очікувану ситуацію "Telegram вимкнено"): раніше там
+    порівнювались ТЕКСТИ повідомлень, і будь-який переклад їх би зламав."""
+    token, chat_ids, enabled = get_telegram_config()
+    return _problem_code(token, chat_ids, enabled)
 
 
 def _validate_telegram_config() -> tuple[Optional[str], Optional[list[str]], Optional[str]]:
@@ -257,12 +280,9 @@ def _validate_telegram_config() -> tuple[Optional[str], Optional[list[str]], Opt
     chat_ids, error) - error непустий рядок, якщо конфігурація
     невалідна (token/chat_ids тоді None, ігноруються викликачем)."""
     token, chat_ids, enabled = get_telegram_config()
-    if not enabled:
-        return None, None, "Telegram сповіщення вимкнені"
-    if not token:
-        return None, None, "Не вказано bot token"
-    if not chat_ids:
-        return None, None, "Не вказано жодного chat_id"
+    code = _problem_code(token, chat_ids, enabled)
+    if code is not None:
+        return None, None, i18n.t(_CONFIG_PROBLEM_KEYS[code])
     return token, chat_ids, None
 
 
@@ -298,7 +318,7 @@ def send_document(file_path: str, caption: str = "") -> tuple[bool, str]:
         return False, error
     assert token is not None and chat_ids is not None
     if not os.path.isfile(file_path):
-        return False, f"Файл не знайдено: {file_path}"
+        return False, i18n.t("api_file_not_found", path=file_path)
 
     filename = os.path.basename(file_path)
     url = API_BASE.format(token=token, method="sendDocument")
@@ -319,7 +339,7 @@ def test_connection() -> tuple[bool, str]:
     """Перевіряє валідність bot token через getMe, незалежно від chat_id."""
     token, _, _ = get_telegram_config()
     if not token:
-        return False, "Не вказано bot token"
+        return False, i18n.t("tg_cfg_no_token")
     try:
         resp = _request_with_eth0_fallback(
             "get",
@@ -329,7 +349,7 @@ def test_connection() -> tuple[bool, str]:
         data = resp.json()
         if resp.status_code == 200 and data.get("ok"):
             bot_name = data.get("result", {}).get("username", "?")
-            return True, f"Бот @{bot_name} доступний"
+            return True, i18n.t("api_bot_ok", name=bot_name)
         return False, data.get("description", f"HTTP {resp.status_code}")
     except requests.RequestException as e:
         return False, str(e)

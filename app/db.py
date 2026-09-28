@@ -434,7 +434,8 @@ def check_integrity() -> tuple[bool, str]:
         # живим тестом одразу після першої реалізації - без цього
         # DatabaseError поширювався б назовні, замість повернення
         # (False, message), яке викликаючий код очікує.
-        return False, f"файл не є валідною SQLite-базою: {e}"
+        from app import i18n  # не на рівні модуля: i18n сам імпортує db
+        return False, i18n.t("db_not_sqlite", error=e)
     finally:
         conn.close()
     messages = [str(r[0]) for r in rows]

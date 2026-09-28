@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
@@ -144,7 +144,7 @@ def api_set_language() -> ResponseReturnValue:
     ніколи не міг повернути щось поза SUPPORTED_LANGS."""
     lang = _json_body().get("lang", "")
     if lang not in i18n.SUPPORTED_LANGS:
-        return jsonify({"success": False, "message": f"Непідтримувана мова: {lang}"}), 400
+        return jsonify({"success": False, "message": i18n.t("api_unsupported_language", lang=lang)}), 400
     db.set_setting("ui_language", lang)
     return jsonify({"success": True, "message": "ok"})
 
@@ -404,18 +404,20 @@ def api_get_target_versions() -> ResponseReturnValue:
 
 
 def _validate_and_save_target(
-    target_raw: str, target_key: str, current_installed: Optional[str], component_label: str,
-) -> tuple[Optional[str], Optional[str]]:
+    target_raw: str, target_key: str, current_installed: Optional[str],
+) -> tuple[str, list[tuple[str, str]]]:
     """Валідує й зберігає одне target-поле (dish або router - обидва
     йшли через ІДЕНТИЧНУ логіку, дублювання накопичилось природно
     через кілька послідовних правок обох блоків паралельно - знайдено
-    аудитом дублювання). Повертає (saved_label, rejected_message) -
-    рівно ОДНЕ з двох не-None, залежно від результату (порожній рядок
-    → очищено; валідні кандидати → збережено; є старіші → відхилено)."""
+    аудитом дублювання). Повертає КОД стану, а не текст: "cleared"
+    (порожній рядок), "saved" (валідні кандидати), "rejected" (є
+    старіші - тоді друге значення: пари (кандидат, відома версія)),
+    "unchanged". Тексти будує викликач - мовою інтерфейсу для відповіді
+    й українською для журналу подій."""
     target_raw = target_raw.strip()
     if not target_raw:
         db.set_setting(target_key, "")
-        return f"{component_label} (очищено)", None
+        return "cleared", []
 
     candidates = db.parse_version_list(target_raw)
     baseline_candidates = db.parse_version_list(db.get_setting(target_key)) + (
@@ -423,12 +425,19 @@ def _validate_and_save_target(
     )
     older = _find_older_candidates(candidates, baseline_candidates, current_installed)
     if older:
-        pairs = ", ".join(f"{c} (проти {b})" for c, b in older)
-        return None, f"{component_label}: {pairs} старіші за вже відому версію того самого build-каналу"
+        return "rejected", older
     if candidates:
         db.set_setting(target_key, target_raw)
-        return component_label, None
-    return None, None
+        return "saved", []
+    return "unchanged", []
+
+
+_TARGET_NAME_KEYS = {"dish": "comp_dish_nom", "router": "comp_router_nom"}
+
+
+def _target_saved_label(tr: Callable[..., str], component: str, status: str) -> str:
+    name = tr(_TARGET_NAME_KEYS[component])
+    return tr("api_target_cleared", component=name) if status == "cleared" else name
 
 
 @app.route("/api/target-versions", methods=["POST"])
@@ -456,34 +465,34 @@ def api_set_target_versions() -> ResponseReturnValue:
             return _bad_request(field)
     latest = db.get_latest_metric()
     router_status = db.get_router_status()
+    installed = {
+        "dish": latest["software_version"] if latest and latest.get("software_version") else None,
+        "router": router_status["software_version"] if router_status and router_status.get("software_version") else None,
+    }
+    tr, uk = i18n.translator(), i18n.translator("uk")   # відповідь - мовою інтерфейсу, журнал - українською
 
-    saved = []
-    rejected = []
+    saved_ui: list[str] = []
+    saved_uk: list[str] = []
+    rejected: list[str] = []
+    for component, target in (("dish", dish_target), ("router", router_target)):
+        if target is None:
+            continue
+        status, older = _validate_and_save_target(target, f"{component}_target_version", installed[component])
+        if status in ("saved", "cleared"):
+            saved_ui.append(_target_saved_label(tr, component, status))
+            saved_uk.append(_target_saved_label(uk, component, status))
+        elif status == "rejected":
+            pairs = ", ".join(tr("api_target_vs", candidate=c, baseline=b) for c, b in older)
+            rejected.append(tr("api_target_older", component=tr(_TARGET_NAME_KEYS[component]), pairs=pairs))
 
-    if dish_target is not None:
-        current_installed = latest["software_version"] if latest and latest.get("software_version") else None
-        saved_label, rejected_msg = _validate_and_save_target(dish_target, "dish_target_version", current_installed, "тарілка")
-        if saved_label:
-            saved.append(saved_label)
-        if rejected_msg:
-            rejected.append(rejected_msg)
-
-    if router_target is not None:
-        current_installed = router_status["software_version"] if router_status and router_status.get("software_version") else None
-        saved_label, rejected_msg = _validate_and_save_target(router_target, "router_target_version", current_installed, "роутер")
-        if saved_label:
-            saved.append(saved_label)
-        if rejected_msg:
-            rejected.append(rejected_msg)
-
-    if saved:
-        db.insert_event("target_versions_updated", f"Очікувані версії прошивок оновлено: {', '.join(saved)}", success=True)
+    if saved_uk:
+        db.insert_event("target_versions_updated", f"Очікувані версії прошивок оновлено: {', '.join(saved_uk)}", success=True)
 
     if rejected:
-        return jsonify({"success": bool(saved), "message": "Відхилено (старіша версія): " + "; ".join(rejected)})
-    if saved:
-        return jsonify({"success": True, "message": f"Збережено: {', '.join(saved)}"})
-    return jsonify({"success": True, "message": "Без змін"})
+        return jsonify({"success": bool(saved_ui), "message": tr("api_target_rejected", details="; ".join(rejected))})
+    if saved_ui:
+        return jsonify({"success": True, "message": tr("api_saved", items=", ".join(saved_ui))})
+    return jsonify({"success": True, "message": tr("api_no_changes")})
 
 
 @app.route("/api/telegram-test", methods=["POST"])
@@ -528,9 +537,10 @@ def api_settings_restore() -> ResponseReturnValue:
     автоматично, бо restore може виконуватись без наміру одразу рестартити)."""
     payload = _json_body()
     if "format_version" not in payload:
-        return jsonify({"success": False, "message": "Некоректний формат файлу backup"})
+        return jsonify({"success": False, "message": i18n.t("api_restore_bad_format")})
 
-    restored = []
+    # (ключ перекладу, параметри): відповідь - мовою інтерфейсу, журнал - українською
+    restored: list[tuple[str, dict[str, Any]]] = []
     try:
         if "telegram_bot_token" in payload or "telegram_chat_ids" in payload or "telegram_enabled" in payload:
             telegram_notify.set_telegram_config(
@@ -538,33 +548,36 @@ def api_settings_restore() -> ResponseReturnValue:
                 chat_ids=payload.get("telegram_chat_ids"),
                 enabled=payload.get("telegram_enabled"),
             )
-            restored.append("telegram config")
+            restored.append(("rs_telegram", {}))
 
         if "auto_reboot_enabled" in payload:
             db.set_auto_reboot_enabled(bool(payload["auto_reboot_enabled"]))
-            restored.append("auto-reboot")
+            restored.append(("rs_auto_reboot", {}))
 
         if payload.get("dish_target_version"):
             db.set_setting("dish_target_version", payload["dish_target_version"])
-            restored.append("очікувана версія тарілки")
+            restored.append(("rs_dish_target", {}))
 
         if payload.get("router_target_version"):
             db.set_setting("router_target_version", payload["router_target_version"])
-            restored.append("очікувана версія роутера")
+            restored.append(("rs_router_target", {}))
 
         if payload.get("known_devices"):
             added = db.merge_known_devices(payload["known_devices"])
-            restored.append(f"історія пристроїв ({added} нових з {len(payload['known_devices'])})")
+            restored.append(("rs_devices", {"added": added, "total": len(payload["known_devices"])}))
 
         if payload.get("env_params"):
             ok, msg = config_editor.save_values(payload["env_params"])
             if ok:
-                restored.append("параметри моніторингу (потрібен перезапуск сервісів)")
+                restored.append(("rs_env_ok", {}))
             else:
-                restored.append(f"параметри моніторингу - помилка: {msg}")
+                restored.append(("rs_env_error", {"error": msg}))
 
-        db.insert_event("settings_restored", f"Відновлено з backup: {', '.join(restored) or 'нічого'}", success=True)
-        return jsonify({"success": True, "message": f"Відновлено: {', '.join(restored) or 'нічого'}"})
+        def render(tr: Callable[..., str]) -> str:
+            return ", ".join(tr(key, **kw) for key, kw in restored) or tr("rs_nothing")
+
+        db.insert_event("settings_restored", f"Відновлено з backup: {render(i18n.translator('uk'))}", success=True)
+        return jsonify({"success": True, "message": i18n.t("api_restored", items=render(i18n.translator()))})
     except Exception as e:
         db.insert_event("settings_restored", f"Помилка відновлення backup: {e}", success=False)
         return jsonify({"success": False, "message": str(e)})

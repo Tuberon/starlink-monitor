@@ -43,7 +43,7 @@ def run_system_command(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "unknown error").strip()
             return False, err[:500]
-        return True, "виконано"
+        return True, i18n.t("api_done")
     except subprocess.TimeoutExpired:
         return False, "timeout"
     except Exception as e:

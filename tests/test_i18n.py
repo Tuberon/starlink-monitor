@@ -110,3 +110,56 @@ def test_ukrainian_default_unchanged(watchdog):
     watchdog.prev_alerts = set()
     watchdog._log_alerts_change(DishStatus(timestamp=time.time(), online=True, active_alerts=["motors_stuck"]))
     assert watchdog.sent == ["⚠️ Нове попередження dish: двигуни заклинило"]
+
+
+# ---- плейсхолдери з іменами параметрів функцій перекладу ----
+
+def test_placeholder_named_like_parameter_does_not_collide(db_path):
+    """"Непідтримувана мова: {lang}" падало TypeError: _translate(lang, key,
+    **kwargs) отримував lang двічі. Параметри тепер лише позиційні."""
+    assert i18n.t("api_unsupported_language", lang="xx") == "Непідтримувана мова: xx"
+    assert i18n.translator("en")("api_unsupported_language", lang="xx") == "Unsupported language: xx"
+
+
+def test_set_language_unsupported_returns_400_not_500(client):
+    r = client.post("/api/set-language", json={"lang": "xx"})
+    assert r.status_code == 400
+    assert "xx" in r.get_json()["message"]
+
+
+# ---- повідомлення інтерфейсу - мовою інтерфейсу, журнал - українською ----
+
+_CYR = __import__("re").compile("[А-Яа-яІіЇїЄєҐґ]")
+
+
+def test_target_versions_messages_in_english_journal_in_ukrainian(client, en):
+    db.insert_metric({"timestamp": 1.0, "online": True, "software_version": "2026.09.14.mr86848"})
+    msgs = [client.post("/api/target-versions", json=b).get_json()["message"] for b in
+            ({"dish_target": "2026.09.20.mr90000"}, {"dish_target": "2026.01.01.mr1"}, {}, {"dish_target": ""})]
+    assert msgs[0] == "Saved: dish"
+    assert msgs[1].startswith("Rejected (older version): dish: 2026.01.01.mr1 (vs ")
+    assert msgs[2] == "No changes"
+    assert msgs[3] == "Saved: dish (cleared)"
+    assert not any(_CYR.search(m) for m in msgs)
+    events = [e["message"] for e in db.get_recent_events(10)]
+    assert "Очікувані версії прошивок оновлено: тарілка" in events
+
+
+def test_settings_restore_messages_in_english_journal_in_ukrainian(client, en):
+    assert client.post("/api/settings-restore", json={}).get_json()["message"] == "Invalid backup file format"
+    r = client.post("/api/settings-restore", json={"format_version": 1, "auto_reboot_enabled": True,
+                                                   "dish_target_version": "a"}).get_json()
+    assert r["message"] == "Restored: auto-reboot, expected dish version"
+    assert client.post("/api/settings-restore", json={"format_version": 1}).get_json()["message"] == "Restored: nothing"
+    events = [e["message"] for e in db.get_recent_events(10)]
+    assert "Відновлено з backup: auto-reboot, очікувана версія тарілки" in events
+
+
+def test_telegram_notify_messages_in_english(en):
+    from app import telegram_notify
+    assert telegram_notify.send_message("x") == (False, "Telegram notifications are disabled")
+    telegram_notify.set_telegram_config(token="", chat_ids=["1"], enabled=True)
+    assert telegram_notify.test_connection() == (False, "Bot token is not set")
+    telegram_notify.set_telegram_config(token="T", chat_ids=["1"], enabled=True)   # конфігурація перевіряється першою
+    ok, msg = telegram_notify.send_document("/nonexistent/backup.json", caption="c")
+    assert msg == "File not found: /nonexistent/backup.json"

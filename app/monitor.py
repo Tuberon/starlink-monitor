@@ -275,10 +275,10 @@ def send_latest_backup_to_telegram() -> tuple[bool, str]:
     перевірки інтервалу - користувач явно натиснув, робити негайно).
     Записує подію в журнал незалежно від результату."""
     if not os.path.isdir(config.AUTO_BACKUP_DIR):
-        return False, "Каталог backup ще не створений - зробіть перший backup"
+        return False, i18n.t("api_backup_no_dir")
     backups = [f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.endswith(".json")]
     if not backups:
-        return False, "Немає жодного backup-файлу для відправки"
+        return False, i18n.t("api_backup_no_files")
     latest = max(backups, key=lambda f: os.path.getmtime(os.path.join(config.AUTO_BACKUP_DIR, f)))
     path = os.path.join(config.AUTO_BACKUP_DIR, latest)
 
@@ -491,7 +491,10 @@ class Watchdog:
         """Безпечна відправка Telegram-сповіщення - ніколи не кидає виняток."""
         try:
             ok, msg = telegram_notify.send_message(text)
-            if not ok and msg not in ("Telegram сповіщення вимкнені", "Не вказано bot token", "Не вказано жодного chat_id"):
+            # Telegram не налаштований/вимкнений - очікувана ситуація, не
+            # попередження. Рішення - за кодом стану, не за текстом (текст
+            # тепер перекладається мовою інтерфейсу).
+            if not ok and telegram_notify.config_problem() is None:
                 logger.warning("Telegram сповіщення не надіслано: %s", msg)
         except Exception as e:
             logger.warning("Помилка відправки Telegram-сповіщення: %s", e)

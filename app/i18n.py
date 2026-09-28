@@ -490,6 +490,40 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tg_manual_dish_reboot_failed": {"uk": "❌ Не вдалося перезавантажити Starlink Mini вручну: {msg}", "en": "❌ Failed to reboot Starlink Mini manually: {msg}"},
     "tg_test_message": {"uk": "✅ Тестове повідомлення від Starlink Monitor. Сповіщення налаштовано правильно.", "en": "✅ Test message from Starlink Monitor. Notifications are set up correctly."},
 
+    # ---- Повідомлення, що доходять до інтерфейсу (результати кнопок /settings,
+    # відповіді API). uk - побайтово ті самі тексти, що були в коді. ----
+    "tg_cfg_disabled": {"uk": "Telegram сповіщення вимкнені", "en": "Telegram notifications are disabled"},
+    "tg_cfg_no_token": {"uk": "Не вказано bot token", "en": "Bot token is not set"},
+    "tg_cfg_no_chat_ids": {"uk": "Не вказано жодного chat_id", "en": "No chat_id is set"},
+    "api_sent": {"uk": "надіслано", "en": "sent"},
+    "api_sent_partially": {"uk": "надіслано частково, помилки: {errors}", "en": "partially sent, errors: {errors}"},
+    "api_unknown_error": {"uk": "невідома помилка", "en": "unknown error"},
+    "api_file_not_found": {"uk": "Файл не знайдено: {path}", "en": "File not found: {path}"},
+    "api_bot_ok": {"uk": "Бот @{name} доступний", "en": "Bot @{name} is reachable"},
+    "api_done": {"uk": "виконано", "en": "done"},
+    "api_backup_no_dir": {"uk": "Каталог backup ще не створений - зробіть перший backup", "en": "Backup directory does not exist yet - make a first backup"},
+    "api_backup_no_files": {"uk": "Немає жодного backup-файлу для відправки", "en": "No backup file to send"},
+    "db_not_sqlite": {"uk": "файл не є валідною SQLite-базою: {error}", "en": "file is not a valid SQLite database: {error}"},
+    "api_unsupported_language": {"uk": "Непідтримувана мова: {lang}", "en": "Unsupported language: {lang}"},
+    "comp_dish_nom": {"uk": "тарілка", "en": "dish"},
+    "comp_router_nom": {"uk": "роутер", "en": "router"},
+    "api_target_cleared": {"uk": "{component} (очищено)", "en": "{component} (cleared)"},
+    "api_target_vs": {"uk": "{candidate} (проти {baseline})", "en": "{candidate} (vs {baseline})"},
+    "api_target_older": {"uk": "{component}: {pairs} старіші за вже відому версію того самого build-каналу", "en": "{component}: {pairs} are older than an already known version of the same build channel"},
+    "api_target_rejected": {"uk": "Відхилено (старіша версія): {details}", "en": "Rejected (older version): {details}"},
+    "api_saved": {"uk": "Збережено: {items}", "en": "Saved: {items}"},
+    "api_no_changes": {"uk": "Без змін", "en": "No changes"},
+    "api_restore_bad_format": {"uk": "Некоректний формат файлу backup", "en": "Invalid backup file format"},
+    "api_restored": {"uk": "Відновлено: {items}", "en": "Restored: {items}"},
+    "rs_telegram": {"uk": "telegram config", "en": "telegram config"},
+    "rs_auto_reboot": {"uk": "auto-reboot", "en": "auto-reboot"},
+    "rs_dish_target": {"uk": "очікувана версія тарілки", "en": "expected dish version"},
+    "rs_router_target": {"uk": "очікувана версія роутера", "en": "expected router version"},
+    "rs_devices": {"uk": "історія пристроїв ({added} нових з {total})", "en": "device history ({added} new of {total})"},
+    "rs_env_ok": {"uk": "параметри моніторингу (потрібен перезапуск сервісів)", "en": "monitoring parameters (service restart required)"},
+    "rs_env_error": {"uk": "параметри моніторингу - помилка: {error}", "en": "monitoring parameters - error: {error}"},
+    "rs_nothing": {"uk": "нічого", "en": "nothing"},
+
     # ---- monitor.py: Starlink вимкнено/увімкнено (ніч, відключення світла) ----
     "tg_starlink_back": {"uk": "✅ Starlink знову доступний, був вимкнений {duration}", "en": "✅ Starlink is available again, was off for {duration}"},
     "dur_hours": {"uk": "год", "en": "h"},
@@ -516,7 +550,10 @@ def get_language() -> str:
     return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
 
-def _translate(lang: str, key: str, **kwargs: Any) -> str:
+def _translate(lang: str, key: str, /, **kwargs: Any) -> str:
+    # Позиційні параметри ("/"): плейсхолдер з тим самим ім'ям (напр.
+    # {lang} у "Непідтримувана мова: {lang}") інакше зіткнувся б із ними -
+    # TypeError "got multiple values for argument 'lang'".
     entry = TRANSLATIONS.get(key)
     if entry is None:
         return key
@@ -524,7 +561,7 @@ def _translate(lang: str, key: str, **kwargs: Any) -> str:
     return text.format(**kwargs) if kwargs else text
 
 
-def t(key: str, **kwargs: Any) -> str:
+def t(key: str, /, **kwargs: Any) -> str:
     """Перекладає key для поточної мови. Відсутній ключ у словнику -
     повертає сам key (видно одразу під час розробки/QA, не ховає
     помилку порожнім рядком). kwargs - підстановка через .format()
@@ -547,7 +584,9 @@ def translator(lang: Optional[str] = None) -> Callable[..., str]:
     застарілу мову; тут мова лише не перечитується ВСЕРЕДИНІ однієї
     операції."""
     bound = lang or get_language()
-    return lambda key, **kwargs: _translate(bound, key, **kwargs)
+    def tr(key: str, /, **kwargs: Any) -> str:
+        return _translate(bound, key, **kwargs)
+    return tr
 
 
 def all_translations_for_current_lang(

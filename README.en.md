@@ -217,8 +217,9 @@ safeguard in case the DB and backup remain on the same SD card.
 - **A watchdog for the watchdog** — `healthcheck.timer` (once/min)
   polls `/healthz`, forces a restart on a hang (not a crash)
 - **Fewer writes to the SD card** — dish metrics are batch-INSERTed
-  once per `DISH_METRICS_BATCH_INTERVAL_SEC` (30s), not every time;
-  a graceful shutdown flushes the buffer before exiting
+  once per `DISH_METRICS_BATCH_INTERVAL_SEC` (30s), not every time (a
+  state change — online/offline or update — is written at once); a
+  graceful shutdown flushes the buffer before exiting
 - **VACUUM/ANALYZE + DB integrity check** — once a day; corruption →
   Telegram notification and an emergency backup
 - **Automatic backup** — once a week, keeps the last
@@ -287,7 +288,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-566 tests (`pytest-randomly` — resilient to execution order), 17
+577 tests (`pytest-randomly` — resilient to execution order), 17
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -310,7 +311,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 566 tests (17 files), pytest-randomly
+├── tests/          # 577 tests (17 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

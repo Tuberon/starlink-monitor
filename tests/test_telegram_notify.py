@@ -417,3 +417,16 @@ def test_session_error_still_falls_back_to_eth0_path():
          pytest.raises(requests.exceptions.ConnectionError):
         telegram_notify._request_with_eth0_fallback("post", "https://example/x", session=session, timeout=5)
     mock_eth0.assert_called_once()
+
+
+# ---- стан конфігурації як КОД, не текст ----
+
+@pytest.mark.parametrize("token,chat_ids,enabled,expected", [
+    ("T", ["1"], False, "disabled"),
+    (None, ["1"], True, "no_token"),
+    ("T", [], True, "no_chat_ids"),
+    ("T", ["1"], True, None),
+])
+def test_config_problem_returns_code(db_path, token, chat_ids, enabled, expected):
+    telegram_notify.set_telegram_config(token=token, chat_ids=chat_ids, enabled=enabled)
+    assert telegram_notify.config_problem() == expected

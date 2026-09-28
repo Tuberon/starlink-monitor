@@ -1494,3 +1494,29 @@ def test_component_texts_keep_both_grammatical_forms(db_path):
     assert monitor._format_firmware_change_message("router", "a", "b") == "🔄 Прошивка роутера оновлена: a → b"
     assert monitor._component_text("dish", monitor._COMPONENT_UPDATE) == "dish"
     assert monitor._component_text("router", monitor._COMPONENT_UPDATE) == "роутера"
+
+
+def test_send_now_quiet_for_unconfigured_telegram_in_any_language(db_path, caplog):
+    """Раніше монітор порівнював УКРАЇНСЬКІ тексти ("Telegram сповіщення
+    вимкнені"...), щоб не логувати очікувану ситуацію; з перекладом в
+    англійському інтерфейсі це порівняння перестало б спрацьовувати -
+    лог засмічувався б хибними попередженнями. Тепер - код стану."""
+    from app.monitor import Watchdog
+    from app import telegram_notify
+    db.set_setting("ui_language", "en")
+    wd = Watchdog()
+    with caplog.at_level("WARNING", logger="monitor"):
+        wd._send_now("x")                                           # Telegram вимкнено
+        telegram_notify.set_telegram_config(token=None, chat_ids=["1"], enabled=True)
+        wd._send_now("x")                                           # без токена
+    assert "не надіслано" not in caplog.text
+
+
+def test_send_now_warns_on_real_failure(db_path, caplog):
+    from app.monitor import Watchdog
+    from app import telegram_notify
+    telegram_notify.set_telegram_config(token="T", chat_ids=["1"], enabled=True)
+    with patch("app.telegram_notify.send_message", return_value=(False, "network down")), \
+         caplog.at_level("WARNING", logger="monitor"):
+        Watchdog()._send_now("x")
+    assert "network down" in caplog.text
