@@ -13,6 +13,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
+# Робочі шляхи Pi. Тести НІКОЛИ не мають їх торкатись: на Pi тека
+# /etc/starlink-monitor належить користувачу сервісів - запуск тестів там
+# змінив би робочі налаштування (так і було: 11 тестів писали в справжній
+# /etc/starlink-monitor/env, бо фікстура client ізолювала БД, але не env).
+REAL_PATHS = ("/etc/starlink-monitor", "/var/lib/starlink-monitor")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_real_paths(tmp_path, monkeypatch):
+    """Для КОЖНОГО тесту: файл налаштувань, тека бекапів і БД за
+    замовчуванням - у тимчасовій теці. БД тут навмисно НЕ ініціалізована:
+    тест, якому потрібна БД, бере фікстуру db_path (вона перевизначає
+    шлях), а тест, що звертається до БД без неї, падає на відсутніх
+    таблицях замість тихо читати стан іншого тесту."""
+    from app import config, config_editor
+    monkeypatch.setattr(config_editor, "ENV_FILE_PATH", str(tmp_path / "env"))
+    monkeypatch.setattr(config, "AUTO_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "not-initialized.db"))
+
 
 @pytest.fixture
 def db_path(tmp_path):

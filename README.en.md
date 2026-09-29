@@ -293,21 +293,35 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-586 tests (`pytest-randomly` — resilient to execution order), 17
+587 tests (`pytest-randomly` — resilient to execution order), 17
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
 display, shutdown button) is tested by substituting `sys.modules` for
 `gpiod`/`board`/`digitalio`/`busio`/`adafruit_rgb_display` before
 calling the function (these libraries are imported only inside the
-functions themselves, not at module level). Every test uses an
-isolated temporary DB (`tmp_path`), no side effects on real data.
-To run:
+functions themselves, not at module level). Every test automatically
+gets a temporary DB, settings file and backups directory
+(`tests/conftest.py`) — tests never touch the live
+`/etc/starlink-monitor` and `/var/lib/starlink-monitor`. To run (on
+the development machine):
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 Coverage by module: `pytest --cov=app --cov-report=term-missing`.
+
+**On the Pi itself** — in a separate environment (not the live
+`/opt/.../venv`, no `--break-system-packages`) and without hardware
+libraries (`adafruit-*`), so no test can touch real GPIO/SPI. The
+services may keep running:
+```bash
+cd ~/starlink-monitor            # extracted archive
+python3 -m venv ~/dw-dev
+grep -vi adafruit requirements.txt > /tmp/req-tests.txt
+~/dw-dev/bin/pip install -r /tmp/req-tests.txt -r requirements-dev.txt
+~/dw-dev/bin/mypy app/ && ~/dw-dev/bin/ruff check . && ~/dw-dev/bin/pytest
+```
 
 ## 🗂️ Project structure
 
@@ -316,7 +330,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 586 tests (17 files), pytest-randomly
+├── tests/          # 587 tests (17 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

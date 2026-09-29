@@ -295,20 +295,33 @@ ruff check .
 
 ## ✅ Тести
 
-586 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
+587 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
 дисплей, кнопка виключення) тестується підміною `sys.modules` для
 `gpiod`/`board`/`digitalio`/`busio`/`adafruit_rgb_display` ще до
 виклику функції (ці бібліотеки самі імпортуються лише всередині
-функцій, не на рівні модуля). Кожен тест — ізольована тимчасова БД
-(`tmp_path`), без побічних ефектів на реальні дані. Перевірка:
+функцій, не на рівні модуля). Кожен тест автоматично отримує
+тимчасові БД, файл налаштувань і теку бекапів (`tests/conftest.py`) —
+робочих `/etc/starlink-monitor` і `/var/lib/starlink-monitor` тести не
+торкаються. Перевірка (на машині розробки):
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 Покриття по модулях: `pytest --cov=app --cov-report=term-missing`.
+
+**На самому Pi** — в окремому середовищі (не в робочому `/opt/.../venv`,
+без `--break-system-packages`) і без бібліотек заліза (`adafruit-*`), щоб
+жоден тест не торкнувся справжніх GPIO/SPI. Сервіси можуть працювати:
+```bash
+cd ~/starlink-monitor            # розпакований архів
+python3 -m venv ~/dw-dev
+grep -vi adafruit requirements.txt > /tmp/req-tests.txt
+~/dw-dev/bin/pip install -r /tmp/req-tests.txt -r requirements-dev.txt
+~/dw-dev/bin/mypy app/ && ~/dw-dev/bin/ruff check . && ~/dw-dev/bin/pytest
+```
 
 ## 🗂️ Структура проєкту
 
@@ -317,7 +330,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 586 тестів (17 файлів), pytest-randomly
+├── tests/          # 587 тестів (17 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

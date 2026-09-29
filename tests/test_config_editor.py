@@ -344,3 +344,12 @@ def test_ruff_check_clean():
     r = subprocess.run([ruff, "check", ".", "--no-cache", "--output-format", "concise"],
                        cwd=root, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_tests_never_use_real_pi_paths():
+    """Запобіжник: під час тестів усі робочі шляхи - тимчасові."""
+    import os
+    from app import config, config_editor
+    from conftest import REAL_PATHS
+    for path in (config_editor.ENV_FILE_PATH, config.AUTO_BACKUP_DIR, config.DB_PATH):
+        assert not os.path.abspath(path).startswith(REAL_PATHS), path

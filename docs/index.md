@@ -89,7 +89,7 @@
 
 | Файл | Опис |
 |---|---|
-| `conftest.py` | Спільні fixtures: `db_path` (ізольована тимчасова БД), `watchdog` (з mock-ованим `_notify`) |
+| `conftest.py` | Спільні fixtures: autouse-ізоляція робочих шляхів Pi (env, бекапи, БД за замовчуванням → tmp) для КОЖНОГО тесту; `db_path` (ізольована БД), `watchdog` (Watchdog з mock `_notify`, `router_reachable=True`) |
 | `test_monitor.py` | Reboot-спам, дедублікація target-версій, update-state/alerts (dish+router), auto-reboot логіка |
 | `test_monitor_run_forever.py` | Головний watchdog-цикл: periodичні prune/vacuum/integrity/backup, startup-сповіщення |
 | `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
