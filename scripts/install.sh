@@ -58,9 +58,14 @@ if [[ "$MAJOR_CHANGE" -eq 1 ]]; then
   echo "==> Попередню інсталяцію видалено — продовжую як повне встановлення"
 fi
 
+# Залежності змінились, якщо різняться requirements.txt АБО constraints.txt
+# (закріплені транзитивні версії). Відсутній constraints.txt у вже
+# встановленій копії (перше оновлення після його появи) теж = змінились:
+# diff -q на відсутньому файлі завершується помилкою.
 REQ_CHANGED=1
 if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
-  if diff -q "$SRC_DIR/requirements.txt" "$PROJECT_DIR/requirements.txt" >/dev/null 2>&1; then
+  if diff -q "$SRC_DIR/requirements.txt" "$PROJECT_DIR/requirements.txt" >/dev/null 2>&1 \
+     && diff -q "$SRC_DIR/constraints.txt" "$PROJECT_DIR/constraints.txt" >/dev/null 2>&1; then
     REQ_CHANGED=0
   fi
 fi
@@ -142,9 +147,9 @@ if [[ ! -d "$PROJECT_DIR/venv" ]]; then
   # системний пакет через apt надійніший на Raspberry Pi OS.
   sudo -u "$RUN_USER" python3 -m venv --system-site-packages "$PROJECT_DIR/venv"
   sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
-  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -c "$PROJECT_DIR/constraints.txt"
 elif [[ "$REQ_CHANGED" -eq 1 ]]; then
-  echo "==> requirements.txt змінився — оновлюю залежності"
+  echo "==> requirements.txt/constraints.txt змінились — оновлюю залежності"
   # БЕЗ --upgrade: requirements.txt тепер має ЛИШЕ точні == піни (не
   # >=), тому звичайний install ідемпотентний і торкається ЛИШЕ
   # пакетів, чий точний pin реально відрізняється від встановленого.
@@ -153,9 +158,13 @@ elif [[ "$REQ_CHANGED" -eq 1 ]]; then
   # навіть ті, чий рядок не змінювався - одного разу так випадково
   # оновився adafruit-blinka (8.x->9.2.0, hardware-критичний для
   # TFT-дисплея), хоч ми explicitly домовились його не чіпати.
-  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+  # -c constraints.txt: закріплені ТРАНЗИТИВНІ версії (urllib3, idna, Werkzeug...).
+  # Без нього pip вважає вже встановлені (в т.ч. системні, через
+  # --system-site-packages) версії задоволеними і не оновлює їх ніколи.
+  # Constraints не додають пакетів - апаратні adafruit-* не зачіпаються.
+  sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -c "$PROJECT_DIR/constraints.txt"
 else
-  echo "==> venv вже існує, requirements.txt без змін — пропускаю pip install"
+  echo "==> venv вже існує, requirements.txt/constraints.txt без змін — пропускаю pip install"
 fi
 
 echo "==> Каталог даних"

@@ -10,6 +10,7 @@
 парсингу (getattr-fallback'и, enum-мапінг, конвертацію одиниць), не
 мережевий стек.
 """
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -574,3 +575,128 @@ def test_router_ignored_alert_dropped_at_source():
     payload["wifiGetStatus"]["alerts"] = {"wiredMeshNotUsingWanIface": True, "thermalThrottle": True}
     r = run_router_info(stdout=json.dumps(payload))
     assert r.active_alerts == ["thermal_throttle"]
+
+
+# ---- reboot_dish(): функція, заради якої існує watchdog, раніше не виконувалась жодним тестом ----
+
+def _reboot_client():
+    from app.starlink_client import StarlinkClient
+    return StarlinkClient(dish_addr="192.168.100.1:9200")
+
+
+def _completed(returncode=0, stdout="", stderr=""):
+    from types import SimpleNamespace
+    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_reboot_dish_builds_exact_grpcurl_command():
+    """Той самий виклик, що робить вендорна бібліотека:
+    stub.Handle(Request(reboot={})) = SpaceX.API.Device.Device/Handle."""
+    import json
+    from unittest.mock import patch
+    client = _reboot_client()
+    with patch("shutil.which", return_value="/usr/local/bin/grpcurl"), \
+         patch("subprocess.run", return_value=_completed(0)) as run:
+        ok, msg = client.reboot_dish()
+    assert (ok, msg) == (True, "reboot command sent")
+    cmd = run.call_args.args[0]
+    assert cmd[0] == "/usr/local/bin/grpcurl" and cmd[1] == "-plaintext"
+    assert json.loads(cmd[cmd.index("-d") + 1]) == {"reboot": {}}
+    assert cmd[-2:] == ["192.168.100.1:9200", "SpaceX.API.Device.Device/Handle"]
+    assert run.call_args.kwargs["timeout"] == client.timeout + 5
+
+
+def test_reboot_dish_reports_missing_grpcurl_without_running_anything():
+    from unittest.mock import patch
+    with patch("shutil.which", return_value=None), patch("subprocess.run") as run:
+        ok, msg = _reboot_client().reboot_dish()
+    assert ok is False and "grpcurl" in msg
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("stdout,stderr,expected", [
+    ("", "Failed to dial target host", "Failed to dial target host"),      # stderr має пріоритет
+    ("error on stdout", "", "error on stdout"),
+    ("", "", "unknown error"),
+    ("", "x" * 900, "x" * 500),                                            # обрізається до 500 символів
+])
+def test_reboot_dish_nonzero_exit_returns_error_text(stdout, stderr, expected):
+    from unittest.mock import patch
+    with patch("shutil.which", return_value="/bin/grpcurl"), \
+         patch("subprocess.run", return_value=_completed(1, stdout, stderr)):
+        assert _reboot_client().reboot_dish() == (False, expected)
+
+
+def test_reboot_dish_timeout_and_unexpected_errors_never_raise():
+    import subprocess
+    from unittest.mock import patch
+    client = _reboot_client()
+    with patch("shutil.which", return_value="/bin/grpcurl"):
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("grpcurl", 10)):
+            assert client.reboot_dish() == (False, "timeout")
+        with patch("subprocess.run", side_effect=PermissionError("немає прав")):
+            assert client.reboot_dish() == (False, "немає прав")
+
+
+# ---- стан оновлення роутера: grpcurl віддає enum і числом, і числовим рядком, і ІМЕНЕМ ----
+
+@pytest.mark.parametrize("raw,expected", [
+    ("REBOOT_PENDING", "REBOOT_PENDING"),      # ім'я - те, що реально друкує grpcurl
+    (None, ""),                                # поля немає
+    ("", ""),
+])
+def test_router_update_state_accepts_enum_names_and_missing(raw, expected):
+    import json
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["softwareUpdateStats"] = {"state": raw} if raw is not None else {"softwareDownloadProgress": 0.5}
+    assert run_router_info(stdout=json.dumps(payload)).update_state == expected
+
+
+def test_router_update_state_accepts_numeric_forms():
+    import json
+    from app.starlink_client import ROUTER_UPDATE_STATE_NAMES
+    number, name = next(iter(ROUTER_UPDATE_STATE_NAMES.items()))
+    for raw in (number, str(number)):
+        payload = make_router_payload()
+        payload["wifiGetStatus"]["softwareUpdateStats"] = {"state": raw}
+        assert run_router_info(stdout=json.dumps(payload)).update_state == name
+
+
+# ---- локальна несправність (модуль starlink_grpc недоступний) - не збій тарілки ----
+
+def test_missing_module_is_marked_as_local_fault():
+    with patch.object(starlink_client, "starlink_grpc", None):
+        s = StarlinkClient().get_status()
+    assert s.online is False and s.local_fault is True
+    assert s.to_dict()["local_fault"] is True
+
+
+def test_real_dish_failure_is_not_marked_local(client_with_resp):
+    from types import SimpleNamespace
+    with patch.object(starlink_client, "starlink_grpc", SimpleNamespace(
+            ChannelContext=lambda target: SimpleNamespace(close=lambda: None),
+            get_status=lambda ctx: (_ for _ in ()).throw(RuntimeError("timeout")))):
+        s = StarlinkClient().get_status()
+    assert s.online is False and s.local_fault is False
+
+
+@pytest.mark.parametrize("content,label", [
+    ("half = ", "обірваний файл (SyntaxError)"),
+    ("import module_that_does_not_exist_xyz\n", "відсутня залежність (ModuleNotFoundError)"),
+    ("raise RuntimeError('boom at import')\n", "виняток при ініціалізації модуля"),
+])
+def test_broken_vendor_file_does_not_stop_the_monitor_from_starting(tmp_path, content, label):
+    """Раніше обірваний starlink_grpc.py давав SyntaxError при імпорті
+    app.starlink_client - монітор не стартував узагалі (crash-loop), хоча
+    reboot тарілки через grpcurl від цього файлу не залежить."""
+    import shutil
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parent.parent
+    shutil.copytree(root / "app", tmp_path / "app", ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "app" / "vendor" / "starlink_grpc.py").write_text(content)
+    code = ("from app import starlink_client as c; s = c.StarlinkClient().get_status(); "
+            "print(s.local_fault, s.online, s.error)")
+    out = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, (label, out.stderr[-300:])
+    assert out.stdout.startswith("True False starlink_grpc module missing"), out.stdout

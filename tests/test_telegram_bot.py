@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app import db, telegram_bot
+from app import db, i18n, telegram_bot
 from app.starlink_client import DishStatus, RouterInfo
 
 
@@ -755,8 +755,9 @@ def test_router_hidden_states_in_sync_with_dashboard():
     розбіжність означала б різний стан на дашборді й у Telegram/дисплеї."""
     import os
     import re
+    from pathlib import Path
     from app import display, labels
-    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "dashboard.js"), encoding="utf-8").read()
+    js = Path(os.path.dirname(__file__), "..", "static", "dashboard.js").read_text(encoding="utf-8")
     js_list = re.search(r"const HIDDEN_ROUTER_STATES = \[([^\]]*)\]", js).group(1)
     assert set(re.findall(r"'([A-Z_]+)'", js_list)) == set(labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES)
     assert display.HIDDEN_ROUTER_STATES is labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES
@@ -818,3 +819,120 @@ def test_cmd_status_does_not_count_ignored_router_alert(db_path):
     with patch("app.telegram_bot._api_call", side_effect=lambda m, tok, to, **kw: sent.append(kw.get("text")) or {"ok": True}):
         bot._cmd_status("token", "chat1")
     assert "Попереджень" not in sent[0]
+
+
+# ---- диспетчер команд: маршрутизація до правильного методу (раніше не перевірялась) ----
+
+@pytest.mark.parametrize("text,method", [
+    ("/status", "_cmd_status"),
+    ("/checkupdates", "_cmd_check_updates"),
+    ("/reboot", "_cmd_reboot_request"),
+    ("/help", "_cmd_help"),
+    ("/start", "_cmd_help"),
+    ("/STATUS", "_cmd_status"),                     # регістр
+    ("/status@DishWatchBot", "_cmd_status"),        # групові чати: команда з ім'ям бота
+    ("  /help  ", "_cmd_help"),
+])
+def test_command_dispatch_routes_to_the_right_handler(db_path, text, method):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    handlers = ["_cmd_status", "_cmd_check_updates", "_cmd_reboot_request", "_cmd_id", "_cmd_help"]
+    mocks = {}
+    with patch("app.telegram_bot._api_call", return_value={"ok": True}):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for h in handlers:
+                mocks[h] = stack.enter_context(patch.object(bot, h))
+            bot._handle_update("tok", {"1"}, {"message": {"chat": {"id": 1}, "text": text}})
+    called = [h for h, m in mocks.items() if m.called]
+    assert called == [method], (text, called)
+
+
+@pytest.mark.parametrize("text", ["/foo", "hello", "/rebootnow", "/statuss"])
+def test_unknown_command_gets_hint_and_executes_nothing(db_path, text):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    sent = []
+    with patch.object(bot, "_send", side_effect=lambda tok, chat, msg: sent.append(msg)), \
+         patch.object(bot.client, "reboot_dish") as reboot:
+        bot._handle_update("tok", {"1"}, {"message": {"chat": {"id": 1}, "text": text}})
+    assert sent == [i18n.t("tg_unknown_command")]
+    reboot.assert_not_called()
+
+
+def test_callback_reboot_failure_is_reported_and_logged(db_path):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    bot._pending_reboot_confirm["1"] = time.time()
+    sent = []
+    with patch("app.telegram_bot._api_call", return_value={"ok": True}), \
+         patch.object(bot, "_send", side_effect=lambda tok, chat, msg: sent.append(msg)), \
+         patch.object(bot.client, "reboot_dish", return_value=(False, "timeout")):
+        bot._handle_callback("tok", {"1"}, {"id": "cb", "data": "reboot_confirm", "message": {"chat": {"id": 1}}})
+    assert sent[-1] == i18n.t("tg_reboot_failed", msg="timeout")
+    event = next(e for e in db.get_recent_events(5) if e["kind"] == "dish_reboot")
+    assert event["success"] == 0 and "timeout" in event["message"]
+
+
+def test_status_shows_router_error_when_router_offline(db_path):
+    from unittest.mock import patch
+    from app.starlink_client import DishStatus, RouterInfo
+    bot = telegram_bot.TelegramBot()
+    bot.client.get_status = lambda: DishStatus(timestamp=1.0, online=True, software_version="v1")
+    bot.client.get_router_info = lambda: RouterInfo(timestamp=1.0, online=False, error="connection refused")
+    sent = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda m, tok, to, **kw: sent.append(kw.get("text")) or {"ok": True}):
+        bot._cmd_status("tok", "1")
+    assert "connection refused" in sent[0]
+
+
+def test_id_without_known_dishes_says_so(db_path):
+    from unittest.mock import patch
+    bot = telegram_bot.TelegramBot()
+    sent = []
+    with patch.object(bot, "_send", side_effect=lambda tok, chat, msg: sent.append(msg)):
+        bot._cmd_id("tok", "1", "")
+    assert sent == [i18n.t("tg_no_dishes_yet")]
+
+
+# ---- відповіді бота - валідний Telegram-HTML навіть із ворожими даними ----
+
+def _sent_texts(action):
+    from unittest.mock import patch
+    sent = []
+    with patch("app.telegram_bot._api_call", side_effect=lambda m, tok, to, **kw: sent.append(kw.get("text")) or {"ok": True}):
+        action()
+    return sent
+
+
+def test_status_with_real_grpc_error_is_valid_html_and_readable(db_path):
+    """Регресія: при недоступній тарілці /status починався з `<_MultiThread...`
+    - Telegram відхиляв ВСЕ повідомлення, і бот мовчав саме тоді, коли потрібен."""
+    from conftest import assert_valid_telegram_html
+    from test_i18n import _GRPC_ERROR
+    from app.starlink_client import DishStatus, RouterInfo
+    bot = telegram_bot.TelegramBot()
+    bot.client.get_status = lambda: DishStatus(timestamp=1.0, online=False, error=_GRPC_ERROR)
+    bot.client.get_router_info = lambda: RouterInfo(timestamp=1.0, online=False, error="<nil> & <html>")
+    text = _sent_texts(lambda: bot._cmd_status("t", "1"))[0]
+    assert_valid_telegram_html(text)
+    assert "failed to connect to all addresses" in text and "_MultiThreadedRendezvous" not in text
+    assert "&lt;nil&gt; &amp; &lt;html&gt;" in text
+
+
+def test_id_echo_of_user_input_is_escaped(db_path):
+    from conftest import assert_valid_telegram_html
+    bot = telegram_bot.TelegramBot()
+    text = _sent_texts(lambda: bot._cmd_id("t", "1", "<b>evil & co"))[0]
+    assert_valid_telegram_html(text)
+    assert "&lt;b&gt;evil &amp; co" in text
+
+
+def test_id_multiple_matches_keeps_code_tags_and_escapes_ids(db_path):
+    from conftest import assert_valid_telegram_html
+    db._upsert_known_device("ut<1>&a", "dish", "hw", "sw")
+    db._upsert_known_device("ut<2>&b", "dish", "hw", "sw")
+    bot = telegram_bot.TelegramBot()
+    text = _sent_texts(lambda: bot._cmd_id("t", "1", "ut<"))[0]
+    assert_valid_telegram_html(text)
+    assert "<code>ut&lt;1&gt;&amp;a</code>" in text and "<code>ut&lt;2&gt;&amp;b</code>" in text

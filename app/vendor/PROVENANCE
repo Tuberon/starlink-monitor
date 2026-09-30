@@ -1,0 +1,16 @@
+# Походження app/vendor/starlink_grpc.py - СТОРОННІЙ код, не наш (див.
+# docs/decisions-log.md: "starlink_grpc.py винесено як vendor-файл").
+# Формат: KEY=value (рядки з # - коментарі). Файл пише scripts/fetch_starlink_grpc.sh;
+# тест перевіряє, що SHA256 нижче збігається з фактичним файлом.
+UPSTREAM_REPO=https://github.com/sparky8512/starlink-grpc-tools
+UPSTREAM_PATH=starlink_grpc.py
+UPSTREAM_COMMIT=8f34f4cd56dc9a5a72357f6d26fab09ea1b696ab
+UPSTREAM_COMMIT_DATE=2026-03-20
+UPSTREAM_COMMIT_SUBJECT=Correct exception handling in get_sleep_config
+SHA256=80da9e7994c2b23e5d732fba04ff559f15a8fe07d68920b027501d70730dc301
+LICENSE=Unlicense (суспільне надбання; https://github.com/sparky8512/starlink-grpc-tools/blob/main/LICENSE)
+RECORDED=2026-09-30
+# Файл побайтово збігається з зазначеним комітом (знайдено порівнянням sha256 з
+# усією історією файлу в upstream). На дату запису upstream мав 3 новіші коміти
+# цього файлу (2026-09-16..18, стан оновлення ПЗ: 70ce613, 075bc17, 5e12caf) -
+# свідомо не підтягнуто: наш код використовує лише ChannelContext і get_status.

@@ -274,3 +274,67 @@ def test_run_forever_redraws_after_refresh_interval(fake_hardware, db_path):
         display.run_forever(stop_event=stop_event)
 
     assert len(fake_hardware.images) >= 1
+
+
+# ---- спалах підсвітки при зміні стану оновлення (раніше не виконувався жодним тестом) ----
+
+def _run_flash_scenario(fake_hardware, flash_sec):
+    """Скриптований годинник: початковий стан -> з'являється новий
+    update_state -> спливає час спалаху. Повертає [(момент, значення)]
+    усіх перемикань підсвітки."""
+    config.DISPLAY_ENABLED = True
+    config.SHUTDOWN_BUTTON_GPIO_PIN = 0
+    config.DISPLAY_REFRESH_SEC = 5
+    config.DISPLAY_UPDATE_FLASH_SEC = flash_sec
+    config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC = 0        # ізолюємо спалах від звичайного автовимкнення
+
+    clock = {"t": 1000.0}
+    switched = []
+    stop_event = threading.Event()
+    db.insert_metric({"timestamp": 1000.0, "online": True, "update_state": "IDLE"})
+
+    def new_state_appears():
+        db.insert_metric({"timestamp": 1005.0, "online": True, "update_state": "FETCHING"})
+        clock["t"] += 10
+
+    script = [new_state_appears, lambda: clock.__setitem__("t", clock["t"] + 10),
+              lambda: clock.__setitem__("t", clock["t"] + 25)]
+
+    def fake_sleep(_):
+        if script:
+            script.pop(0)()
+        else:
+            stop_event.set()
+
+    with patch("time.sleep", side_effect=fake_sleep), \
+         patch("time.time", side_effect=lambda: clock["t"]), \
+         patch("app.display._set_backlight", side_effect=lambda pin, v: switched.append((clock["t"], v))):
+        display.run_forever(stop_event=stop_event)
+    return switched
+
+
+def test_backlight_flashes_on_update_state_change_then_turns_off(fake_hardware, db_path):
+    switched = _run_flash_scenario(fake_hardware, flash_sec=30)
+    # спалах: увімкнено в момент зміни (1010), вимкнено, коли минуло 30 с (1045 >= 1010+30)
+    assert switched == [(1010.0, True), (1045.0, False)]
+
+
+def test_no_flash_when_disabled_by_zero_seconds(fake_hardware, db_path):
+    assert _run_flash_scenario(fake_hardware, flash_sec=0) == []
+
+
+def test_first_reading_after_start_is_not_a_state_change(fake_hardware, db_path):
+    """Після запуску сервісу перший стан - не "зміна": екран не спалахує."""
+    config.DISPLAY_ENABLED = True
+    config.SHUTDOWN_BUTTON_GPIO_PIN = 0
+    config.DISPLAY_REFRESH_SEC = 5
+    config.DISPLAY_UPDATE_FLASH_SEC = 30
+    config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC = 0
+    db.insert_metric({"timestamp": 1000.0, "online": True, "update_state": "FETCHING"})
+    stop_event = threading.Event()
+    switched = []
+    with patch("time.sleep", side_effect=lambda _: stop_event.set()), \
+         patch("time.time", side_effect=lambda: 1000.0), \
+         patch("app.display._set_backlight", side_effect=lambda pin, v: switched.append(v)):
+        display.run_forever(stop_event=stop_event)
+    assert switched == []

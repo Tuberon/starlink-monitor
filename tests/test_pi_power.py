@@ -250,3 +250,10 @@ def test_pending_signal_cleanup_failure_after_failed_action_does_not_raise(db_pa
             "тест", "успіх", "вимкнути", notify_fn=lambda t: None,
         )  # не мало кинути виняток
     assert ok is False
+
+
+def test_run_system_command_timeout_returns_failure_not_exception():
+    import subprocess
+    from unittest.mock import patch
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("systemctl", 10)):
+        assert pi_power.run_system_command(["sudo", "systemctl", "reboot"]) == (False, "timeout")

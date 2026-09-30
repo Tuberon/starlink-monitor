@@ -32,7 +32,19 @@ if [[ -z "$RUN_USER_HOME" ]]; then
 fi
 
 ARCHIVE_PATH="${1:-$RUN_USER_HOME/starlink-monitor.tar.gz}"
-EXTRACT_DIR="/tmp/starlink-monitor-update"
+# Тека розпакування створюється mktemp -d (права 0700, власник root), а не за
+# ФІКСОВАНИМ шляхом /tmp/...: звідси від root ВИКОНУЄТЬСЯ install.sh, і між
+# розпаковуванням та запуском будь-який процес під звичайним користувачем
+# (напр. скомпрометований веб-інтерфейс) міг би підмінити файл у передбачуваній
+# теці й отримати виконання коду від root. Прибирається trap-ом за будь-якого
+# виходу, зокрема при збої tar під set -e.
+EXTRACT_DIR=""
+cleanup_extract_dir() {
+  if [[ -n "$EXTRACT_DIR" ]]; then
+    rm -rf "$EXTRACT_DIR"
+  fi
+}
+trap cleanup_extract_dir EXIT
 STATE_FILE="/var/lib/starlink-monitor/last_archive_sha256"
 
 echo "==> Користувач: $RUN_USER"
@@ -60,8 +72,7 @@ if [[ "$NEW_SHA" == "$OLD_SHA" ]]; then
 fi
 
 echo "==> Розпаковую архів"
-rm -rf "$EXTRACT_DIR"
-mkdir -p "$EXTRACT_DIR"
+EXTRACT_DIR="$(mktemp -d /tmp/starlink-monitor-update.XXXXXX)"
 tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
 
 # Архів може містити верхній каталог (напр. starlink-monitor/) або
@@ -69,7 +80,6 @@ tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
 INSTALL_SH="$(find "$EXTRACT_DIR" -maxdepth 3 -type f -name install.sh | head -n1)"
 if [[ -z "$INSTALL_SH" ]]; then
   echo "!! У розпакованому архіві не знайдено scripts/install.sh — переривання"
-  rm -rf "$EXTRACT_DIR"
   exit 1
 fi
 
@@ -87,5 +97,4 @@ else
   echo "   Стан не збережено — повторний запуск update.sh спробує ще раз."
 fi
 
-rm -rf "$EXTRACT_DIR"
 exit "$INSTALL_EXIT"

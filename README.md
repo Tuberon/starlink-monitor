@@ -223,8 +223,8 @@ backup у Telegram" (незалежно від автоматичного роз
   буфер перед завершенням; WAL-журнал SQLite не скидається на диск після
   кожного запису (у ~150 разів менше примусових синхронізацій), а
   налаштування синхронізуються одразу
-- **VACUUM/ANALYZE + перевірка цілісності БД** — раз на добу;
-  пошкодження → Telegram-сповіщення й аварійний backup
+- **ANALYZE + перевірка цілісності БД** — раз на добу (`VACUUM` — лише
+  коли вільних сторінок ≥ 30%: він переписує всю БД); пошкодження → Telegram-сповіщення й аварійний backup
 - **Автоматичний backup** — раз на тиждень, зберігає останні
   `AUTO_BACKUP_KEEP_COUNT` копій (типово 4)
 - **Повторна спроба Telegram** — при мережевій помилці, `SEND_RETRIES`
@@ -280,7 +280,14 @@ IPv4 через `eth0`. На вже встановленій системі (м�
 ## 🔍 Типізація (mypy)
 
 Увесь код проєкту (крім `app/vendor/` — сторонній код) типізований і
-проходить `mypy` без помилок. Перевірка перед комітом/оновленням:
+проходить `mypy` у **суворому режимі** (`app/*` — еквівалент `--strict`,
+прапорці в `mypy.ini`; у `tests/` типізація м'яка). Виклики `requests`,
+`psutil`, `dns` перевіряються справжніми стабами (`types-*` у
+`requirements-dev.txt`); ігнорування імпортів дозволено лише для апаратних
+бібліотек Pi — суворість тримає тест `test_mypy_config_stays_strict`.
+Результат `mypy` залежить від встановлених пакетів (без Flask — 31 помилка),
+тож запускати у повному dev-середовищі. Перевірка перед
+комітом/оновленням:
 ```bash
 pip install -r requirements-dev.txt
 mypy app/
@@ -288,14 +295,14 @@ ruff check .
 ```
 `ruff check` — перевірка коду (невикористане, типові пастки, безпека;
 правила в `ruff.toml`), також виконується як один із тестів. Не
-автоформатування: `ruff format` свідомо не використовується. Не `--strict` і без CI — для одноосібного hobby-проєкту такого
+автоформатування: `ruff format` свідомо не використовується. Без CI — для одноосібного hobby-проєкту такого
 масштабу пропорційніше запускати локально як ще одну живу перевірку
 поруч із `py_compile`, ніж інвестувати в повноцінну CI-інфраструктуру
 (деталі рішення — `docs/decisions-log.md`).
 
 ## ✅ Тести
 
-587 тестів (`pytest-randomly` — стійкість до порядку виконання), 17
+762 тест (`pytest-randomly` — стійкість до порядку виконання), 20
 файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -330,12 +337,13 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 587 тестів (17 файлів), pytest-randomly
+├── tests/          # 762 тест (20 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
-├── requirements.txt      # production-залежності
-└── requirements-dev.txt  # mypy/pytest/pytest-cov
+├── requirements.txt      # production-залежності (прямі, точні піни)
+├── constraints.txt       # закріплені ТРАНЗИТИВНІ версії (pip install -c)
+└── requirements-dev.txt  # mypy/pytest/ruff/pip-audit
 ```
 
 Детальний опис кожного файлу — [`docs/index.md`](docs/index.md).
@@ -417,5 +425,15 @@ sudo systemctl restart starlink-monitor.service starlink-webui.service
 [sparky8512/starlink-grpc-tools](https://github.com/sparky8512/starlink-grpc-tools)
 для відтворюваності збірки (не завантажується динамічно при
 встановленні) — **його ліцензійні умови визначає власний автор**,
-окремо від MIT цього репозиторію. Оновлення до найновішої
-upstream-версії — опційно, `scripts/fetch_starlink_grpc.sh`.
+окремо від MIT цього репозиторію (Unlicense — суспільне надбання).
+Походження зафіксовано в `app/vendor/PROVENANCE` (upstream-коміт, дата,
+sha256; тест звіряє їх з файлом). Оновлення до найновішої upstream-версії —
+опційно, `scripts/fetch_starlink_grpc.sh` (завантаження у тимчасовий файл,
+перевірки, резервна копія `.prev`, атомарна заміна; `--commit=<sha>` —
+конкретна ревізія).
+
+**Залежності.** `requirements.txt` закріплює прямі пакети, `constraints.txt` —
+транзитивні (`install.sh` ставить `pip install -r requirements.txt -c
+constraints.txt`; без цього pip ніколи не оновлював уже встановлені, зокрема
+системні, версії). Апаратні `adafruit-*` свідомо не закріплені. Аудит
+вразливостей: `pip install pip-audit && scripts/audit_deps.sh`.

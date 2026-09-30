@@ -11,6 +11,7 @@ global (app.jinja_env.globals["t"] = t) для шаблонів і напрям�
 telegram_bot.py. Для JS - словник серіалізується в JSON і
 вбудовується в кожну сторінку (window.I18N), плюс маленький
 t(key) JS-helper у common.js."""
+import html
 from typing import Any, Callable, Iterable, Optional
 
 from app import db
@@ -339,6 +340,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "expected_type": {"uk": "очікується {type}", "en": "expected {type}"},
     "expected_0_or_1": {"uk": "очікується 0 або 1", "en": "expected 0 or 1"},
     "invalid_field": {"uk": "Некоректне значення поля {field}", "en": "Invalid value for field {field}"},
+    "out_of_range": {"uk": "значення поза допустимим діапазоном: від {min} до {max}", "en": "value out of range: {min} to {max}"},
+    "not_finite": {"uk": "очікується скінченне число (не nan/inf)", "en": "a finite number is expected (not nan/inf)"},
+    "expected_one_of": {"uk": "допустимі значення: {values}", "en": "allowed values: {values}"},
     "invalid_control_chars": {"uk": "містить недопустимі керуючі символи (перенесення рядка тощо)", "en": "contains invalid control characters (line breaks etc.)"},
 
     # ---- stats.html ----
@@ -469,6 +473,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tg_auto_reboot_update": {"uk": "🔁 Starlink Mini автоматично перезавантажено (оновлення ПЗ {component} готове: {reason})", "en": "🔁 Starlink Mini rebooted automatically ({component} firmware update ready: {reason})"},
     "tg_auto_reboot_update_failed": {"uk": "❌ Не вдалося перезавантажити Starlink Mini (оновлення ПЗ {component} готове): {msg}", "en": "❌ Failed to reboot Starlink Mini ({component} firmware update ready): {msg}"},
     "tg_auto_reboot_watchdog": {"uk": "🔁 Starlink Mini автоматично перезавантажено (dish не відповідав {failures} спроб поспіль)", "en": "🔁 Starlink Mini rebooted automatically (dish did not respond {failures} times in a row)"},
+    "tg_local_fault": {"uk": "⚠️ Моніторинг тарілки не працює: {error}. Причина ЛОКАЛЬНА (не тарілка), тож перезавантаження тарілки вимкнено. Відновіть app/vendor/starlink_grpc.py (scripts/install.sh або fetch_starlink_grpc.sh) і перезапустіть сервіс.", "en": "⚠️ Dish monitoring is not working: {error}. The cause is LOCAL (not the dish), so dish reboots are disabled. Restore app/vendor/starlink_grpc.py (scripts/install.sh or fetch_starlink_grpc.sh) and restart the service."},
     "tg_pi_started": {"uk": "🟢 Dish Watch запущено (Raspberry Pi перезавантажено)", "en": "🟢 Dish Watch started (Raspberry Pi rebooted)"},
     "tg_dish_update_ready": {"uk": "🔄 Оновлення ПЗ dish готове — очікує перезавантаження{detail}", "en": "🔄 Dish firmware update ready — reboot pending{detail}"},
     "tg_router_update_ready": {"uk": "🔄 Оновлення ПЗ роутера готове — очікує перезавантаження{detail}", "en": "🔄 Router firmware update ready — reboot pending{detail}"},
@@ -550,6 +555,27 @@ def get_language() -> str:
     return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
 
+class SafeHtml(str):
+    """Рядок, що ВЖЕ є коректним Telegram-HTML (напр. список `<code>..</code>`):
+    у повідомленнях tg_* він не екранується, на відміну від решти аргументів."""
+
+
+# Повідомлення Telegram ідуть з parse_mode="HTML": будь-які `<`, `>`, `&` у
+# ДИНАМІЧНОМУ тексті мають бути екрановані, інакше Telegram відхиляє ВСЕ
+# повідомлення ("can't parse entities"). Реальний випадок: при недоступній
+# тарілці grpc дає помилку `<_MultiThreadedRendezvous of RPC...>` - `/status`
+# мовчав саме тоді, коли потрібен найбільше. Так само ехо введеного в чаті
+# `/id <що завгодно>`. Ключі tg_* використовуються ЛИШЕ в Telegram.
+_TELEGRAM_KEY_PREFIX = "tg_"
+
+
+def _escape_for_telegram(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: v if v is None or isinstance(v, (SafeHtml, int, float, bool)) else html.escape(str(v), quote=False)
+        for k, v in kwargs.items()
+    }
+
+
 def _translate(lang: str, key: str, /, **kwargs: Any) -> str:
     # Позиційні параметри ("/"): плейсхолдер з тим самим ім'ям (напр.
     # {lang} у "Непідтримувана мова: {lang}") інакше зіткнувся б із ними -
@@ -558,6 +584,8 @@ def _translate(lang: str, key: str, /, **kwargs: Any) -> str:
     if entry is None:
         return key
     text = entry.get(lang) or entry.get(DEFAULT_LANG, key)
+    if kwargs and key.startswith(_TELEGRAM_KEY_PREFIX):
+        kwargs = _escape_for_telegram(kwargs)
     return text.format(**kwargs) if kwargs else text
 
 

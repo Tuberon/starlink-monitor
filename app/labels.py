@@ -17,6 +17,9 @@ Module-level dict обчислився б ОДИН раз при імпорті 
 вона потрапила в тести). Мова читається ОДИН раз на виклик функції
 (i18n.translator()), не на кожен із ~20 рядків словника."""
 
+import re
+from typing import Optional
+
 from app import i18n
 
 # Стани оновлення роутера, які ПОКАЗУЮТЬСЯ як "немає оновлень" (NOT_RUN)
@@ -28,6 +31,17 @@ from app import i18n
 # рішення: monitor.HIDDEN_ROUTER_UPDATE_STATES (там лише
 # DOWNLOADING_UPDATE_IMAGE_FAILED; GETTING_TARGET_VERSION_FAILED у журнал
 # пишеться, але в Telegram не надсилається - рішення користувача).
+def short_error(text: Optional[str], limit: int = 200) -> str:
+    """Коротка форма помилки для чату. gRPC-помилка - це багаторядкова
+    `<_MultiThreadedRendezvous of RPC ... status = ... details = "..." ...>`
+    (сотні символів налагоджувального сміття): лишаємо лише `details`."""
+    if not text:
+        return ""
+    match = re.search(r'details = "(.*?)"\s*\n', text, re.S)
+    line = match.group(1) if match else text.strip().splitlines()[0] if text.strip() else ""
+    return line if len(line) <= limit else line[: limit - 1] + "…"
+
+
 ROUTER_STATES_SHOWN_AS_NO_UPDATES = ("DOWNLOADING_UPDATE_IMAGE_FAILED", "GETTING_TARGET_VERSION_FAILED")
 
 

@@ -8,11 +8,13 @@ import os
 import socket
 import time
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 import requests
 from requests.adapters import HTTPAdapter
 
 from app import config, db, i18n
+from app.log_redact import redact
 
 logger = logging.getLogger("telegram_notify")
 
@@ -49,11 +51,12 @@ def _get_eth0_ip() -> Optional[str]:
     try:
         import fcntl
         import struct
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ip = socket.inet_ntoa(fcntl.ioctl(
-            s.fileno(), 0x8915, struct.pack("256s", b"eth0"[:15])
-        )[20:24])
-        return ip
+        # with: сокет закривається завжди (раніше - лише збиранням сміття
+        # при виході з функції, тобто залежно від деталі реалізації CPython)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            return socket.inet_ntoa(fcntl.ioctl(
+                s.fileno(), 0x8915, struct.pack("256s", b"eth0"[:15])
+            )[20:24])
     except OSError:
         return None
 
@@ -83,7 +86,7 @@ def _resolve_via_eth0(hostname: str) -> Optional[str]:
             for rrset in response.answer:
                 for item in rrset:
                     if item.rdtype == dns.rdatatype.A:
-                        return item.address
+                        return str(item.address)
         except Exception as e:
             logger.warning("Ручний DNS-запит через eth0 до %s не вдався для %s: %s", dns_server, hostname, e)
         finally:
@@ -117,11 +120,23 @@ def _request_via_eth0(method: str, url: str, resolved_ip: Optional[str] = None, 
     втрату зв'язку важливіше за суворий hostname-matching у цьому
     вузькому й короткому фолбек-вікні (лише коли й системний DNS
     недоступний)."""
+    # Сесія закривається у finally: тіло відповіді вже прочитане
+    # (stream=False), тож закриття пулу з'єднань після request() безпечне;
+    # раніше нова сесія створювалась на КОЖНЕ резервне надсилання й
+    # закривалась лише збиранням сміття.
     session = requests.Session()
-    adapter = _Eth0BoundAdapter()
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
+    try:
+        adapter = _Eth0BoundAdapter()
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return _send_via_bound_session(session, method, url, resolved_ip, **kwargs)
+    finally:
+        session.close()
 
+
+def _send_via_bound_session(
+    session: requests.Session, method: str, url: str, resolved_ip: Optional[str], **kwargs: Any,
+) -> requests.Response:
     if not resolved_ip:
         return session.request(method, url, **kwargs)
 
@@ -172,12 +187,12 @@ def _request_with_eth0_fallback(
         eth0_ip = _get_eth0_ip()
         if not eth0_ip:
             raise
-        logger.info("Дефолтний маршрут недоступний (%s), пробую через eth0", e)
+        logger.info("Дефолтний маршрут недоступний (%s), пробую через eth0", redact(str(e)))
 
         try:
             return _request_via_eth0(method, url, **kwargs)
         except requests.RequestException as e2:
-            hostname = requests.utils.urlparse(url).hostname
+            hostname = urlparse(url).hostname
             resolved_ip = _resolve_via_eth0(hostname) if hostname else None
             if not resolved_ip:
                 raise e2
@@ -216,6 +231,7 @@ def _send_to_all_chats(chat_ids: list[str], method_label: str, make_request: Cal
     між викликачами."""
     errors = []
     any_ok = False
+    token = get_telegram_config()[0]      # для точного очищення секрету з текстів помилок
     for chat_id in chat_ids:
         last_network_error: Optional[str] = None
         # +1 - перша спроба не рахується "повтором". TELEGRAM_SEND_
@@ -237,8 +253,11 @@ def _send_to_all_chats(chat_ids: list[str], method_label: str, make_request: Cal
                     logger.warning("Telegram %s помилка для %s: %s", method_label, chat_id, err_desc)
                 break  # HTTP-рівня відповідь отримана (успіх чи ні) - повтор не допоможе, не пробуємо знову
             except requests.RequestException as e:
-                last_network_error = str(e)
-                logger.warning("Telegram %s мережева помилка для %s (спроба %d): %s", method_label, chat_id, attempt + 1, e)
+                # текст винятку requests містить URL із токеном - очищаємо і для
+                # логу, і для повідомлення, яке дашборд показує в браузері
+                last_network_error = redact(str(e), token)
+                logger.warning("Telegram %s мережева помилка для %s (спроба %d): %s",
+                               method_label, chat_id, attempt + 1, last_network_error)
         else:
             # Цикл for завершився БЕЗ break - усі спроби (включно з
             # повторними) дали мережеву помилку, жодної HTTP-відповіді.
@@ -352,4 +371,4 @@ def test_connection() -> tuple[bool, str]:
             return True, i18n.t("api_bot_ok", name=bot_name)
         return False, data.get("description", f"HTTP {resp.status_code}")
     except requests.RequestException as e:
-        return False, str(e)
+        return False, redact(str(e), token)

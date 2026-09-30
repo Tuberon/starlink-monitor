@@ -9,9 +9,10 @@ app/config.py: назва env-змінної, тип для валідації, 
 замовчуванням (з config.py) і короткий опис для UI.
 """
 import logging
+import math
 import os
 import re
-from typing import Any
+from typing import Any, Optional
 
 from app import config, i18n
 
@@ -95,7 +96,84 @@ CATEGORY_LABELS = {
 _KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
-def _validate_value(param: dict, raw_value: str) -> tuple:
+# Межі значень числових параметрів (включно). Раніше /settings перевіряв
+# лише ТИП: float() приймає "nan"/"inf"/"1e999", а 0 для таймера означає
+# "на кожній ітерації" (не "вимкнено"): POLL_INTERVAL=-5/nan валив монітор
+# (time.sleep поза обробником винятків), HISTORY_DAYS=0 видаляв УСЮ
+# історію щогодини, TELEGRAM_BACKUP_INTERVAL_HOURS=0 слав бекап кожні
+# 10 с, WEBUI_PORT=0 відкривав дашборд на випадковому порту. Нуль лишено
+# допустимим лише там, де він означає "вимкнено" (піни, автовимкнення
+# підсвітки, KEEP_COUNT, затримки). Кожен числовий параметр МАЄ межі
+# (тест), дефолти й перевизначення користувача - у межах (тести).
+LIMITS: dict[str, tuple[float, float]] = {
+    "STARLINK_DISH_TIMEOUT": (0.5, 60),
+    "STARLINK_POLL_INTERVAL": (1, 3600),
+    "STARLINK_ROUTER_POLL_INTERVAL_SEC": (5, 86400),
+    "STARLINK_SYSTEM_METRICS_INTERVAL_SEC": (5, 86400),
+    "STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC": (1, 3600),
+    "STARLINK_OBSTRUCTION_WARN": (0, 1),
+    "STARLINK_HISTORY_DAYS": (1, 3650),
+    "STARLINK_WEBUI_PORT": (1, 65535),
+    "STARLINK_DB_INTEGRITY_CHECK_INTERVAL_SEC": (60, 31_536_000),
+    "STARLINK_AUTO_BACKUP_INTERVAL_SEC": (60, 31_536_000),
+    "STARLINK_AUTO_BACKUP_KEEP_COUNT": (0, 1000),          # 0 = не видаляти старі
+    "STARLINK_TELEGRAM_BACKUP_INTERVAL_HOURS": (1, 8760),
+    "STARLINK_MAX_FAILURES": (1, 1000),
+    "STARLINK_MIN_REBOOT_INTERVAL": (30, 86400),
+    "STARLINK_MAX_LOGGED_FAILURES": (0, 10000),
+    "STARLINK_REBOOT_SPAM_THRESHOLD": (1, 100),
+    "STARLINK_REBOOT_SPAM_WINDOW_SEC": (60, 86400),
+    "STARLINK_NOTIFICATIONS_MUTE_AFTER": (0, 2_592_000),
+    "STARLINK_TELEGRAM_SEND_TIMEOUT_SEC": (1, 120),
+    "STARLINK_TELEGRAM_POLL_TIMEOUT_SEC": (1, 60),
+    "STARLINK_TELEGRAM_CONFIRM_TTL_SEC": (10, 3600),
+    "STARLINK_TELEGRAM_NOTIFY_TIMEOUT_SEC": (1, 120),
+    "STARLINK_TELEGRAM_SEND_RETRIES": (0, 10),
+    "STARLINK_TELEGRAM_SEND_RETRY_DELAY_SEC": (0, 60),
+    "STARLINK_TELEGRAM_ID_LIST_MAX_ITEMS": (1, 1000),
+    "STARLINK_SHUTDOWN_BUTTON_PIN": (0, 27),               # 0 = вимкнено; BCM GPIO Pi Zero 2 W: 0-27
+    "STARLINK_SHUTDOWN_BUTTON_HOLD_SEC": (0.5, 60),
+    "STARLINK_SHUTDOWN_BUTTON_POLL_INTERVAL_SEC": (0.01, 5),
+    "STARLINK_ACTIVITY_LED_PIN": (0, 27),                  # 0 = вимкнено
+    "STARLINK_ACTIVITY_LED_BLINK_MS": (1, 5000),
+    "STARLINK_DISPLAY_BUTTON_POLL_INTERVAL_SEC": (0.01, 5),
+    "STARLINK_DISPLAY_SPI_CS_PIN": (0, 27),
+    "STARLINK_DISPLAY_DC_PIN": (0, 27),
+    "STARLINK_DISPLAY_RST_PIN": (0, 27),
+    "STARLINK_DISPLAY_BL_PIN": (0, 27),                    # 0 = підсвітка прямо на 3.3V
+    "STARLINK_DISPLAY_WIDTH": (1, 1000),
+    "STARLINK_DISPLAY_HEIGHT": (1, 1000),
+    "STARLINK_DISPLAY_ROTATION": (0, 270),
+    "STARLINK_DISPLAY_OFFSET_LEFT": (0, 1000),
+    "STARLINK_DISPLAY_OFFSET_TOP": (0, 1000),
+    "STARLINK_DISPLAY_REFRESH_SEC": (1, 3600),
+    "STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC": (0, 30),
+    "STARLINK_DISPLAY_SPI_SPEED_HZ": (100_000, 125_000_000),
+    "STARLINK_DISPLAY_BACKLIGHT_AUTO_OFF_SEC": (0, 86400),  # 0 = вимкнено
+    "STARLINK_DISPLAY_UPDATE_FLASH_SEC": (0, 3600),         # 0 = вимкнено
+}
+# Параметри з фіксованим набором значень
+CHOICES: dict[str, tuple[int, ...]] = {
+    "STARLINK_DISPLAY_ROTATION": (0, 90, 180, 270),
+}
+
+
+def _fmt_limit(n: float) -> str:
+    return str(int(n)) if float(n).is_integer() else str(n)
+
+
+def _range_problem(key: Optional[str], number: float) -> Optional[str]:
+    """Текст помилки, якщо число поза межами параметра, інакше None."""
+    limits = LIMITS.get(key or "")
+    if limits is not None and not (limits[0] <= number <= limits[1]):
+        return i18n.t("out_of_range", min=_fmt_limit(limits[0]), max=_fmt_limit(limits[1]))
+    choices = CHOICES.get(key or "")
+    if choices is not None and number not in choices:
+        return i18n.t("expected_one_of", values=", ".join(str(c) for c in choices))
+    return None
+
+
+def _validate_value(param: dict[str, Any], raw_value: str) -> tuple[bool, Optional[str]]:
     """Перевіряє значення проти заявленого типу. Повертає (ok, error_or_value)."""
     t = param["type"]
     if not isinstance(raw_value, str):  # напр. число з JSON - дашборд надсилає рядки
@@ -110,13 +188,18 @@ def _validate_value(param: dict, raw_value: str) -> tuple:
     if any(ord(c) < 32 or ord(c) == 127 for c in v):
         return False, i18n.t("invalid_control_chars")
     try:
-        if t == "int":
-            int(v)
-        elif t == "float":
-            float(v)
-        elif t == "bool":
+        if t == "bool":
             if v not in ("0", "1"):
                 return False, i18n.t("expected_0_or_1")
+        elif t in ("int", "float"):
+            number = int(v) if t == "int" else float(v)
+            # isfinite - лише для float: на дуже великому int вона кидає
+            # OverflowError (int не має NaN/inf, але має довільну величину)
+            if t == "float" and not math.isfinite(number):
+                return False, i18n.t("not_finite")
+            problem = _range_problem(param.get("key"), number)
+            if problem:
+                return False, problem
         # "str" - без додаткової перевірки
         return True, v
     except ValueError:

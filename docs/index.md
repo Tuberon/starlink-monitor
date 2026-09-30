@@ -12,8 +12,9 @@
 | `README.md` | Опис проєкту, встановлення, конфігурація, усі env-параметри |
 | `README.en.md` | Той самий README англійською - синхронізувати вручну при зміні README.md |
 | `requirements.txt` | Python-залежності (pip), встановлюються на Pi |
-| `requirements-dev.txt` | Залежності розробки (mypy, pytest, ruff) - НЕ встановлюються на Pi |
-| `mypy.ini` | Конфігурація статичної типізації (виключає `app/vendor/`) |
+| `constraints.txt` | Закріплені ТРАНЗИТИВНІ версії (urllib3, idna, Werkzeug...): `pip install -r requirements.txt -c constraints.txt`; апаратні adafruit-* свідомо відсутні |
+| `requirements-dev.txt` | Залежності розробки (mypy, pytest, ruff, pip-audit, html5lib) - НЕ встановлюються на Pi |
+| `mypy.ini` | Конфігурація статичної типізації: суворий режим для `app/*`, м'який для `tests/`, `app/vendor/` виключено |
 | `pytest.ini` | Мінімальна конфігурація pytest (`testpaths = tests`) |
 | `ruff.toml` | Правила `ruff check` (F, B, E9, PLE, S; виключає `app/vendor/`); без `ruff format` |
 | `.gitignore` | `__pycache__/`, `.mypy_cache/`, `.pytest_cache/`, `*.db` — не мають потрапляти в архів |
@@ -30,7 +31,8 @@
 | `i18n.py` | Мультимовний інтерфейс (uk/en) - словник перекладів, `t()`, мова з settings |
 | `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` |
-| `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py) |
+| `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py), `short_error()` для чату |
+| `log_redact.py` | Очищення токена бота з текстів помилок і логів (`redact()`, `RedactingFilter`, `install()`) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
 | `pi_power.py` | Спільний reboot/poweroff, DB-сигнал для дисплея |
@@ -39,7 +41,8 @@
 | `gpio_utils.py` | Спільна gpiod v1/v2-логіка читання GPIO (shutdown_button.py + display.py) і запису GPIO (activity_led.py) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
-| `vendor/starlink_grpc.py` | Vendored (не наш код) — gRPC-хелпери з sparky8512/starlink-grpc-tools, окрема ліцензія |
+| `vendor/starlink_grpc.py` | Vendored (не наш код) — gRPC-хелпери з sparky8512/starlink-grpc-tools (Unlicense) |
+| `vendor/PROVENANCE` | Походження vendored файлу: upstream-коміт, дата, sha256 (тест звіряє з файлом); пише `fetch_starlink_grpc.sh` |
 
 ## `static/` — фронтенд
 
@@ -81,7 +84,8 @@
 | `install.sh` | Повне встановлення (системні пакети, venv, sudo-права, systemd) |
 | `update.sh` | Оновлення вже встановленого проєкту |
 | `uninstall.sh` | Повне видалення |
-| `fetch_starlink_grpc.sh` | Опційне оновлення vendored `starlink_grpc.py` до найновішої upstream-версії |
+| `fetch_starlink_grpc.sh` | Опційне оновлення vendored `starlink_grpc.py`: тимчасовий файл → перевірки (розмір, синтаксис, ChannelContext/get_status) → `.prev` → атомарна заміна; `--commit=<sha>`; пише `PROVENANCE` |
+| `audit_deps.sh` | Аудит вразливостей закріплених залежностей (`pip-audit` по requirements.txt + constraints.txt) |
 | `wan_failover_check.sh` | Перевірка інтернету через wlan0, коригування route-metric |
 | `watchdog_healthcheck.sh` | Перевірка `/healthz`, force-restart при не-200 |
 
@@ -91,8 +95,11 @@
 |---|---|
 | `conftest.py` | Спільні fixtures: autouse-ізоляція робочих шляхів Pi (env, бекапи, БД за замовчуванням → tmp) для КОЖНОГО тесту; `db_path` (ізольована БД), `watchdog` (Watchdog з mock `_notify`, `router_reachable=True`) |
 | `test_monitor.py` | Reboot-спам, дедублікація target-версій, update-state/alerts (dish+router), auto-reboot логіка |
-| `test_monitor_run_forever.py` | Головний watchdog-цикл: periodичні prune/vacuum/integrity/backup, startup-сповіщення |
+| `test_monitor_run_forever.py` | Головний watchdog-цикл: усі періодичні таймери, стійкість до збою запису в БД, РЕАЛЬНИЙ обробник SIGTERM, пауза при поганому інтервалі, фонова відправка |
 | `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
+| `test_dependencies.py` | Піни requirements/constraints (точні, без дублів, без adafruit), версії urllib3/idna не нижче виправлених, install.sh передає `-c constraints.txt`, логіка `REQ_CHANGED` (СПРАВЖНІЙ фрагмент скрипту у 4 сценаріях) |
+| `test_vendor_fetch.py` | `PROVENANCE` збігається з файлом побайтово; `fetch_starlink_grpc.sh` проти ЛОКАЛЬНОГО сервера: успіх, обірване/замале/без контракту завантаження відхиляється без зміни робочого файлу й без залишків, `.prev`, `--commit`, стрічка недоступна |
+| `test_log_redact.py` | Токен бота не потрапляє в логи/повідомлення/БД: `redact()`, фільтр логера (з traceback), наскрізні шляхи помилок Telegram (шар джерела і захисна сітка перевіряються незалежно), AST-гарантія для точок входу |
 | `test_i18n.py` | Цілісність перекладів (паритет плейсхолдерів uk/en, наявність кожного ключа з коду), `get_language()` при зламаній БД, англійські Telegram-сповіщення реальними шляхами коду |
 | `test_system_metrics.py` | Кожна метрика (uptime/cpu/memory/disk/temp) незалежно, ніколи не кидає виняток навіть при повному провалі psutil |
 | `test_pi_power.py` | DB-сигнал записаний ДО затримки, очищений ДО systemctl-команди (успіх і провал однаково); lazy notify_fn default, edge cases (subprocess-виняток, DB-провал не блокує реальну дію) |
@@ -104,8 +111,8 @@
 | `test_gpio_utils.py` | find_gpio_chip, ButtonPressTracker (short/long_press), open_input/output_line через fake gpiod v1/v2 |
 | `test_shutdown_button.py` | Фізична кнопка вимкнення: пін 0/відсутній gpiod/збій GPIO — вихід без падіння; довге/коротке натискання; поступається дисплею при `DISPLAY_ENABLED`; зламана БД не блокує вимкнення |
 | `test_display_run_forever.py` | Повна ініціалізація дисплея через fake CircuitPython-модулі, stop_event, pending-shutdown, кнопка, auto-off |
-| `test_config_editor.py` | Запис env-файлу: валідація типів, атомарність, збереження коментарів, звірка з config.py |
-| `test_starlink_client.py` | Парсинг gRPC-відповіді dish (enum-мапінг, getattr-fallback'и, конвертація одиниць) і router (subprocess+JSON шлях, snake→camelCase, clients) |
+| `test_config_editor.py` | Запис env-файлу: валідація типів І меж (nan/inf/0/-5, дефолти й реальні перевизначення в межах), атомарність, коментарі, звірка з config.py, заборона exec/eval |
+| `test_starlink_client.py` | Парсинг gRPC-відповіді dish (enum-мапінг, getattr-fallback'и, конвертація одиниць) і router (subprocess+JSON шлях, snake→camelCase, clients, enum і числом/рядком/ім'ям), `reboot_dish()` (точна grpcurl-команда, усі гілки помилок) |
 
 ## `docs/` — документація
 

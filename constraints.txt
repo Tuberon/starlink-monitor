@@ -1,0 +1,33 @@
+# Закріплені ТРАНЗИТИВНІ залежності (те, що pip підтягує до прямих пакетів
+# з requirements.txt). Без цього на кожному встановленні бралися найновіші
+# сумісні версії, а `update.sh` пропускає pip, коли requirements.txt не змінився,
+# тож на Pi вони не оновлювались ніколи: urllib3 2.6.3 і idna 3.11 мали відомі
+# advisory (PYSEC-2026-141/142/215).
+#
+# Використання (install.sh робить це сам):
+#   pip install -r requirements.txt -c constraints.txt
+# Constraints лише ОБМЕЖУЮТЬ версії й не додають пакетів - тому install.sh не
+# вважає зміну цього файлу "суттєвою" (нові імена в requirements.txt = повне
+# перевстановлення), а лише перевстановлює версії, що відрізняються.
+#
+# adafruit-blinka / adafruit-circuitpython-rgb-display (і їхні залежності)
+# СВІДОМО не закріплені тут: апаратні пакети не перевірити поза Pi, а pip
+# колись уже оновив adafruit-blinka 8.x -> 9.2.0 і зламав дисплей (див.
+# коментар у scripts/install.sh).
+#
+# Оновлення (раз на квартал або після pip-audit):
+#   python3 -m venv /tmp/v && grep -vi '^adafruit' requirements.txt | /tmp/v/bin/pip install -r /dev/stdin
+#   /tmp/v/bin/pip freeze  -> перенести НЕпрямі пакети сюди, прогнати тести й scripts/audit_deps.sh
+# Складено 2026-09-30 у чистому venv (Python 3.12; усі пакети нижче - pure-Python).
+blinker==1.9.0
+certifi==2026.7.22
+charset-normalizer==3.5.2
+click==8.5.0
+grpcio-reflection==1.84.0
+idna==3.20
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+typing_extensions==4.16.0
+urllib3==2.8.0
+Werkzeug==3.1.9

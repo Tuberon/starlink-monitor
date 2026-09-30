@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app import config, db, monitor
+from app import config, db, monitor, starlink_client
 
 
 # ---- Визначення "Pi щойно завантажився" (pi_just_booted) ----
@@ -531,33 +531,6 @@ def test_flush_empty_buffer_does_not_error(watchdog):
     watchdog.metrics_buffer = []
     watchdog.flush_metrics_buffer()
     assert db.get_latest_metric() is None
-
-
-def test_sigterm_flushes_buffer_before_exit(watchdog):
-    """Реальна мета graceful shutdown: звичайний systemctl restart
-    (SIGTERM) НЕ має втрачати буферизовані дані, лише справжнє
-    раптове вимкнення живлення - той самий handler, що run_forever()
-    реєструє."""
-    import signal as signal_module
-    from app.starlink_client import DishStatus
-    status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, dish_id="sig-test",
-                         hardware_version="rev3", software_version="v1")
-    watchdog.metrics_buffer.append(status.to_dict())
-
-    def _handle_shutdown_signal(signum, frame):
-        watchdog.flush_metrics_buffer()
-        raise SystemExit(0)
-
-    old_handler = signal_module.signal(signal_module.SIGTERM, _handle_shutdown_signal)
-    try:
-        with pytest.raises(SystemExit):
-            import os
-            os.kill(os.getpid(), signal_module.SIGTERM)
-    finally:
-        signal_module.signal(signal_module.SIGTERM, old_handler)
-
-    assert watchdog.metrics_buffer == []
-    assert db.get_latest_metric() is not None
 
 
 # ---- perform_auto_backup() - ротація, вміст ----
@@ -1520,3 +1493,120 @@ def test_send_now_warns_on_real_failure(db_path, caplog):
          caplog.at_level("WARNING", logger="monitor"):
         Watchdog()._send_now("x")
     assert "network down" in caplog.text
+
+
+def test_flush_failure_keeps_buffer_retries_later_and_caps_memory(watchdog, caplog):
+    import sqlite3
+    watchdog.metrics_buffer = [{"timestamp": float(i), "online": 1} for i in range(monitor._METRICS_BUFFER_MAX + 50)]
+    watchdog.last_batch_flush_ts = 0.0
+    with patch("app.db.insert_metrics_batch", side_effect=sqlite3.OperationalError("database is locked")), \
+         caplog.at_level("WARNING", logger="monitor"):
+        watchdog.flush_metrics_buffer()                       # НЕ кидає
+    assert len(watchdog.metrics_buffer) == monitor._METRICS_BUFFER_MAX
+    assert watchdog.metrics_buffer[0]["timestamp"] == 50.0    # відкинуто найстаріші, а не найновіші
+    assert watchdog.last_batch_flush_ts > 0                   # повтор через інтервал, не щоітерації
+    assert "відкинуто 50 найстаріших" in caplog.text and "database is locked" in caplog.text
+
+
+def test_flush_recovers_after_db_comes_back(watchdog):
+    import sqlite3
+    watchdog.metrics_buffer = [{"timestamp": time.time(), "online": 1, "uptime_s": 5}]
+    with patch("app.db.insert_metrics_batch", side_effect=sqlite3.OperationalError("locked")):
+        watchdog.flush_metrics_buffer()
+    assert len(watchdog.metrics_buffer) == 1
+    watchdog.flush_metrics_buffer()                           # БД знову доступна
+    assert watchdog.metrics_buffer == [] and db.get_latest_metric() is not None
+
+
+# ---- перемикач авто-перезавантаження (/settings) і рідкісні гілки логування reboot ----
+
+def _dish_update_ready():
+    from app.starlink_client import DishStatus
+    return DishStatus(timestamp=time.time(), online=True, update_state="REBOOT_REQUIRED")
+
+
+def _router_update_ready():
+    from app.starlink_client import RouterInfo
+    return RouterInfo(timestamp=time.time(), online=True, update_state="REBOOT_PENDING")
+
+
+def test_update_ready_reboot_respects_auto_reboot_toggle(watchdog):
+    """Перемикач перевіряють ОБИДВІ обгортки (тарілка й роутер), спільна
+    функція дії - ні. Гілка "вимкнено" не була покрита жодним тестом, хоча
+    це перемикач, який користувач натискає на дашборді."""
+    for wrapper, info in ((watchdog._maybe_reboot_for_update, _dish_update_ready()),
+                          (watchdog._maybe_reboot_for_router_update, _router_update_ready())):
+        watchdog.last_reboot_ts = 0.0
+        db.set_auto_reboot_enabled(False)
+        with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as rb:
+            wrapper(info)
+        rb.assert_not_called()
+        db.set_auto_reboot_enabled(True)
+        with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as rb:
+            wrapper(info)
+        rb.assert_called_once()
+
+
+def test_watchdog_reboot_is_not_gated_by_update_toggle(watchdog):
+    """Перемикач - "авто-reboot при готовому оновленні"; аварійне
+    перезавантаження зависшої тарілки від нього не залежить."""
+    db.set_auto_reboot_enabled(False)
+    watchdog.last_reboot_ts = 0.0
+    watchdog.consecutive_failures = config.MAX_CONSECUTIVE_FAILURES
+    with patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as rb:
+        watchdog._maybe_reboot()
+    rb.assert_called_once()
+
+
+def test_reboot_trigger_logging_stops_after_limit_with_one_final_marker(watchdog):
+    """Перші MAX_LOGGED збоїв пишуться в журнал, наступний - один підсумковий
+    рядок "Понад N...", далі мовчки (не сотні рядків за ніч на SD)."""
+    watchdog.client.reboot_dish = lambda: (False, "timeout")
+    limit = config.MAX_LOGGED_CONSECUTIVE_FAILURES
+    for failures, expected in ((limit + 1, 1), (limit + 2, 0)):
+        with db.get_conn() as c:
+            c.execute("DELETE FROM events")
+        watchdog.last_reboot_ts = 0.0
+        watchdog.consecutive_failures = failures
+        watchdog._maybe_reboot()
+        triggers = [e for e in db.get_recent_events(20) if e["kind"] == "watchdog_trigger"]
+        assert len(triggers) == expected, (failures, triggers)
+        if expected:
+            assert f"Понад {limit}" in triggers[0]["message"]
+
+
+# ---- локальна несправність не перезавантажує тарілку ----
+
+def test_local_fault_never_reboots_dish_and_reports_once(watchdog, caplog):
+    """Симуляція до виправлення: без модуля starlink_grpc watchdog вважав
+    тарілку зависшою й перезавантажував її кожні MIN_REBOOT_INTERVAL (22 рази
+    за 67 хв) - пошкоджений ЛОКАЛЬНИЙ файл відключав би інтернет."""
+    from app.starlink_client import StarlinkClient
+    clock = {"t": time.time()}
+    reboots = []
+    watchdog.client.reboot_dish = lambda: (reboots.append(1), (True, "ok"))[1]
+    with patch.object(starlink_client, "starlink_grpc", None), \
+         patch("time.time", side_effect=lambda: clock["t"]), caplog.at_level("ERROR", logger="monitor"):
+        for _ in range(400):                                   # ~67 хв опитувань по 10 с
+            clock["t"] += 10
+            watchdog.poll_once()
+    assert reboots == []
+    assert watchdog.consecutive_failures == 0
+    assert len([m for m in watchdog.sent if "ЛОКАЛЬНА" in m]) == 1          # одне сповіщення, не 400
+    events = [e for e in db.get_recent_events(20) if e["kind"] == "local_fault"]
+    assert len(events) == 1 and events[0]["success"] == 0
+    assert caplog.text.count("Локальна несправність") == 1
+    assert StarlinkClient is not None
+
+
+def test_genuine_dish_failure_still_reboots(watchdog):
+    """Контроль: реальний збій тарілки (не local_fault) працює як раніше."""
+    from app.starlink_client import DishStatus
+    watchdog.client.router_reachable = lambda timeout=2.0: True
+    watchdog.last_reboot_ts = 0.0
+    with patch.object(watchdog.client, "get_status",
+                      return_value=DishStatus(timestamp=time.time(), online=False, error="timeout")), \
+         patch.object(watchdog.client, "reboot_dish", return_value=(True, "ok")) as rb:
+        for _ in range(config.MAX_CONSECUTIVE_FAILURES):
+            watchdog.poll_once()
+    rb.assert_called_once()

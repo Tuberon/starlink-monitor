@@ -889,3 +889,190 @@ def test_settings_restore_router_target_and_env_error_branches(client):
     assert "очікувана версія роутера" in r["message"]
     assert "параметри моніторингу - помилка:" in r["message"]
     assert db.get_setting("router_target_version") == "2026.09.09.mr85833"
+
+
+@pytest.mark.parametrize("key,value", [
+    ("STARLINK_POLL_INTERVAL", "-5"), ("STARLINK_HISTORY_DAYS", "0"),
+    ("STARLINK_DISH_TIMEOUT", "nan"), ("STARLINK_WEBUI_PORT", "0"),
+])
+def test_env_config_endpoint_rejects_out_of_range_values(client, key, value):
+    """Через справжній HTTP-шлях: дашборд раніше зберігав будь-яке число."""
+    r = client.post("/api/env-config", json={"values": {key: value}})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["success"] is False
+    assert body["message"]
+
+
+# ---- сторінки не блокуються зовнішніми ресурсами й валідні за HTML5 ----
+
+@pytest.mark.parametrize("path", ["/", "/settings", "/stats"])
+def test_pages_have_no_render_blocking_external_stylesheet(client, path):
+    """Звичайний <link rel=stylesheet> на зовнішній хост у head блокує перший
+    рендер, доки не завантажиться або не відмовить: дашборд відкривають саме
+    коли зв'язок поганий (телефон у WiFi Starlink без інтернету) - сторінка
+    висіла б секунди порожньою. Зовнішні стилі - лише асинхронно."""
+    from html.parser import HTMLParser
+
+    class Links(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_noscript = False
+            self.blocking = []
+            self.async_external = 0
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "noscript":
+                self.in_noscript = True
+            if tag == "link" and "stylesheet" in (a.get("rel") or "") and not self.in_noscript:
+                if (a.get("href") or "").startswith(("http://", "https://", "//")):
+                    if a.get("media") == "print" and "onload" in a:
+                        self.async_external += 1
+                    else:
+                        self.blocking.append(a.get("href"))
+
+        def handle_endtag(self, tag):
+            if tag == "noscript":
+                self.in_noscript = False
+
+    parser = Links()
+    parser.feed(client.get(path).get_data(as_text=True))
+    assert parser.blocking == []
+    assert parser.async_external >= 1        # шрифти таки підключено (асинхронно)
+
+
+@pytest.mark.parametrize("path", ["/", "/settings", "/stats"])
+def test_pages_have_no_unescaped_ampersand_in_attributes(client, path):
+    import re
+    html = client.get(path).get_data(as_text=True)
+    bad = re.findall(r'\w+="[^"]*&(?!amp;|lt;|gt;|quot;|#)[^"]*"', html)
+    assert bad == []
+
+
+def test_pages_are_valid_html5_in_both_languages(client):
+    html5lib = pytest.importorskip("html5lib")
+    for lang in ("uk", "en"):
+        client.post("/api/set-language", json={"lang": lang})
+        for path in ("/", "/settings", "/stats"):
+            parser = html5lib.HTMLParser(strict=False)
+            parser.parse(client.get(path).get_data(as_text=True))
+            assert parser.errors == [], (lang, path, parser.errors[:3])
+
+
+# ---- ендпоінти, які раніше не виконувались жодним тестом ----
+
+def test_manifest_is_localized_and_all_icons_exist(client):
+    """PWA-маніфест: мова інтерфейсу + іконки, на які він посилається,
+    справді є в static/ (інакше "додати на головний екран" дасть порожню іконку)."""
+    import os
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    uk = client.get("/manifest.json").get_json()
+    assert uk["start_url"] == "/" and uk["display"] == "standalone"
+    for icon in uk["icons"]:
+        assert os.path.exists(os.path.join(static_dir, icon["src"].split("/static/", 1)[1])), icon
+    client.post("/api/set-language", json={"lang": "en"})
+    en = client.get("/manifest.json").get_json()
+    assert en["description"] != uk["description"] and en["icons"] == uk["icons"]   # назва - бренд, однакова; опис перекладається
+
+
+def test_api_config_exposes_only_non_sensitive_settings(client, monkeypatch):
+    monkeypatch.setattr(config, "SHUTDOWN_BUTTON_GPIO_PIN", 0)
+    data = client.get("/api/config").get_json()
+    assert data["poll_interval_sec"] == config.POLL_INTERVAL_SEC
+    assert data["shutdown_button_enabled"] is False
+    assert not any(k in "".join(data) for k in ("token", "password", "secret", "chat"))
+    monkeypatch.setattr(config, "SHUTDOWN_BUTTON_GPIO_PIN", 27)
+    assert client.get("/api/config").get_json()["shutdown_button_enabled"] is True
+
+
+def test_system_shutdown_runs_poweroff_through_the_shared_helper(client):
+    with patch("app.pi_power.execute_pi_power_action", return_value=(True, "ok")) as action:
+        resp = client.post("/api/system-shutdown")
+    assert action.call_args.args[0] == ["sudo", "systemctl", "poweroff"]
+    assert resp.get_json() == {"success": True, "message": "ok"}
+    with patch("app.pi_power.execute_pi_power_action", return_value=(False, "denied")):
+        assert client.post("/api/system-shutdown").get_json() == {"success": False, "message": "denied"}
+
+
+def test_env_config_restart_restarts_monitor_then_webui_and_logs(client):
+    with patch("app.pi_power.run_system_command", return_value=(True, "ok")) as run:
+        resp = client.post("/api/env-config-restart")
+    assert [c.args[0] for c in run.call_args_list] == [
+        ["sudo", "systemctl", "restart", "starlink-monitor.service"],
+        ["sudo", "systemctl", "restart", "starlink-webui.service"],
+    ]
+    assert resp.get_json()["success"] is True
+    assert any(e["kind"] == "service_restart" for e in db.get_recent_events(5))
+    with patch("app.pi_power.run_system_command", side_effect=[(True, "ok"), (False, "denied")]):
+        assert client.post("/api/env-config-restart").get_json()["success"] is False
+
+
+@pytest.mark.parametrize("path", ["/api/system-shutdown", "/api/system-reboot", "/api/reboot-dish",
+                                  "/api/env-config-restart", "/api/auto-reboot"])
+def test_destructive_endpoints_reject_get(client, path):
+    """Префетч браузера чи краулер не мають змогу вимкнути Pi звичайним GET."""
+    assert client.get(path).status_code == 405
+
+
+def test_oversized_request_body_rejected_with_413(client):
+    """Раніше 8.5 МБ JSON приймались і читались у пам'ять (Pi Zero - 415 МБ)."""
+    import json
+    big = json.dumps({"format_version": 1, "known_devices": [{"dish_id": f"d{i}"} for i in range(400_000)]})
+    assert len(big) > 5 * 1024 * 1024
+    assert client.post("/api/settings-restore", data=big, content_type="application/json").status_code == 413
+
+
+def test_realistic_backup_is_far_below_the_body_limit(client):
+    """Ліміт не має зачепити легітимний бекап станції (233 пристрої)."""
+    import json
+    device = {"dish_id": "ut51c88d90-02724404-198fc3bd", "component": "dish", "hardware_version": "rev4_prod2",
+              "software_version": "2026.09.14.mr86848", "first_seen_ts": 1.0, "last_seen_ts": 2.0}
+    body = json.dumps({"format_version": 1, "known_devices": [device] * 233})
+    assert len(body) < 100 * 1024
+    assert client.post("/api/settings-restore", data=body, content_type="application/json").status_code == 200
+
+
+# ---- журнал запитів: опитування дашборду не засмічує журнал (~83 000 рядків на добу на вкладку) ----
+
+@pytest.mark.parametrize("line,dropped", [
+    ('127.0.0.1 - - [30/Sep/2026 06:24:30] "GET /api/status HTTP/1.1" 200 -', True),
+    ('192.168.0.10 - - [30/Sep/2026 06:24:30] "GET /static/dashboard.js?v=abc HTTP/1.1" 304 -', True),
+    ('192.168.0.10 - - [30/Sep/2026 06:24:30] "GET / HTTP/1.1" 200 -', True),
+    ('192.168.0.10 - - [30/Sep/2026 06:24:30] "POST /api/system-reboot HTTP/1.1" 200 -', False),   # слід дії
+    ('192.168.0.10 - - [30/Sep/2026 06:24:30] "GET /nope HTTP/1.1" 404 -', False),
+    ('192.168.0.10 - - [30/Sep/2026 06:24:30] "GET /api/status HTTP/1.1" 500 -', False),
+    ('* Running on http://0.0.0.0:8080', False),
+])
+def test_request_log_filter_drops_only_successful_gets(line, dropped):
+    import logging
+    from app.webapp import _QuietSuccessfulGets
+    record = logging.LogRecord("werkzeug", logging.INFO, "", 0, line, (), None)
+    assert _QuietSuccessfulGets().filter(record) is (not dropped)
+
+
+@pytest.fixture
+def live_server(db_path):
+    """Справжній HTTP-сервер (Werkzeug): test_client() обходить лог запитів."""
+    import threading
+    from werkzeug.serving import make_server
+    server = make_server("127.0.0.1", 0, flask_app, threaded=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+    thread.join(2)
+
+
+def test_live_server_logs_actions_and_errors_but_not_polling(live_server, caplog):
+    import logging
+    import requests
+    with caplog.at_level(logging.INFO, logger="werkzeug"):
+        for _ in range(5):
+            requests.get(f"{live_server}/api/status", timeout=5)
+        requests.post(f"{live_server}/api/auto-reboot", json={"enabled": True}, timeout=5)
+        requests.get(f"{live_server}/definitely-not-here", timeout=5)
+    text = caplog.text
+    assert "GET /api/status" not in text                       # опитування - не в журнал
+    assert "POST /api/auto-reboot" in text                     # дія лишає слід (з IP)
+    assert "/definitely-not-here" in text and "404" in text    # помилки видно

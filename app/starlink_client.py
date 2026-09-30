@@ -129,13 +129,21 @@ ROUTER_ALERT_FIELD_NAMES = [
 ]
 
 starlink_grpc: Optional[types.ModuleType]
+# Чому модуль недоступний (для повідомлення про локальну несправність)
+_GRPC_UNAVAILABLE_REASON = ""
 try:
     from app.vendor import starlink_grpc
-except ImportError:
+except Exception as _e:
+    # Exception, не лише ImportError: обірваний/пошкоджений файл дає
+    # SyntaxError (раніше монітор не стартував узагалі), а відсутній yagrc -
+    # ModuleNotFoundError. Розрізняти причини не потрібно: усі вони ЛОКАЛЬНІ
+    # (див. DishStatus.local_fault) - тарілка тут ні до чого.
     starlink_grpc = None
-    logger.warning(
-        "starlink_grpc не знайдено в app/vendor/. "
-        "Запустіть scripts/install.sh або scripts/fetch_starlink_grpc.sh"
+    _GRPC_UNAVAILABLE_REASON = f"{type(_e).__name__}: {_e}"[:200]
+    logger.error(
+        "starlink_grpc недоступний (%s). Відновіть app/vendor/starlink_grpc.py: "
+        "scripts/install.sh або scripts/fetch_starlink_grpc.sh",
+        _GRPC_UNAVAILABLE_REASON,
     )
 
 
@@ -162,6 +170,12 @@ class DishStatus:
     update_install_pending: bool = False
     # Попередження dish (активні alert-прапорці)
     active_alerts: List[str] = field(default_factory=list)
+    # Несправність НАШОЇ сторони (модуль starlink_grpc не завантажився), а не
+    # тарілки. Watchdog не має рахувати її збоєм dish і перезавантажувати
+    # тарілку: без цієї позначки вона перезавантажувалась щоразу через
+    # MIN_REBOOT_INTERVAL (симуляція: 22 рази за 67 хв) - тобто пошкоджений
+    # локальний файл відключав би інтернет.
+    local_fault: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -184,7 +198,7 @@ class RouterInfo:
     active_alerts: List[str] = field(default_factory=list)
     update_install_pending: bool = False
     # Список клієнтів, під'єднаних до WiFi роутера (WifiClient[])
-    clients: List[dict] = field(default_factory=list)
+    clients: List[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -207,7 +221,10 @@ class StarlinkClient:
     def get_status(self) -> DishStatus:
         """Опитати dish. Ніколи не кидає виняток назовні — помилка кладеться в поле error."""
         if starlink_grpc is None:
-            return DishStatus(timestamp=time.time(), online=False, error="starlink_grpc module missing")
+            return DishStatus(
+                timestamp=time.time(), online=False, local_fault=True,
+                error=f"starlink_grpc module missing ({_GRPC_UNAVAILABLE_REASON or 'не встановлено'})",
+            )
 
         context = None
         try:

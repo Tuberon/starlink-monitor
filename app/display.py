@@ -30,13 +30,14 @@ import threading
 import time
 from typing import Any, Optional
 
-from app import config, db, gpio_utils, labels, pi_power
+from app import config, db, gpio_utils, labels, log_redact, pi_power
 from app.shutdown_button import _trigger_shutdown
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+log_redact.install()   # токен бота ніколи не потрапляє в журнал (див. app/log_redact.py)
 logger = logging.getLogger("display")
 
 FONT_PATHS = [

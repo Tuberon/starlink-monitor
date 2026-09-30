@@ -430,3 +430,37 @@ def test_session_error_still_falls_back_to_eth0_path():
 def test_config_problem_returns_code(db_path, token, chat_ids, enabled, expected):
     telegram_notify.set_telegram_config(token=token, chat_ids=chat_ids, enabled=enabled)
     assert telegram_notify.config_problem() == expected
+
+
+# ---- ресурси закриваються завжди (сокет eth0, сесія резервного шляху) ----
+
+def test_get_eth0_ip_closes_socket_on_success_and_on_error():
+    """Раніше сокет не закривався явно (лише збиранням сміття CPython)."""
+    import socket
+    from unittest.mock import MagicMock
+    ok = b"\x00" * 20 + socket.inet_aton("192.168.7.1") + b"\x00" * 8
+    for ioctl_kwargs in ({"return_value": ok}, {"side_effect": OSError("немає eth0")}):
+        instance = MagicMock()
+        with patch("socket.socket", return_value=instance), patch("fcntl.ioctl", **ioctl_kwargs):
+            telegram_notify._get_eth0_ip()
+        instance.__exit__.assert_called_once()
+
+
+@pytest.mark.parametrize("resolved_ip", [None, "1.2.3.4"])
+def test_request_via_eth0_closes_session_after_success(resolved_ip):
+    from unittest.mock import MagicMock
+    fake_session = MagicMock()
+    with patch("requests.Session", return_value=fake_session):
+        telegram_notify._request_via_eth0("post", "https://api.telegram.org/bot1/x", resolved_ip=resolved_ip)
+    fake_session.close.assert_called_once()
+
+
+@pytest.mark.parametrize("resolved_ip", [None, "1.2.3.4"])
+def test_request_via_eth0_closes_session_even_when_request_fails(resolved_ip):
+    import requests
+    from unittest.mock import MagicMock
+    fake_session = MagicMock()
+    fake_session.request.side_effect = requests.exceptions.ConnectionError("eth0 недоступний")
+    with patch("requests.Session", return_value=fake_session), pytest.raises(requests.exceptions.ConnectionError):
+        telegram_notify._request_via_eth0("post", "https://api.telegram.org/bot1/x", resolved_ip=resolved_ip)
+    fake_session.close.assert_called_once()

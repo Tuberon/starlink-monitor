@@ -16,12 +16,13 @@ Pi, як і тут) - цей сервіс тоді одразу завершує
 import logging
 import time
 
-from app import config, db, gpio_utils, i18n, pi_power
+from app import config, db, gpio_utils, i18n, log_redact, pi_power
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+log_redact.install()   # токен бота ніколи не потрапляє в журнал (див. app/log_redact.py)
 logger = logging.getLogger("shutdown_button")
 
 

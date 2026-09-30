@@ -222,7 +222,8 @@ safeguard in case the DB and backup remain on the same SD card.
   graceful shutdown flushes the buffer before exiting; the SQLite WAL is
   not flushed to disk after every write (~150× fewer forced syncs), while
   settings are synced at once
-- **VACUUM/ANALYZE + DB integrity check** — once a day; corruption →
+- **ANALYZE + DB integrity check** — once a day (`VACUUM` only when ≥ 30%
+  of pages are free: it rewrites the whole DB); corruption →
   Telegram notification and an emergency backup
 - **Automatic backup** — once a week, keeps the last
   `AUTO_BACKUP_KEEP_COUNT` copies (4 by default)
@@ -278,7 +279,14 @@ being locked out of SSH. Separately — `apt-get autoremove`/`clean`.
 ## 🔍 Type checking (mypy)
 
 All of the project's code (except `app/vendor/` — third-party code)
-is typed and passes `mypy` cleanly. Check before committing/updating:
+is typed and passes `mypy` in **strict mode** (`app/*` — the equivalent of
+`--strict`, flags in `mypy.ini`; typing in `tests/` is lenient). Calls into
+`requests`, `psutil`, `dns` are checked against real stubs (`types-*` in
+`requirements-dev.txt`); import-ignoring is allowed only for the Pi hardware
+libraries — strictness is held by `test_mypy_config_stays_strict`. The `mypy`
+result depends on the installed packages (31 errors without Flask), so run it
+in the full dev environment. Check
+before committing/updating:
 ```bash
 pip install -r requirements-dev.txt
 mypy app/
@@ -286,14 +294,14 @@ ruff check .
 ```
 `ruff check` is code linting (unused code, common pitfalls, security;
 rules in `ruff.toml`), also run as one of the tests. Not
-auto-formatting: `ruff format` is deliberately not used. Not `--strict` and no CI — for a solo hobby project of this scale,
+auto-formatting: `ruff format` is deliberately not used. No CI — for a solo hobby project of this scale,
 running it locally as one more live check alongside `py_compile` is
 more proportionate than investing in a full CI setup (details of the
 decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-587 tests (`pytest-randomly` — resilient to execution order), 17
+762 tests (`pytest-randomly` — resilient to execution order), 20
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -330,12 +338,13 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 587 tests (17 files), pytest-randomly
+├── tests/          # 762 tests (20 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
-├── requirements.txt      # production dependencies
-└── requirements-dev.txt  # mypy/pytest/pytest-cov
+├── requirements.txt      # production dependencies (direct, exact pins)
+├── constraints.txt       # pinned TRANSITIVE versions (pip install -c)
+└── requirements-dev.txt  # mypy/pytest/ruff/pip-audit
 ```
 
 Detailed description of every file — [`docs/index.md`](docs/index.md).
@@ -419,5 +428,16 @@ from a third-party repository
 [sparky8512/starlink-grpc-tools](https://github.com/sparky8512/starlink-grpc-tools)
 for build reproducibility (not downloaded dynamically during
 installation) — **its license terms are set by its own author**,
-separate from this repository's MIT license. Updating to the latest
-upstream version is optional, via `scripts/fetch_starlink_grpc.sh`.
+separate from this repository's MIT license (Unlicense — public
+domain). Its origin is recorded in `app/vendor/PROVENANCE` (upstream
+commit, date, sha256; a test checks them against the file). Updating to
+the latest upstream version is optional, via
+`scripts/fetch_starlink_grpc.sh` (download to a temporary file, checks,
+`.prev` backup, atomic replace; `--commit=<sha>` — a specific revision).
+
+**Dependencies.** `requirements.txt` pins the direct packages,
+`constraints.txt` the transitive ones (`install.sh` runs `pip install -r
+requirements.txt -c constraints.txt`; without it pip never upgraded
+already-installed, including system, versions). The hardware `adafruit-*`
+packages are deliberately not pinned. Vulnerability audit: `pip install
+pip-audit && scripts/audit_deps.sh`.

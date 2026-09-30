@@ -216,3 +216,144 @@ def test_settings_and_device_history_writes_are_durable(db_path, call):
     with patch.object(db, "get_conn", side_effect=spy):
         call()
     assert True in flags
+
+
+# ---- міграція схеми на БД, створеній СТАРІШОЮ версією (шлях оновлення на реальному Pi) ----
+
+def _old_schema_without_migrated_columns():
+    """Поточна схема мінус колонки, що додаються міграціями init_db()."""
+    import re
+    migrated = {
+        "metrics": ("update_state", "update_progress_pct", "update_requires_reboot", "update_install_pending",
+                    "active_alerts", "hardware_version", "dish_id"),
+        "router_status": ("update_state", "update_progress_pct", "update_install_pending", "active_alerts", "clients"),
+        "events": ("count", "last_ts"),
+    }
+    schema = db.SCHEMA
+    for table, cols in migrated.items():
+        start = schema.index(f"CREATE TABLE IF NOT EXISTS {table} (")
+        end = schema.index(");", start)
+        body = schema[start:end]
+        for col in cols:
+            body = re.sub(rf"\n\s*{col} [^\n]*", "", body)
+        body = re.sub(r",(\s*)$", r"\1", body.rstrip()) + "\n"
+        # остання лишена колонка не має закінчуватись комою
+        body = re.sub(r",\s*$", "", body.rstrip()) + "\n"
+        schema = schema[:start] + body + schema[end:]
+    return schema
+
+
+def test_init_db_migrates_old_database_preserving_data(db_path):
+    """CREATE TABLE IF NOT EXISTS не чіпає наявну таблицю - нові колонки
+    додаються ALTER TABLE. Ця гілка не виконувалась жодним тестом, хоча саме
+    вона працює при оновленні на Pi з уже наявним history.db."""
+    import os
+    import sqlite3
+    os.remove(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_old_schema_without_migrated_columns())
+    conn.execute("INSERT INTO metrics (ts, online, state, uptime_s) VALUES (100.0, 1, 'CONNECTED', 55)")
+    conn.execute("INSERT INTO events (ts, kind, message, success) VALUES (200.0, 'dish_reboot', 'старий запис', 1)")
+    conn.execute("INSERT INTO router_status (id, ts, online, software_version) VALUES (1, 300.0, 1, 'r-old')")
+    conn.commit()
+    old_cols = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
+    conn.close()
+    assert "count" not in old_cols and "last_ts" not in old_cols        # тест справді має СТАРУ схему
+
+    db.init_db()
+
+    fresh = sqlite3.connect(":memory:")
+    fresh.executescript(db.SCHEMA)
+    with db.get_conn() as c:
+        for table in ("metrics", "events", "router_status"):
+            have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+            assert have == {r[1] for r in fresh.execute(f"PRAGMA table_info({table})")}, table
+    # старі дані на місці, нові колонки мають безпечні значення
+    latest = db.get_latest_metric()
+    assert latest["state"] == "CONNECTED" and latest["uptime_s"] == 55
+    event = db.get_recent_events(5)[0]
+    assert event["message"] == "старий запис" and event["count"] == 1
+    assert db.get_router_status()["software_version"] == "r-old"
+    # і база працює далі: нові записи з новими колонками
+    db.insert_metric({"timestamp": 400.0, "online": True, "dish_id": "d1", "update_state": "IDLE"})
+    assert db.get_latest_metric()["dish_id"] == "d1"
+    db.insert_event("dish_reboot", "новий запис", success=True)
+
+
+def test_init_db_is_idempotent(db_path):
+    db.init_db()
+    db.init_db()
+    db.insert_event("t", "x", success=True)
+    assert len(db.get_recent_events(5)) == 1
+
+
+def test_schema_change_in_unmigrated_table_requires_migration(db_path):
+    """system_metrics, known_devices і settings не мають міграції колонок
+    (metrics, router_status, events - мають). Змінили їхню схему - база на
+    Pi (history.db) НЕ отримає нову колонку: CREATE TABLE IF NOT EXISTS не
+    чіпає наявну таблицю, і запис/читання впаде "no such column" одразу
+    після оновлення. Змінюючи ці таблиці: додайте виклик
+    _migrate_table_columns в init_db(), потім оновіть цей список."""
+    expected = {
+        "system_metrics": ["id", "ts", "uptime_s", "cpu_percent", "mem_total_mb", "mem_used_mb", "mem_free_mb",
+                           "disk_total_gb", "disk_used_gb", "disk_free_gb", "temp_c"],
+        "known_devices": ["dish_id", "first_seen_ts", "last_seen_ts", "dish_hardware_version",
+                          "dish_software_version", "dish_software_updated_ts", "router_hardware_version",
+                          "router_software_version", "router_software_updated_ts"],
+        "settings": ["key", "value"],
+    }
+    with db.get_conn() as c:
+        for table, columns in expected.items():
+            assert [r["name"] for r in c.execute(f"PRAGMA table_info({table})")] == columns, table
+
+
+# ---- VACUUM лише коли вільних сторінок багато (раніше: щодоби І на кожен запуск сервісу) ----
+
+def _fill_metrics(rows):
+    from app.starlink_client import DishStatus
+    now = 1_000_000.0
+    db.insert_metrics_batch([
+        DishStatus(timestamp=now + i, online=True, uptime_s=i, dish_id="ut51c88d90-02724404-198fc3bd",
+                   software_version="2026.09.14.mr86848", downlink_mbps=50.0 + i % 9).to_dict()
+        for i in range(rows)
+    ])
+    return now
+
+
+def _pages():
+    with db.get_conn() as c:
+        return c.execute("PRAGMA page_count").fetchone()[0], c.execute("PRAGMA freelist_count").fetchone()[0]
+
+
+def test_vacuum_skipped_when_few_free_pages(db_path):
+    """Після щоденного prune вільно ~20% - нові записи їх заповнять; VACUUM
+    переписав би всю БД (вимір: 13.7 МБ записів на 6.5 МБ бази) без користі."""
+    now = _fill_metrics(6000)
+    with db.get_conn() as c:
+        c.execute("DELETE FROM metrics WHERE ts < ?", (now + 600,))       # ~10% рядків
+    pages, free = _pages()
+    assert 0 < free / pages < db._VACUUM_MIN_FREE_RATIO
+    assert db.vacuum_and_analyze() is False
+    after_pages, after_free = _pages()
+    # файл не переписано: розмір той самий, вільні сторінки лишились (VACUUM дав би 0);
+    # на 1 сторінку менше вільних - це ANALYZE створив таблицю sqlite_stat1
+    assert after_pages == pages and after_free >= free - 1 and after_free > 0
+
+
+def test_vacuum_runs_when_most_pages_are_free(db_path):
+    """Наприклад, після зменшення HISTORY_DAYS: тоді файл справді треба стиснути."""
+    import os
+    now = _fill_metrics(6000)
+    with db.get_conn() as c:
+        c.execute("DELETE FROM metrics WHERE ts < ?", (now + 5000,))      # ~83% рядків
+    with db.get_conn() as c:
+        c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    before = os.path.getsize(db_path)
+    pages, free = _pages()
+    assert free / pages >= db._VACUUM_MIN_FREE_RATIO
+    assert db.vacuum_and_analyze() is True
+    assert _pages()[1] == 0 and os.path.getsize(db_path) < before
+
+
+def test_vacuum_and_analyze_on_fresh_database_is_safe(db_path):
+    assert db.vacuum_and_analyze() is False

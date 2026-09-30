@@ -8,13 +8,34 @@ from typing import Any, Callable, Optional
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, i18n, monitor, pi_power, telegram_notify
+from app import config, config_editor, db, i18n, log_redact, monitor, pi_power, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
+log_redact.install()   # токен бота ніколи не потрапляє в журнал (див. app/log_redact.py)
+
+
+class _QuietSuccessfulGets(logging.Filter):
+    """Werkzeug пише рядок у журнал на КОЖЕН запит, а дашборд опитує сервер
+    ~3500 разів на годину на відкриту вкладку (~83 000 рядків / ~8 МБ на
+    добу - усе це на SD-картку й через Python-логування). Відкидаємо лише
+    успішні GET (опитування, статика); лишаємо все інше: POST-дії
+    (перезавантаження, зміна налаштувань - з IP джерела: єдиний слід дій
+    при відсутності автентифікації) і будь-які помилки (4xx/5xx)."""
+    _SUCCESSFUL_GET = re.compile(r'"GET [^"]*" [23]\d\d ')
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not self._SUCCESSFUL_GET.search(record.getMessage())
+
+
+logging.getLogger("werkzeug").addFilter(_QuietSuccessfulGets())
 logger = logging.getLogger("webapp")
 
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
+# Обмеження тіла запиту: Flask за замовчуванням його не має, а /api/settings-restore
+# читає JSON цілком у пам'ять (Pi Zero - 415 МБ). Реальний бекап станції з 233
+# пристроями - ~42 КБ; 5 МБ - запас понад 100 разів. Перевищення -> HTTP 413.
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 # Кешування статики (dashboard.js, logo.png) на стороні браузера - зменшує
 # кількість запитів при кожному відкритті/перезавантаженні дашборду,
 # помітно на слабкому WiFi-каналі Pi Zero 2 W. API-ендпоінти (динамічні

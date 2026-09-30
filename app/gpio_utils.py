@@ -53,7 +53,8 @@ def _init_line_v1(
                  flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
 
     def get_value() -> int:
-        return line.get_value()
+        value: int = line.get_value()
+        return value
 
     def release() -> None:
         line.release()

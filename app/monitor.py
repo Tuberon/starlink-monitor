@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional
 
 import psutil
 
-from app import activity_led, config, config_editor, db, i18n, telegram_notify
+from app import activity_led, config, config_editor, db, i18n, log_redact, telegram_notify
 from app import labels
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
@@ -26,6 +26,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+log_redact.install()   # токен бота ніколи не потрапляє в журнал (див. app/log_redact.py)
 logger = logging.getLogger("monitor")
 
 
@@ -36,7 +37,7 @@ def pi_just_booted(threshold_sec: float = 120.0) -> bool:
     (`psutil.boot_time()`, уже використовується в system_metrics.py)
     з порогом. Чиста функція (легко тестується без реального psutil-
     виклику через мокування)."""
-    return time.time() - psutil.boot_time() < threshold_sec
+    return bool(time.time() - psutil.boot_time() < threshold_sec)
 
 
 def version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
@@ -361,6 +362,21 @@ def format_duration(seconds: float, tr: Callable[..., str]) -> str:
     return f"{minutes} {tr('dur_minutes')}"
 
 
+_POLL_PAUSE_DEFAULT_SEC = 10.0
+# Стеля буфера dish-метрик у пам'яті, коли БД недоступна: ~доба опитувань по
+# 10 с. Понад це відкидаються найстаріші (пам'ять на Pi Zero - 415 МБ).
+_METRICS_BUFFER_MAX = 8640
+
+
+def _poll_pause() -> float:
+    """Пауза між опитуваннями. Значення з /settings уже перевірено (1..3600),
+    але env-файл можна змінити й вручну: time.sleep() від'ємного/nan/inf
+    кидає виняток ПОЗА обробником циклу і валив увесь процес монітора
+    (crash-loop під systemd), а нуль гнав би цикл без пауз."""
+    interval = config.POLL_INTERVAL_SEC
+    return interval if 1 <= interval <= 3600 else _POLL_PAUSE_DEFAULT_SEC
+
+
 # Скільки при зупинці сервісу чекати відправки вже поставлених сповіщень, с
 _NOTIFY_DRAIN_TIMEOUT_SEC = 10
 
@@ -472,6 +488,7 @@ class Watchdog:
         # (online, update_state) попереднього опитування - зміна скидає
         # буфер у БД одразу (див. poll_once)
         self._last_state_key: Optional[tuple[bool, str]] = None
+        self._local_fault_reported = False
         # Фоновий відправник запускається лише в run_forever(); без нього
         # (прямі виклики, тести) _notify() надсилає синхронно, як раніше.
         self._sender: Optional[_BackgroundSender] = None
@@ -588,9 +605,37 @@ class Watchdog:
         restart/update.sh НЕ втрачав буферизовані дані."""
         if not self.metrics_buffer:
             return
-        db.insert_metrics_batch(self.metrics_buffer)
+        try:
+            db.insert_metrics_batch(self.metrics_buffer)
+        except Exception as e:
+            # НІКОЛИ не кидає: викликається з трьох місць - періодично в
+            # циклі (виняток звідти валив увесь процес монітора: при
+            # заблокованій БД/повній SD зависла тарілка не перезавантажувалась
+            # ніколи), при зміні стану й з обробника SIGTERM (виняток там
+            # заважав би вийти, а в poll_once() його ковтав би except -
+            # сервіс ігнорував би SIGTERM аж до SIGKILL). Буфер лишається;
+            # повтор - через DISH_METRICS_BATCH_INTERVAL_SEC, не щоітерації.
+            self.last_batch_flush_ts = time.time()
+            dropped = max(0, len(self.metrics_buffer) - _METRICS_BUFFER_MAX)
+            if dropped:
+                del self.metrics_buffer[:dropped]   # найстаріші: пам'ять не росте безмежно
+            logger.warning("Не вдалося записати %d метрик у БД (повтор через %d с%s): %s",
+                           len(self.metrics_buffer), config.DISH_METRICS_BATCH_INTERVAL_SEC,
+                           f", відкинуто {dropped} найстаріших" if dropped else "", e)
+            return
         self.metrics_buffer = []
         self.last_batch_flush_ts = time.time()
+
+    def _report_local_fault(self, status: DishStatus) -> None:
+        """Один раз за процес (усунення потребує перезапуску сервісу - модуль
+        завантажується при старті): подія в журналі, лог, Telegram."""
+        if self._local_fault_reported:
+            return
+        self._local_fault_reported = True
+        logger.error("Локальна несправність моніторингу тарілки: %s. Перезавантаження тарілки вимкнено.", status.error)
+        self._event("local_fault", f"Моніторинг тарілки не працює (локальна причина): {status.error}. "
+                                    "Перезавантаження тарілки вимкнено", success=False)
+        self._notify(i18n.t("tg_local_fault", error=status.error))
 
     def poll_once(self) -> DishStatus:
         self._check_reboot_spam_recovery()
@@ -609,10 +654,13 @@ class Watchdog:
         changed = self._last_state_key is not None and state_key != self._last_state_key
         self._last_state_key = state_key
         if changed:
-            try:
-                self.flush_metrics_buffer()
-            except Exception as e:
-                logger.warning("Не вдалося одразу записати зміну стану в БД: %s", e)
+            self.flush_metrics_buffer()   # не кидає: збій лише логується, буфер лишається
+
+        if status.local_fault:
+            # Локальна несправність (модуль starlink_grpc не завантажився) - не збій
+            # тарілки: не рахуємо, не перезавантажуємо, повідомляємо один раз.
+            self._report_local_fault(status)
+            return status
 
         if status.online:
             self._router_down_polls = 0
@@ -1008,7 +1056,12 @@ class Watchdog:
 
     def run_forever(self) -> None:
         db.init_db()
-        logger.info("Starlink watchdog запущено. Опитування кожні %d с.", config.POLL_INTERVAL_SEC)
+        if _poll_pause() != config.POLL_INTERVAL_SEC:
+            logger.warning(
+                "STARLINK_POLL_INTERVAL_SEC=%r поза межами 1..3600 - використовую %d с (виправте на /settings)",
+                config.POLL_INTERVAL_SEC, _POLL_PAUSE_DEFAULT_SEC,
+            )
+        logger.info("Starlink watchdog запущено. Опитування кожні %d с.", _poll_pause())
 
         # LED активності SD-картки (опційно, вимкнено за замовчуванням) -
         # лише watchdog-процес (не webapp.py) ініціалізує GPIO-пін,
@@ -1100,8 +1153,9 @@ class Watchdog:
 
                 if time.time() - last_vacuum > 86400:
                     try:
-                        logger.info("Періодична оптимізація БД (VACUUM + ANALYZE)")
-                        db.vacuum_and_analyze()
+                        vacuumed = db.vacuum_and_analyze()
+                        logger.info("Періодична оптимізація БД: ANALYZE, VACUUM %s",
+                                    "виконано" if vacuumed else "пропущено (вільних сторінок мало)")
                     except Exception:
                         logger.exception("Помилка VACUUM/ANALYZE")
                     last_vacuum = time.time()
@@ -1137,7 +1191,7 @@ class Watchdog:
                 except Exception:
                     logger.exception("Помилка відправки backup у Telegram")
 
-                time.sleep(config.POLL_INTERVAL_SEC)
+                time.sleep(_poll_pause())
         finally:
             # SystemExit з обробника SIGTERM теж проходить сюди: дочекатись
             # уже поставлених сповіщень (не довше 10 с) і зупинити потік.

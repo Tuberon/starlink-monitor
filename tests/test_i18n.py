@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import time
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -31,7 +32,7 @@ def test_every_i18n_key_used_in_app_code_exists():
     словнику, інакше користувач побачить сирий ключ."""
     used = set()
     for f in glob.glob(os.path.join(APP_DIR, "*.py")):
-        src = open(f, encoding="utf-8").read()
+        src = Path(f).read_text(encoding="utf-8")
         used |= set(re.findall(r"""(?:i18n\.t|\btr|\buk)\(\s*["']([a-z_0-9]+)["']""", src))
     assert used, "сканування не знайшло жодного виклику"
     assert sorted(used - set(i18n.TRANSLATIONS)) == []
@@ -163,3 +164,68 @@ def test_telegram_notify_messages_in_english(en):
     telegram_notify.set_telegram_config(token="T", chat_ids=["1"], enabled=True)   # конфігурація перевіряється першою
     ok, msg = telegram_notify.send_document("/nonexistent/backup.json", caption="c")
     assert msg == "File not found: /nonexistent/backup.json"
+
+
+# ---- Telegram HTML: динамічний текст екранується, розмітка перекладу - ні ----
+
+_HOSTILE = "<_MultiThreadedRendezvous of RPC & <b>x</b> \"q\">"
+
+
+def test_tg_keys_escape_string_arguments_but_keep_translation_markup(db_path):
+    text = i18n.t("tg_dish_offline_line", error=_HOSTILE)
+    assert "&lt;_MultiThreadedRendezvous" in text and "&amp;" in text and "&lt;b&gt;x&lt;/b&gt;" in text
+    assert text.startswith("📡 <b>Тарілка</b>")                     # власна розмітка перекладу вціліла
+
+
+def test_safehtml_and_non_string_arguments_are_not_escaped_or_mangled(db_path):
+    ok = i18n.SafeHtml("<code>a&amp;b</code>")
+    assert "<code>a&amp;b</code>" in i18n.t("tg_multiple_matches", ids=ok)
+    assert i18n.t("tg_alerts_count_line", n=3).endswith("3") or "3" in i18n.t("tg_alerts_count_line", n=3)
+    assert "&lt;no space&gt;" in i18n.t("tg_emergency_backup_failed", error=OSError("<no space>"))   # виняток теж екранується
+
+
+def test_non_telegram_keys_are_not_escaped(db_path):
+    """Ключі поза tg_* ідуть у веб/JSON, де HTML-сутності показались б буквально."""
+    assert i18n.t("api_sent_partially", errors="<x>") == "надіслано частково, помилки: <x>"
+
+
+def test_every_telegram_message_is_valid_html_even_with_hostile_values(db_path):
+    """Для КОЖНОГО ключа tg_* (і hint-команд) у обох мовах, з ворожими
+    значеннями в усіх плейсхолдерах: результат - валідний Telegram-HTML."""
+    import re
+    from conftest import assert_valid_telegram_html
+    keys = [k for k in i18n.TRANSLATIONS if k.startswith("tg_") or k == "telegram_commands_hint"]
+    assert len(keys) > 60
+    for lang in ("uk", "en"):
+        tr = i18n.translator(lang)
+        for key in keys:
+            template = i18n.TRANSLATIONS[key][lang]
+            values = {name: _HOSTILE for name in re.findall(r"\{(\w+)\}", template)}
+            assert_valid_telegram_html(tr(key, **values))
+
+
+def test_hostile_arguments_would_break_html_without_escaping():
+    """Контроль самого перевіряльника: без екранування він справді падає."""
+    from conftest import assert_valid_telegram_html
+    with pytest.raises(AssertionError):
+        assert_valid_telegram_html("📡 <b>Тарілка</b>: offline (" + _HOSTILE + ")")
+
+
+# ---- коротка форма помилки для чату ----
+
+_GRPC_ERROR = (
+    '<_MultiThreadedRendezvous of RPC that terminated with:\n\tstatus = StatusCode.UNAVAILABLE\n'
+    '\tdetails = "failed to connect to all addresses; last error: UNKNOWN: ipv4:192.168.100.1:9200: '
+    'Failed to connect to remote host: Connection refused"\n'
+    '\tdebug_error_string = "UNKNOWN:Error received from peer  {grpc_status:14}"\n>'
+)
+
+
+def test_short_error_extracts_grpc_details_and_handles_odd_input():
+    from app import labels
+    assert labels.short_error(_GRPC_ERROR).startswith("failed to connect to all addresses")
+    assert "debug_error_string" not in labels.short_error(_GRPC_ERROR)
+    assert labels.short_error("grpcurl не знайдено в PATH") == "grpcurl не знайдено в PATH"
+    assert labels.short_error("перший рядок\nдругий рядок") == "перший рядок"
+    assert labels.short_error(None) == "" and labels.short_error("") == "" and labels.short_error("  \n ") == ""
+    assert len(labels.short_error("x" * 500)) == 200 and labels.short_error("x" * 500).endswith("…")

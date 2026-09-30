@@ -6,6 +6,7 @@
 Команди: /status, /checkupdates, /reboot (з підтвердженням),
 /id [dish_id], /help.
 """
+import html
 import logging
 import threading
 import time
@@ -16,6 +17,7 @@ import requests
 
 from app import config, db, i18n, monitor, telegram_notify
 from app import labels
+from app.log_redact import redact
 from app.starlink_client import StarlinkClient
 
 logger = logging.getLogger("telegram_bot")
@@ -49,7 +51,7 @@ def _api_call(
             timeout=http_timeout,
             session=session,
         )
-        data = resp.json()
+        data: dict[str, Any] = resp.json()
         if not data.get("ok"):
             logger.warning(
                 "Telegram API %s відхилив запит: %s (chat_id=%s)",
@@ -57,7 +59,7 @@ def _api_call(
             )
         return data
     except requests.RequestException as e:
-        logger.warning("Telegram API виклик %s провалився: %s", method, e)
+        logger.warning("Telegram API виклик %s провалився: %s", method, redact(str(e), token))
         return None
 
 
@@ -168,7 +170,7 @@ class TelegramBot:
             self._executor.submit(self._handle_updates_sequential, token, allowed_chat_ids, updates)
 
     @staticmethod
-    def _extract_chat_id(update: dict) -> str:
+    def _extract_chat_id(update: dict[str, Any]) -> str:
         if "callback_query" in update:
             return str(_obj(_obj(_obj(update["callback_query"]).get("message")).get("chat")).get("id", ""))
         message = _obj(update.get("message") or update.get("edited_message"))
@@ -264,7 +266,7 @@ class TelegramBot:
             if dish.active_alerts:
                 lines.append(i18n.t("tg_alerts_count_line", n=len(dish.active_alerts)))
         else:
-            lines.append(i18n.t("tg_dish_offline_line", error=dish.error or i18n.t("no_response")))
+            lines.append(i18n.t("tg_dish_offline_line", error=labels.short_error(dish.error) or i18n.t("no_response")))
 
         lines.append("")
 
@@ -278,7 +280,7 @@ class TelegramBot:
             if router.active_alerts:
                 lines.append(i18n.t("tg_alerts_count_line", n=len(router.active_alerts)))
         else:
-            lines.append(i18n.t("tg_router_offline_line", error=router.error or i18n.t("no_response")))
+            lines.append(i18n.t("tg_router_offline_line", error=labels.short_error(router.error) or i18n.t("no_response")))
 
         self._send(token, chat_id, "\n".join(lines))
 
@@ -302,7 +304,7 @@ class TelegramBot:
                 + (f" ({dish.update_progress_pct:.0f}%)" if dish.update_progress_pct else "")
             )
         else:
-            lines.append(i18n.t("tg_dish_offline_line", error=dish.error or i18n.t("no_response")))
+            lines.append(i18n.t("tg_dish_offline_line", error=labels.short_error(dish.error) or i18n.t("no_response")))
 
         lines.append("")
 
@@ -314,7 +316,7 @@ class TelegramBot:
                 + (f" ({router.update_progress_pct:.0f}%)" if router.update_progress_pct else "")
             )
         else:
-            lines.append(i18n.t("tg_router_offline_line", error=router.error or i18n.t("no_response")))
+            lines.append(i18n.t("tg_router_offline_line", error=labels.short_error(router.error) or i18n.t("no_response")))
 
         self._send(token, chat_id, "\n".join(lines))
 
@@ -393,7 +395,9 @@ class TelegramBot:
             if len(matches) == 1:
                 device = matches[0]
             elif len(matches) > 1:
-                ids = "\n".join(f"<code>{d['dish_id']}</code>" for d in matches)
+                # SafeHtml: розмітку <code> будуємо самі (ідентифікатор екранований),
+                # i18n не має екранувати її вдруге
+                ids = i18n.SafeHtml("\n".join(f"<code>{html.escape(d['dish_id'], quote=False)}</code>" for d in matches))
                 self._send(token, chat_id, i18n.t("tg_multiple_matches", ids=ids))
                 return
 

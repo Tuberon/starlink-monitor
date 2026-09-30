@@ -62,3 +62,19 @@ def watchdog(db_path):
     # стану "Starlink вимкнено" перевизначають це явно.
     wd.client.router_reachable = lambda timeout=2.0: True
     return wd
+
+
+_TELEGRAM_TAGS = ("b", "i", "u", "s", "code", "pre")
+
+
+def assert_valid_telegram_html(text):
+    """Telegram (parse_mode=HTML) відхиляє ВСЕ повідомлення, якщо в ньому є
+    непідтримуваний тег або "голі" `<`, `>`, `&`. Перевіряємо це самі:
+    дозволені теги мають бути збалансовані, а після їх вилучення (і
+    сутностей &amp; &lt; &gt;) жодного `<`, `>`, `&` не лишається."""
+    import re
+    for tag in _TELEGRAM_TAGS:
+        assert len(re.findall(rf"<{tag}>", text)) == len(re.findall(rf"</{tag}>", text)), (tag, text)
+    stripped = re.sub(rf"</?({'|'.join(_TELEGRAM_TAGS)})>", "", text)
+    stripped = re.sub(r"&(amp|lt|gt);", "", stripped)
+    assert not re.search(r"[<>&]", stripped), stripped

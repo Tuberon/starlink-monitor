@@ -298,7 +298,8 @@ def _json_field(raw: Any) -> list[Any]:
     if not raw:
         return []
     try:
-        return json.loads(raw)
+        parsed: list[Any] = json.loads(raw)
+        return parsed
     except (TypeError, json.JSONDecodeError):
         return []
 
@@ -439,19 +440,31 @@ def prune_old(days: Optional[int] = None) -> None:
         conn.execute("DELETE FROM system_metrics WHERE ts < ?", (cutoff,))
 
 
-def vacuum_and_analyze() -> None:
-    """Періодична оптимізація БД: VACUUM звільняє місце після DELETE в
-    prune_old() (SQLite не повертає диску вільні сторінки автоматично),
-    ANALYZE оновлює статистику планувальника запитів. Викликається
-    рідше за prune_old (раз на добу, не щогодини) - VACUUM вимагає
-    ексклюзивного доступу й тимчасово до 2x розміру файлу на диску,
-    непотрібно робити це часто на SD-картці. Окреме з'єднання (не
-    get_conn(), який лишає WAL-режим) - VACUUM в WAL-режимі працює,
-    але надійніше й простіше з чистим autocommit-з'єднанням."""
+# VACUUM переписує ВСЮ БД: вимір (БД 6.5 МБ) - 13.7 МБ записів на SD, а
+# виконувався він щодоби І на кожен запуск сервісу (оновлення, перезапуск з
+# /settings, аварійний рестарт). Користі майже немає: після щоденного prune
+# звільняється ~1/HISTORY_DAYS сторінок (20% при 5 добах), але нові записи
+# одразу заповнюють їх - файл після VACUUM за добу знову виростає до
+# колишнього розміру. Тож VACUUM лише коли вільних сторінок реально багато
+# (напр. після зменшення HISTORY_DAYS чи великого видалення).
+_VACUUM_MIN_FREE_RATIO = 0.30
+
+
+def vacuum_and_analyze() -> bool:
+    """Періодична оптимізація БД: ANALYZE (статистика планувальника,
+    дешево) завжди; VACUUM - лише коли вільних сторінок >=
+    _VACUUM_MIN_FREE_RATIO (див. коментар вище). Повертає, чи виконано
+    VACUUM. Окреме з'єднання (не get_conn(), який лишає WAL-режим):
+    надійніше й простіше з чистим autocommit-з'єднанням."""
     conn = sqlite3.connect(config.DB_PATH, timeout=30)
     try:
-        conn.execute("VACUUM")
+        pages = conn.execute("PRAGMA page_count").fetchone()[0]
+        free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+        vacuumed = bool(pages > 0 and free / pages >= _VACUUM_MIN_FREE_RATIO)
+        if vacuumed:
+            conn.execute("VACUUM")
         conn.execute("ANALYZE")
+        return vacuumed
     finally:
         conn.close()
 
