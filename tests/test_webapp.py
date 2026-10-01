@@ -1076,3 +1076,33 @@ def test_live_server_logs_actions_and_errors_but_not_polling(live_server, caplog
     assert "GET /api/status" not in text                       # опитування - не в журнал
     assert "POST /api/auto-reboot" in text                     # дія лишає слід (з IP)
     assert "/definitely-not-here" in text and "404" in text    # помилки видно
+
+
+# ---- довідник HTTP API в docs/architecture.md не розходиться з реальними маршрутами ----
+
+def _documented_api_rows():
+    import re
+    from pathlib import Path
+    text = Path(__file__).parent.joinpath("..", "docs", "architecture.md").read_text(encoding="utf-8")
+    start = text.index("## HTTP API веб-інтерфейсу")
+    section = text[start:text.index("\n## ", start + 5)]
+    return {(m.group(1), m.group(2)) for m in re.finditer(r"^\| (GET|POST) \| `(/[^`?]*)(?:\?[^`]*)?` \|", section, re.M)}
+
+
+def test_http_api_reference_matches_routes():
+    """Кожен маршрут (метод + шлях) описаний у таблицях, і кожен описаний
+    існує. Раніше 9 з 24 шляхів ніде в документації не називались."""
+    actual = {(m, r.rule) for r in flask_app.url_map.iter_rules() if not r.rule.startswith("/static")
+              for m in r.methods if m in ("GET", "POST")}
+    documented = _documented_api_rows()
+    assert sorted(actual - documented) == [], "маршрут без опису в docs/architecture.md"
+    assert sorted(documented - actual) == [], "в документації описано неіснуючий маршрут"
+
+
+def test_documented_post_only_actions_really_reject_get(client):
+    """Твердження з довідника: зміни й дії - лише POST (GET -> 405)."""
+    post_only = {path for method, path in _documented_api_rows() if method == "POST"} - {
+        p for m, p in _documented_api_rows() if m == "GET"}
+    assert len(post_only) >= 5          # лише перевірка, що розбір таблиць знайшов рядки
+    for path in sorted(post_only):
+        assert client.get(path).status_code == 405, path

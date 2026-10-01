@@ -106,8 +106,7 @@ requirements.txt -c constraints.txt` і вважає залежності змі
 лише Telegram-сповіщення пригнічується; знайдено запитом
 користувача — короткі flap-відновлення не завжди інформативні).
 
-**Starlink вимкнено** (`_enter_starlink_offline()`/`_exit_starlink_
-offline()`): коли dish не відповідає, `poll_once()` перевіряє TCP-
+**Starlink вимкнено** (`_enter_starlink_offline()`/`_exit_starlink_offline()`): коли dish не відповідає, `poll_once()` перевіряє TCP-
 з'єднання з gRPC-портом роутера (`StarlinkClient.router_reachable()`,
 2 с; без WiFi Starlink пакети йдуть маршрутом за замовчуванням через
 eth0 і чекають повний timeout). Роутер
@@ -128,16 +127,14 @@ eth0 і чекають повний timeout). Роутер
 цього щохвилинні пів-секундні розриви WiFi на Pi користувача, що
 інколи збігаються з опитуванням, давали до ~100 подій на годину.
 
-**Групування reboot-спаму** (`_notify_reboot()`/`_check_reboot_spam_
-recovery()`) — інша ситуація, ніж `NOTIFICATIONS_MUTE_AFTER_SEC`: та
+**Групування reboot-спаму** (`_notify_reboot()`/`_check_reboot_spam_recovery()`) — інша ситуація, ніж `NOTIFICATIONS_MUTE_AFTER_SEC`: та
 працює за ТРИВАЛІСТЮ однієї безперервної відмови, це — за ЧАСТОТОЮ
 окремих коротких reboot-циклів (флап), кожен з яких минає
 `MIN_REBOOT_INTERVAL_SEC` і тому НЕ приглушується першим механізмом.
 `Watchdog.reboot_notify_ts` — ковзний список timestamps уже
 надісланих reboot-сповіщень (не всіх спроб reboot, лише тих, що
 дійшли до Telegram); коли їх назбирається `REBOOT_SPAM_THRESHOLD`+ за
-`REBOOT_SPAM_WINDOW_SEC` — подальші мовчки рахуються (`muted_reboot_
-count`), **без окремого повідомлення про початок групування** (щоб
+`REBOOT_SPAM_WINDOW_SEC` — подальші мовчки рахуються (`muted_reboot_count`), **без окремого повідомлення про початок групування** (щоб
 не додавати ще одне сповіщення до вже частих — навмисно прибрано за
 запитом користувача), до затишшя (`_check_reboot_spam_recovery()`,
 викликається щоцикл на початку `poll_once()`), тоді підсумок і
@@ -217,9 +214,7 @@ WAL journal_mode — паралельне читання (webui) і запис (
   `*_notified` пари — див. нижче)
 
 **Write-only колонки, залишені в схемі без запису** (аудит показав, що
-ніде не читаються - `metrics.currently_obstructed` дублює `obstruction_
-fraction`, `router_status.bootcount` ніколи не відображався, `events.
-last_ts` дублював `ts` в одному й тому самому UPDATE): значення `NULL`
+ніде не читаються - `metrics.currently_obstructed` дублює `obstruction_fraction`, `router_status.bootcount` ніколи не відображався, `events.last_ts` дублював `ts` в одному й тому самому UPDATE): значення `NULL`
 для нових рядків, старі рядки не чіпались. Схема НЕ змінена (без `DROP
 COLUMN`) - менший ризик для вже існуючих БД на реальних пристроях, ніж
 міграція.
@@ -228,8 +223,7 @@ COLUMN`) - менший ризик для вже існуючих БД на ре
   `upsert_known_device_dish()`/`upsert_known_device_router()` повертають
   `(real_change, old_version)` — `real_change=True` лише коли версія
   реально відрізняється від РАНІШЕ ВІДОМОГО значення (не `None`, не
-  перше знайомство з пристроєм/полем), і завжди оновлюють `known_
-  devices` реальною поточною версією незалежно від напрямку зміни.
+  перше знайомство з пристроєм/полем), і завжди оновлюють `known_devices` реальною поточною версією незалежно від напрямку зміни.
   `services.upsert_dish_and_notify()`/`upsert_router_and_notify()`
   сповіщають лише про реальне ОНОВЛЕННЯ (`format_firmware_change_message()`,
   використовує `db.is_older_version()` — той самий
@@ -255,12 +249,10 @@ alert'а окремою подією в БД (`dish_alert`/`dish_alert_resolved`
 **"🟢 Dish Watch запущено (Raspberry Pi перезавантажено)"** —
 `monitor.pi_just_booted()` (чиста, тестована функція, порівнює
 `psutil.boot_time()` з `time.time()`, поріг 120с) відрізняє РЕАЛЬНЕ
-завантаження Pi від звичайного `sudo systemctl restart starlink-
-monitor.service` (напр. під час `update.sh`) — без цього сповіщало б
+завантаження Pi від звичайного `sudo systemctl restart starlink-monitor.service` (напр. під час `update.sh`) — без цього сповіщало б
 набагато частіше, ніж "Pi увімкнувся/перезавантажився". Викликається
 на початку `run_forever()`, одразу після `db.init_db()`, ПЕРЕД
-`telegram_bot.start()` (не залежить від нього — `telegram_notify.
-send_message()` окремий, самостійний модуль). `NOTIFY_PI_STARTUP=0`
+`telegram_bot.start()` (не залежить від нього — `telegram_notify.send_message()` окремий, самостійний модуль). `NOTIFY_PI_STARTUP=0`
 (дефолт `1`) вимикає повністю.
 
 ## Буферизація dish-метрик (SD-card-wear reduction)
@@ -268,8 +260,7 @@ send_message()` окремий, самостійний модуль). `NOTIFY_PI
 `Watchdog.metrics_buffer` — dish-зчитування (кожні `POLL_INTERVAL_SEC`,
 типово 10с) накопичуються в пам'яті замість негайного окремого
 запису. `flush_metrics_buffer()` викликає `db.insert_metrics_batch()`
-(одна транзакція, `executemany`) раз на `DISH_METRICS_BATCH_INTERVAL_
-SEC` (типово 30с) — зменшує кількість фізичних write-транзакцій на
+(одна транзакція, `executemany`) раз на `DISH_METRICS_BATCH_INTERVAL_SEC` (типово 30с) — зменшує кількість фізичних write-транзакцій на
 SD-картку **в рази**, без втрати жодної точки даних (усі зчитування
 все одно потрапляють у БД, лише трохи пізніше).
 
@@ -303,8 +294,7 @@ checkpoint відбувається лише за `wal_autocheckpoint` (1000 с�
 закривається в `finally` — штатний checkpoint, `-wal` видаляється.
 
 **Graceful shutdown** — без цього звичайний `sudo systemctl restart`
-(наприклад, під час `update.sh`) втрачав би до `DISH_METRICS_BATCH_
-INTERVAL_SEC` буферизованих даних щоразу, не лише при справжньому
+(наприклад, під час `update.sh`) втрачав би до `DISH_METRICS_BATCH_INTERVAL_SEC` буферизованих даних щоразу, не лише при справжньому
 раптовому вимкненні живлення (для якого ця втрата — свідомо прийнятий
 компроміс, не помилка). `run_forever()` реєструє обробники `SIGTERM`/
 `SIGINT`, які викликають `flush_metrics_buffer()` перед виходом
@@ -317,10 +307,8 @@ DISH_METRICS_BATCH_INTERVAL_SEC` — знайдено ДО реалізації 
 спрацьовувала б як "watchdog завис", оскільки старий поріг (30с)
 точно збігався з новим batch-інтервалом.
 
-**Другорядний ефект, свідомо прийнятий**: `check_both_targets_
-reached()` читає `db.get_latest_metric()` для комбінованого "🎉
-обидва" сповіщення — це значення може відставати на до `DISH_
-METRICS_BATCH_INTERVAL_SEC`. Головне, per-component сповіщення
+**Другорядний ефект, свідомо прийнятий**: `check_both_targets_reached()` читає `db.get_latest_metric()` для комбінованого "🎉
+обидва" сповіщення — це значення може відставати на до `DISH_METRICS_BATCH_INTERVAL_SEC`. Головне, per-component сповіщення
 (`check_target_version_reached()` через `upsert_dish_and_notify()`)
 використовує live `DishStatus`-об'єкт напряму, не БД — працює без
 жодної затримки.
@@ -341,16 +329,13 @@ tuple параметрів INSERT, використовується і `insert_m
 ## Надійність: integrity-check, автоматичний backup, Telegram-retry
 
 **`db.check_integrity()`** (`PRAGMA quick_check`) — той самий
-щоденний цикл, що `vacuum_and_analyze()`. Ловить `sqlite3.
-DatabaseError` окремо (файл ВЗАГАЛІ не SQLite, не лише пошкоджені
+щоденний цикл, що `vacuum_and_analyze()`. Ловить `sqlite3.DatabaseError` окремо (файл ВЗАГАЛІ не SQLite, не лише пошкоджені
 дані всередині — `PRAGMA quick_check` сам кидає виняток у цьому
-крайньому випадку, знайдено живим тестом). `monitor.check_db_
-integrity_and_notify()` при пошкодженні — Telegram-сповіщення +
+крайньому випадку, знайдено живим тестом). `services.check_db_integrity_and_notify()` при пошкодженні — Telegram-сповіщення +
 спроба аварійного `perform_auto_backup()` (в `try/except` — backup
 теж може провалитись, читаючи з тієї самої пошкодженої БД).
 
-**`services.build_backup_dict()`** — спільна для `webapp.py api_
-settings_backup()` (ручний, веб-кнопка) і `perform_auto_backup()`
+**`services.build_backup_dict()`** — спільна для `webapp.py api_settings_backup()` (ручний, веб-кнопка) і `perform_auto_backup()`
 (автоматичний, періодичний з `run_forever()`) — уникає дублювання.
 `db.BACKUP_FORMAT_VERSION` (не `webapp.py`) — доступна з `monitor.py`
 без циклічного імпорту (`webapp.py` вже імпортує `monitor`).
@@ -360,9 +345,7 @@ settings_backup()` (ручний, веб-кнопка) і `perform_auto_backup()
 найновіших файлів.
 
 **Telegram send-retry** (`telegram_notify.send_message()`) — до
-`TELEGRAM_SEND_RETRIES` (дефолт 1) повторних спроб з `TELEGRAM_SEND_
-RETRY_DELAY_SEC` (дефолт 2с) затримкою, ЛИШЕ для `requests.
-RequestException` (мережеві помилки). `for...else` на рівні спроб:
+`TELEGRAM_SEND_RETRIES` (дефолт 1) повторних спроб з `TELEGRAM_SEND_RETRY_DELAY_SEC` (дефолт 2с) затримкою, ЛИШЕ для `requests.RequestException` (мережеві помилки). `for...else` на рівні спроб:
 `break` одразу після отриманої HTTP-відповіді (успіх чи ні - повтор
 на HTTP-рівня помилку типу "chat not found" нічого не змінить),
 `else`-гілка (виконується, лише коли цикл завершився БЕЗ `break`)
@@ -463,8 +446,7 @@ user-налаштування.
 `metrics`, `router_status` і `events`; `system_metrics`, `known_devices` і `settings` —
 ні. Нова колонка в будь-якій таблиці має додаватись і в `SCHEMA`, і в міграцію:
 `CREATE TABLE IF NOT EXISTS` не чіпає наявну таблицю, тож база на Pi (`history.db`)
-не отримає колонку без `ALTER`. Тест `test_schema_change_in_unmigrated_table_requires_
-migration` фіксує поточні колонки таблиць без міграції.
+не отримає колонку без `ALTER`. Тест `test_schema_change_in_unmigrated_table_requires_migration` фіксує поточні колонки таблиць без міграції.
 
 ## Backup/restore налаштувань
 
@@ -500,8 +482,7 @@ as f` усередині циклу) — file handle споживається о
 незалежний таймер від `AUTO_BACKUP_INTERVAL_SEC` (створення файлу) —
 `TELEGRAM_BACKUP_INTERVAL_HOURS` (типово тиждень). Знаходить
 **найновіший** (`max(..., key=os.path.getmtime)`) `.json`-файл у
-`AUTO_BACKUP_DIR`, надсилає його. Таймер (`last_telegram_backup_
-sent_ts`) ініціалізується `time.time()` у `__init__()` (не `0.0`) —
+`AUTO_BACKUP_DIR`, надсилає його. Таймер (`last_telegram_backup_sent_ts`) ініціалізується `time.time()` у `__init__()` (не `0.0`) —
 інакше кожен рестарт сервісу негайно надсилав би файл, незалежно від
 реально минулого інтервалу. Таймер оновлюється **безумовно, до самої
 спроби відправки** — провал (напр. Telegram тимчасово недоступний) не
@@ -544,16 +525,13 @@ backup у Telegram" на `/settings`) викликають цю саму фун�
 міграції даних без явного попередження) і `WEBUI_HOST` (self-lockout
 ризик — зміна адреси прослуховування через сам веб-інтерфейс могла б
 відрізати користувача від `/settings` з іншого пристрою в мережі).
-Обидва тести (`test_all_config_env_vars_are_in_settings_except_
-documented_exceptions`, `test_intentionally_excluded_settings_are_
-still_read_by_config`) перевіряють це у обидва боки — жоден новий
+Обидва тести (`test_all_config_env_vars_are_in_settings_except_documented_exceptions`, `test_intentionally_excluded_settings_are_still_read_by_config`) перевіряють це у обидва боки — жоден новий
 параметр не забутий у `/settings` без задокументованої причини, і
 ці 2 винятки лишаються реально читаними `config.py`, не випадково
 видаленими взагалі.
 `static/settings.js:loadEnvConfig()` групує параметри в `Map` за
 `category` (зберігаючи порядок першої появи — той самий, що в
-`EDITABLE_PARAMS`, не алфавітний), малює `<h3 class="env-category-
-head">` перед кожною групою.
+`EDITABLE_PARAMS`, не алфавітний), малює `<h3 class="env-category-head">` перед кожною групою.
 
 **Мотивація** (запит користувача, після власного зауваження в
 аудиті про 59+ параметрів у плоскому списку): плаский список без
@@ -562,8 +540,7 @@ head">` перед кожною групою.
 валідацію/env-файл (`category` — метадані для рендерингу, не
 частина логіки збереження).
 
-Два тести (`test_every_param_has_valid_category`, `test_no_orphan_
-category_labels`) перевіряють узгодженість у **обидва боки**: кожен
+Два тести (`test_every_param_has_valid_category`, `test_no_orphan_category_labels`) перевіряють узгодженість у **обидва боки**: кожен
 параметр має валідну категорію, і кожна категорія реально
 використовується хоч одним параметром (не залишиться підпис для
 вже спорожнілої групи).
@@ -588,8 +565,7 @@ category_labels`) перевіряють узгодженість у **обид�
 модуль для веб-дашборду, фізичної кнопки й `display.py` — див.
 "Повідомлення на дисплеї при reboot/poweroff" нижче) — для
 `/api/system-reboot`/`/api/system-shutdown`: виконати команду через
-`run_system_command()` (обмежений sudo, `/etc/sudoers.d/starlink-
-monitor` — навмисно вузько, конкретні команди, не blanket `ALL=(ALL)
+`run_system_command()` (обмежений sudo, `/etc/sudoers.d/starlink-monitor` — навмисно вузько, конкретні команди, не blanket `ALL=(ALL)
 NOPASSWD: ALL`), записати подію в журнал, надіслати Telegram-
 сповіщення про результат.
 
@@ -600,6 +576,62 @@ NOPASSWD: ALL`), записати подію в журнал, надіслати
 чи `webapp.py` — свідома ізоляція, бо GPIO-доступ вимагає групу
 `gpio` і `python3-libgpiod` (системний пакет, не pip), а не всі
 установки мають фізичну кнопку.
+
+## HTTP API веб-інтерфейсу
+
+Усі маршрути Flask-застосунку (`app/webapp.py`). Автентифікації немає — свідоме
+рішення власника (доступ лише з довіреної мережі). Зміни й дії — ЛИШЕ через POST
+(GET на них дає 405: захист від префетчу браузера й краулерів); перед
+руйнівними діями веб-інтерфейс просить підтвердження (`confirm()`); тіло запиту
+обмежене 5 МБ (інакше 413). Таблиці нижче звіряє з реальними маршрутами тест
+`test_http_api_reference_matches_routes`.
+
+**Сторінки й службові**
+
+| Метод | Шлях | Призначення |
+|---|---|---|
+| GET | `/` | дашборд |
+| GET | `/settings` | параметри моніторингу, Telegram, backup |
+| GET | `/stats` | журнал подій |
+| GET | `/manifest.json` | PWA-маніфест (динамічний, мовою інтерфейсу) |
+| GET | `/healthz` | свіжість даних для зовнішнього моніторингу й healthcheck-таймера: 200 або 503 |
+
+**Читання стану**
+
+| Метод | Шлях | Призначення |
+|---|---|---|
+| GET | `/api/status` | поточний стан тарілки (останній запис метрик) |
+| GET | `/api/router-status` | стан роутера |
+| GET | `/api/system-status` | метрики Pi: CPU, пам'ять, диск, температура |
+| GET | `/api/events` | журнал подій (`?limit=N`, N у межах 1..500) |
+| GET | `/api/config` | нечутливі налаштування для дашборда |
+| GET | `/api/target-versions` | поточні й очікувані версії прошивок |
+| GET | `/api/telegram-config` | налаштування Telegram; токен лише замаскований |
+| GET | `/api/env-config` | поточні значення параметрів для `/settings` |
+| GET | `/api/settings-backup` | усі налаштування одним JSON-файлом |
+
+**Зміна налаштувань** (POST)
+
+| Метод | Шлях | Призначення |
+|---|---|---|
+| POST | `/api/set-language` | мова інтерфейсу (одна для веб і Telegram) |
+| POST | `/api/auto-reboot` | вмикає/вимикає авто-reboot при готовому оновленні |
+| POST | `/api/target-versions` | очікувана версія (кілька через кому); старіші за відому відхиляються |
+| POST | `/api/telegram-config` | токен, chat_id, увімкнення сповіщень |
+| POST | `/api/env-config` | зберегти параметри: тип і межі перевіряються, усе або нічого |
+| POST | `/api/settings-restore` | відновити налаштування з JSON (з підтвердженням) |
+
+**Дії** (POST)
+
+| Метод | Шлях | Призначення |
+|---|---|---|
+| POST | `/api/check-updates` | ручна перевірка стану оновлень (`services.check_updates_now()`) |
+| POST | `/api/telegram-test` | перевірка токена й доступності бота |
+| POST | `/api/send-backup-telegram` | надіслати останній створений backup у Telegram |
+| POST | `/api/reboot-dish` | перезавантажити тарілку (з підтвердженням) |
+| POST | `/api/env-config-restart` | перезапустити `starlink-monitor.service`, потім `starlink-webui.service` (з підтвердженням) |
+| POST | `/api/system-reboot` | перезавантажити Raspberry Pi (з підтвердженням) |
+| POST | `/api/system-shutdown` | вимкнути Raspberry Pi (з підтвердженням) |
 
 ## Залежності модулів (app/) і шари
 
@@ -652,13 +684,11 @@ error, enabled)` у фіксованому порядку (`Watchdog._periodic_t
 виклик `display.py`**: це окремий процес, що ексклюзивно тримає
 SPI-запит, тому неможливо намалювати щось на екрані напряму з іншого
 процесу (той самий клас обмеження, що вже вирішувався для LED-
-активності через GPIO character-device API). `db.set_setting(
-pi_power.PENDING_ACTION_SETTING_KEY, action)` записується ПЕРЕД
+активності через GPIO character-device API). `db.set_setting(pi_power.PENDING_ACTION_SETTING_KEY, action)` записується ПЕРЕД
 реальним викликом `systemctl`. `display.py` опитує цей setting у
 своєму швидкому (~100мс, `DISPLAY_BUTTON_POLL_INTERVAL_SEC`) циклі
 кнопки — НЕ чекає звичайний 5-секундний `DISPLAY_REFRESH_SEC`-цикл
-оновлення статусу, бо часу до SIGTERM від самого `systemctl reboot/
-poweroff` замало. Виявивши сигнал, малює `_draw_power_action_message()`
+оновлення статусу, бо часу до SIGTERM від самого `systemctl reboot/poweroff` замало. Виявивши сигнал, малює `_draw_power_action_message()`
 і одразу завершує `run_forever()` (`return`, не продовжує звичайний
 цикл — процес все одно скоро буде вбитий).
 
@@ -697,8 +727,7 @@ condition, вирішену вище.
 **Реальна помилка, знайдена живим тестом, не в production-коді, а в
 API-дизайні**: перша версія `notify_fn: Callable[[str], Any] =
 telegram_notify.send_message` як early-bound default-параметр
-обчислюється ОДИН раз при імпорті модуля - `patch("app.telegram_
-notify.send_message")` у тестах не міг його замінити (default вже
+обчислюється ОДИН раз при імпорті модуля - `patch("app.telegram_notify.send_message")` у тестах не міг його замінити (default вже
 "заморожений" як посилання на оригінальну функцію). Виправлено на
 lazy-визначення (`notify_fn: Optional[...] = None`, `if notify_fn is
 None: notify_fn = telegram_notify.send_message` всередині функції) -
@@ -706,8 +735,7 @@ None: notify_fn = telegram_notify.send_message` всередині функці�
 залежності при імпорті.
 
 **Символи на дисплеї для повідомлення** — перша версія використовувала
-`⏻`/`🔁` (Unicode symbol/emoji), автоматизована перевірка `font.
-getmask(ch).getbbox() is not None` хибно підтвердила "гліф є" - лише
+`⏻`/`🔁` (Unicode symbol/emoji), автоматизована перевірка `font.getmask(ch).getbbox() is not None` хибно підтвердила "гліф є" - лише
 РЕАЛЬНИЙ рендеринг зображення показав порожні "тофу"-квадрати
 (fallback-гліф теж дає непорожній bbox). Замінено на `●` (той самий
 символ, що вже підтверджено працює в `_status_lines()` для online/
@@ -717,8 +745,7 @@ offline індикатора).
 
 На відміну від кнопки/дисплея — **не окремий процес**, частина
 `monitor.py` (watchdog-цикл), бо реагує на кожен реальний commit у
-SQLite, а не на зовнішню подію на власному таймері. `app/activity_
-led.py:ActivityLed` — інкапсулює GPIO-стан; `init()` викликається раз
+SQLite, а не на зовнішню подію на власному таймері. `app/activity_led.py:ActivityLed` — інкапсулює GPIO-стан; `init()` викликається раз
 на старті `run_forever()`, реєструє `blink` як callback через
 `db.set_activity_callback()`. `app/db.py:get_conn()` викликає цей
 callback **лише** після успішного `conn.commit()` (не при винятку/
@@ -955,8 +982,8 @@ HTTP-сервері: `test_client()` цей шлях обходить.
 Окремий процес (той самий патерн, що `shutdown_button.py`) —
 `run_forever()` виходить миттєво, якщо `DISPLAY_ENABLED=0`. Кожні
 `DISPLAY_REFRESH_SEC` читає дані з БД і передає їх у `_redraw()`, який
-малює кадр через Pillow і надсилає через `display.image(image)`
-(бібліотека Adafruit CircuitPython ST7789) — лише якщо кадр змінився:
+малює кадр через Pillow і надсилає через `ST7789.image(image)`
+(об'єкт бібліотеки Adafruit CircuitPython, не модуль `display.py`) — лише якщо кадр змінився:
 uptime показується з точністю до хвилини, тож ~11 з 12 перемальовувань
 були марними, а вночі екран годинами не змінюється.
 
@@ -992,7 +1019,7 @@ bit-banged GPIO (не апаратний CE0/CE1), бібліотека сама
 вбудованого `set_backlight()`).
 
 **Важливо для rotation=90/270**: `image()` перевіряє розмір
-зображення ПІСЛЯ `rotate()` проти `display.width`/`height` (самі не
+зображення ПІСЛЯ `rotate()` проти `ST7789.width`/`height` (самі не
 змінюються параметром rotation) — `_redraw()` тому створює полотно з
 транспонованими розмірами саме для 90/270, інакше `ValueError` для
 прямокутного дисплея. `OFFSET_LEFT`/`OFFSET_TOP` діють на рівні

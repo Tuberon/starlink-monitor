@@ -28,7 +28,7 @@
 5. Веб-дашборд (Flask): live-метрики, прошивки,
    WiFi-клієнти, останні 5 подій журналу, ручний reboot/перевірка
    оновлень. Сторінка `/stats` — повний журнал подій.
-6. Telegram: сповіщення + команди `/status /checkupdates /reboot /id /help`.
+6. Telegram: сповіщення + команди `/status /checkupdates /reboot /id /help` (`/start` — те саме, що `/help`).
 7. Reboot/shutdown Pi з веб-інтерфейсу або фізичної GPIO-кнопки,
    backup/restore всіх налаштувань одним файлом (опційно й у
    Telegram, автоматично чи вручну), `/healthz` для зовнішнього
@@ -86,8 +86,7 @@ STARLINK_SHUTDOWN_BUTTON_HOLD_SEC=3
 конкурувати за той самий GPIO-пін). При reboot/poweroff (з кнопки чи
 з веб-дашборду) — якщо дисплей увімкнено, на екрані на кілька секунд
 з'являється повідомлення "Вимикається.../Перезавантажується..." перед
-тим, як Pi реально почне вимикатись (`STARLINK_DISPLAY_SHUTDOWN_
-MESSAGE_DELAY_SEC`, типово 2с).
+тим, як Pi реально почне вимикатись (`STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC`, типово 2с).
 
 ## 💡 LED активності SD-картки (GPIO)
 
@@ -110,8 +109,7 @@ STARLINK_ACTIVITY_LED_BLINK_MS=50
 ## 🖥️ Фізичний TFT-дисплей (ST7789, SPI)
 
 Показує live-статус dish (online/offline, uptime, оновлення ПЗ,
-версії прошивок). Вимкнено за замовчуванням (`STARLINK_DISPLAY_
-ENABLED=0`). Бібліотека — Adafruit CircuitPython ST7789.
+версії прошивок). Вимкнено за замовчуванням (`STARLINK_DISPLAY_ENABLED=0`). Бібліотека — Adafruit CircuitPython ST7789.
 
 > ⚠️ SPI зазвичай вимкнений: `sudo raspi-config nonint do_spi 0 &&
 > sudo reboot` (`install.sh` попереджає, якщо ще не увімкнено).
@@ -302,8 +300,8 @@ ruff check .
 
 ## ✅ Тести
 
-789 тестів (`pytest-randomly` — стійкість до порядку виконання), 22
-файлів у `tests/`. Крім stateful-логіки (групування reboot-спаму,
+804 тести (`pytest-randomly` — стійкість до порядку виконання), 23
+файли у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
 дисплей, кнопка виключення) тестується підміною `sys.modules` для
@@ -337,7 +335,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 789 тестів (22 файли), pytest-randomly
+├── tests/          # 804 тести (23 файли), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
@@ -395,6 +393,12 @@ Telegram/GPIO) або вручну в `/etc/starlink-monitor/env`. Повний
 відрізати себе від `/settings`, змінивши адресу прослуховування) і
 `STARLINK_AUTO_BACKUP_DIR` (дефолт обчислюється поруч із БД).
 
+`/settings` перевіряє не лише тип, а й допустимий діапазон кожного числового
+параметра: відхиляє `nan`/`inf`, від'ємні значення та `0` для таймерів (там `0`
+означав би «на кожній ітерації», а не «вимкнено»); нуль лишено лише там, де він
+справді означає «вимкнено» (піни, автовимкнення підсвітки). Ручне редагування
+`env`-файлу не перевіряється.
+
 Найважливіші для першого налаштування:
 
 | Змінна | За замовчуванням | Опис |
@@ -430,7 +434,8 @@ sudo systemctl restart starlink-monitor.service starlink-webui.service
 sha256; тест звіряє їх з файлом). Оновлення до найновішої upstream-версії —
 опційно, `scripts/fetch_starlink_grpc.sh` (завантаження у тимчасовий файл,
 перевірки, резервна копія `.prev`, атомарна заміна; `--commit=<sha>` —
-конкретна ревізія).
+конкретна ревізія; `--wait-for-dish` — чекати доступності тарілки;
+`--restart-services` — перезапустити сервіси після успіху).
 
 **Залежності.** `requirements.txt` закріплює прямі пакети, `constraints.txt` —
 транзитивні (`install.sh` ставить `pip install -r requirements.txt -c

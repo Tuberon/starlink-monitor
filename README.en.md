@@ -28,7 +28,7 @@ Autonomous monitor and watchdog for Starlink Mini on Raspberry Pi Zero 2 W.
 5. Web dashboard (Flask): live metrics, firmware versions,
    WiFi clients, last 5 log events, manual reboot/update check.
    The `/stats` page — full event log.
-6. Telegram: notifications + commands `/status /checkupdates /reboot /id /help`.
+6. Telegram: notifications + commands `/status /checkupdates /reboot /id /help` (`/start` is the same as `/help`).
 7. Pi reboot/shutdown from the web interface or a physical GPIO
    button, backup/restore of all settings in one file (optionally to
    Telegram too, automatically or manually), `/healthz` for external
@@ -86,8 +86,7 @@ down the Pi. Handled then inside `starlink-display.service`, while
 competing for the same GPIO pin). On reboot/poweroff (from the
 button or the web dashboard) — if the display is enabled, the screen
 shows "Shutting down.../Rebooting..." for a few seconds before the
-Pi actually starts shutting down (`STARLINK_DISPLAY_SHUTDOWN_
-MESSAGE_DELAY_SEC`, 2s by default).
+Pi actually starts shutting down (`STARLINK_DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC`, 2s by default).
 
 ## 💡 SD-card activity LED (GPIO)
 
@@ -110,8 +109,7 @@ between two processes over one exclusive GPIO request.
 ## 🖥️ Physical TFT display (ST7789, SPI)
 
 Shows the live dish status (online/offline, uptime, firmware update,
-firmware versions). Disabled by default (`STARLINK_DISPLAY_
-ENABLED=0`). Library — Adafruit CircuitPython ST7789.
+firmware versions). Disabled by default (`STARLINK_DISPLAY_ENABLED=0`). Library — Adafruit CircuitPython ST7789.
 
 > ⚠️ SPI is usually disabled: `sudo raspi-config nonint do_spi 0 &&
 > sudo reboot` (`install.sh` warns if it's not enabled yet).
@@ -301,7 +299,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-789 tests (`pytest-randomly` — resilient to execution order), 22
+804 tests (`pytest-randomly` — resilient to execution order), 23
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -338,7 +336,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 789 tests (22 files), pytest-randomly
+├── tests/          # 804 tests (23 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
@@ -397,6 +395,12 @@ could cut yourself off from `/settings` by changing the listen
 address) and `STARLINK_AUTO_BACKUP_DIR` (default is computed next to
 the DB).
 
+`/settings` checks not only the type but also the allowed range of every
+numeric parameter: it rejects `nan`/`inf`, negative values and `0` for timers
+(there `0` would mean "on every iteration", not "disabled"); zero stays
+allowed only where it really means "disabled" (pins, backlight auto-off).
+Manual editing of the `env` file is not checked.
+
 Most important for initial setup:
 
 | Variable | Default | Description |
@@ -433,7 +437,9 @@ domain). Its origin is recorded in `app/vendor/PROVENANCE` (upstream
 commit, date, sha256; a test checks them against the file). Updating to
 the latest upstream version is optional, via
 `scripts/fetch_starlink_grpc.sh` (download to a temporary file, checks,
-`.prev` backup, atomic replace; `--commit=<sha>` — a specific revision).
+`.prev` backup, atomic replace; `--commit=<sha>` — a specific revision;
+`--wait-for-dish` — wait until the dish is reachable; `--restart-services` —
+restart the services after success).
 
 **Dependencies.** `requirements.txt` pins the direct packages,
 `constraints.txt` the transitive ones (`install.sh` runs `pip install -r
