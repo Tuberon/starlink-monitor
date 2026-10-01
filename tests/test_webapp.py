@@ -491,8 +491,8 @@ def test_restore_rejects_payload_without_format_version(client):
 # ---- Решта restore-гілок та env-config endpoints ----
 
 def test_restore_applies_env_params(client):
-    from app import monitor
-    backup = monitor.build_backup_dict()
+    from app import services
+    backup = services.build_backup_dict()
     backup["env_params"] = {"STARLINK_POLL_INTERVAL": "15"}
     resp = client.post("/api/settings-restore", data=json.dumps(backup), content_type="application/json")
     data = resp.get_json()
@@ -501,8 +501,8 @@ def test_restore_applies_env_params(client):
 
 
 def test_restore_applies_target_versions(client):
-    from app import monitor
-    backup = monitor.build_backup_dict()
+    from app import services
+    backup = services.build_backup_dict()
     backup["dish_target_version"] = "2026.01.01.mr1"
     resp = client.post("/api/settings-restore", data=json.dumps(backup), content_type="application/json")
     assert resp.get_json()["success"] is True
@@ -510,8 +510,8 @@ def test_restore_applies_target_versions(client):
 
 
 def test_restore_applies_known_devices(client):
-    from app import monitor
-    backup = monitor.build_backup_dict()
+    from app import services
+    backup = services.build_backup_dict()
     backup["known_devices"] = [{
         "dish_id": "restored-dish", "first_seen_ts": time.time(), "last_seen_ts": time.time(),
     }]

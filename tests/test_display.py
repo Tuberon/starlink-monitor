@@ -5,6 +5,11 @@ _load_font, _truncate_to_width) через fake display-об'єкт. Голов�
 цикл run_forever() (реальна SPI/GPIO-ініціалізація через fake
 CircuitPython-модулі) - окремо в tests/test_display_run_forever.py.
 """
+from unittest.mock import patch
+
+import pytest
+
+from app import config, display
 from app.display import HIDDEN_ROUTER_STATES, _fmt_uptime, _should_auto_off, _status_lines, _update_state_changed
 
 
@@ -408,3 +413,171 @@ def test_display_and_button_processes_do_not_load_http_stack():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          cwd=os.path.join(os.path.dirname(__file__), ".."))
     assert out.stdout.strip() == "False", out.stdout + out.stderr
+
+
+# ---- DisplayController.tick(): логіка підсвітки/кнопки/перемальовування БЕЗ заліза і БЕЗ циклу ----
+
+class _Clock:
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+class _ScriptedButton:
+    """get_value() дає значення; tracker.poll() віддає наступну подію зі сценарію."""
+    def __init__(self, events):
+        self.events = list(events)
+
+    def get_value(self):
+        return 0
+
+    def poll(self, value):
+        return self.events.pop(0) if self.events else None
+
+
+def _controller(button_events=None, bl_pin="BL"):
+    button = _ScriptedButton(button_events) if button_events is not None else None
+    return display.DisplayController(
+        display=object(), image_cls=object, draw_cls=object, fonts=(None, None, None), bl_pin=bl_pin,
+        button_get_value=button.get_value if button else None, button_tracker=button if button else None, button_pin=27,
+    )
+
+
+@pytest.fixture
+def ctl_env(db_path):
+    """Годинник, запис підсвітки й перемальовувань - без жодного заліза."""
+    clock = _Clock()
+    backlight, redraws = [], []
+    config.DISPLAY_REFRESH_SEC = 5
+    config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC = 60
+    config.DISPLAY_UPDATE_FLASH_SEC = 30
+    with patch("time.time", side_effect=clock), \
+         patch("app.display._set_backlight", side_effect=lambda pin, v: backlight.append((clock.t, v))), \
+         patch("app.display._redraw", side_effect=lambda *a, **kw: redraws.append(kw["data"]) or ("кадр", len(redraws))):
+        yield clock, backlight, redraws
+
+
+def test_tick_redraws_only_after_refresh_interval(ctl_env):
+    clock, _, redraws = ctl_env
+    ctl = _controller()
+    assert ctl.tick() is False and len(redraws) == 1            # last_redraw=0 -> перший кадр одразу
+    clock.t += 3
+    ctl.tick()
+    assert len(redraws) == 1                                     # ще рано
+    clock.t += 3
+    ctl.tick()
+    assert len(redraws) == 2                                     # минуло >= 5 с
+
+
+def test_tick_short_press_toggles_backlight_and_cancels_flash_timer(ctl_env):
+    clock, backlight, _ = ctl_env
+    ctl = _controller(button_events=["short_press", "short_press"])
+    ctl.flash_until_ts = clock.t + 30                            # активний flash
+    ctl.tick()
+    assert backlight == [(1000.0, False)] and ctl.backlight_on is False
+    assert ctl.flash_until_ts is None                            # ручна дія скасовує flash-таймер
+    clock.t += 1
+    ctl.tick()
+    assert backlight[-1] == (1001.0, True) and ctl.last_activity_ts == 1001.0
+
+
+def test_tick_long_press_triggers_shutdown_with_the_pin(ctl_env):
+    ctl = _controller(button_events=["long_press"])
+    with patch("app.pi_power.shutdown_from_button") as shutdown:
+        ctl.tick()
+    shutdown.assert_called_once_with(27)
+
+
+def test_tick_button_read_error_is_contained(ctl_env):
+    class Broken(_ScriptedButton):
+        def get_value(self):
+            raise OSError("gpiod зламався")
+    broken = Broken([])
+    ctl = display.DisplayController(display=object(), image_cls=object, draw_cls=object, fonts=(None, None, None), bl_pin="BL",
+                                    button_get_value=broken.get_value, button_tracker=broken, button_pin=27)
+    assert ctl.tick() is False                                   # не кидає, цикл триває
+
+
+def test_tick_auto_off_after_timeout(ctl_env):
+    clock, backlight, _ = ctl_env
+    ctl = _controller()
+    ctl.tick()
+    clock.t += 61
+    ctl.tick()
+    assert backlight == [(1061.0, False)] and ctl.backlight_on is False
+
+
+def test_tick_flash_on_state_change_then_off_and_not_on_first_reading(ctl_env):
+    clock, backlight, _ = ctl_env
+    ctl = _controller()
+    with patch("app.display.db.get_latest_metric", return_value={"update_state": "IDLE"}), \
+         patch("app.display.db.get_router_status", return_value={"update_state": "IDLE"}):
+        ctl.tick()                                               # перше зчитування - не зміна
+    assert backlight == [] and ctl.flash_until_ts is None
+    clock.t += 6
+    with patch("app.display.db.get_latest_metric", return_value={"update_state": "FETCHING"}), \
+         patch("app.display.db.get_router_status", return_value={"update_state": "IDLE"}):
+        ctl.tick()
+    assert backlight == [(1006.0, True)] and ctl.flash_until_ts == 1036.0
+    clock.t += 31
+    with patch("app.display.db.get_latest_metric", return_value={"update_state": "FETCHING"}), \
+         patch("app.display.db.get_router_status", return_value={"update_state": "IDLE"}):
+        ctl.tick()
+    assert backlight[-1] == (1037.0, False) and ctl.flash_until_ts is None
+
+
+def test_tick_pending_power_action_draws_message_and_asks_to_stop(ctl_env):
+    ctl = _controller()
+    with patch("app.display.db.get_setting", return_value="reboot"), \
+         patch("app.display._draw_power_action_message") as draw:
+        assert ctl.tick() is True
+    draw.assert_called_once()
+    assert draw.call_args.args[-1] == "reboot"
+
+
+def test_tick_pending_action_draw_failure_still_stops(ctl_env):
+    ctl = _controller()
+    with patch("app.display.db.get_setting", return_value="poweroff"), \
+         patch("app.display._draw_power_action_message", side_effect=OSError("SPI")):
+        assert ctl.tick() is True                                # повідомлення не намалювалось, але Pi все одно вимикається
+
+
+def test_tick_redraw_failure_is_contained_and_not_retried_every_tick(ctl_env):
+    clock, _, _ = ctl_env
+    calls = []
+    ctl = _controller()
+    with patch("app.display._redraw", side_effect=lambda *a, **kw: calls.append(1) or (_ for _ in ()).throw(RuntimeError("PIL"))):
+        assert ctl.tick() is False
+        clock.t += 1
+        ctl.tick()
+    assert len(calls) == 1 and ctl.last_redraw == 1000.0         # повтор - через DISPLAY_REFRESH_SEC
+
+
+def test_tick_uses_pending_check_before_anything_else(ctl_env):
+    """Порядок ітерації: повідомлення про reboot/poweroff - ДО кнопки й підсвітки."""
+    ctl = _controller(button_events=["short_press"])
+    with patch("app.display.db.get_setting", return_value="reboot"), patch("app.display._draw_power_action_message"):
+        ctl.tick()
+    assert ctl._button_tracker.events == ["short_press"]         # кнопка не опитувалась
+
+
+# ---- _open_button(): частковий стан при збої зберігається (release потрібен у finally) ----
+
+def test_open_button_keeps_release_when_tracker_creation_fails():
+    """Лінію відкрито, а трекер створити не вдалось: release() усе одно має
+    дійти до finally (інакше GPIO лишився б зайнятим до перезапуску сервісу)."""
+    def release():
+        pass
+    with patch("app.display.gpio_utils.open_input_line", return_value=(lambda: 0, release)), \
+         patch("app.display.gpio_utils.ButtonPressTracker", side_effect=ValueError("поганий HOLD_SEC")):
+        get_value, got_release, tracker = display._open_button(27)
+    assert got_release is release and get_value is not None and tracker is None
+
+
+def test_open_button_disabled_pin_and_open_failure_give_nothing():
+    for pin in (0, -1):
+        assert display._open_button(pin) == (None, None, None)
+    with patch("app.display.gpio_utils.open_input_line", side_effect=OSError("лінія зайнята")):
+        assert display._open_button(27) == (None, None, None)

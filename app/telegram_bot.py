@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 import requests
 
-from app import config, db, i18n, monitor, telegram_notify
+from app import config, db, i18n, services, telegram_notify
 from app import labels
 from app.log_redact import redact
 from app.starlink_client import StarlinkClient
@@ -292,7 +292,7 @@ class TelegramBot:
         def notify(text: str) -> None:
             telegram_notify.send_message(text)
 
-        dish, router = monitor.check_updates_now(self.client, notify)
+        dish, router = services.check_updates_now(self.client, notify)
 
         lines = [i18n.t("tg_check_updates_title"), ""]
 

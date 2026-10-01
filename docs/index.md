@@ -25,7 +25,8 @@
 | Файл | Опис |
 |---|---|
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, `reboot_dish()` |
-| `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
+| `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота (точка входу) |
+| `services.py` | Спільна логіка для monitor/webapp/telegram_bot: відстеження версій прошивок (`check_updates_now`, `upsert_*`, `check_*_targets_reached`), бекапи (`build_backup_dict`, `perform_auto_backup`, `send_latest_backup_to_telegram`, `check_db_integrity_and_notify`) |
 | `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
 | `db.py` | SQLite: metrics, events, system_metrics, router_status, known_devices, settings |
 | `i18n.py` | Мультимовний інтерфейс (uk/en) - словник перекладів, `t()`, мова з settings |
@@ -35,9 +36,9 @@
 | `log_redact.py` | Очищення токена бота з текстів помилок і логів (`redact()`, `RedactingFilter`, `install()`) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
-| `pi_power.py` | Спільний reboot/poweroff, DB-сигнал для дисплея |
+| `pi_power.py` | Спільний reboot/poweroff, `shutdown_from_button()`, DB-сигнал для дисплея |
 | `activity_led.py` | Опційний LED активності SD-картки, частина monitor.py (не окремий процес) |
-| `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
+| `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес); `DisplayController.tick()` — логіка однієї ітерації без заліза |
 | `gpio_utils.py` | Спільна gpiod v1/v2-логіка читання GPIO (shutdown_button.py + display.py) і запису GPIO (activity_led.py) |
 | `config.py` | Конфігурація, env-змінні |
 | `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
@@ -99,6 +100,8 @@
 | `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
 | `test_dependencies.py` | Піни requirements/constraints (точні, без дублів, без adafruit), версії urllib3/idna не нижче виправлених, install.sh передає `-c constraints.txt`, логіка `REQ_CHANGED` (СПРАВЖНІЙ фрагмент скрипту у 4 сценаріях) |
 | `test_vendor_fetch.py` | `PROVENANCE` збігається з файлом побайтово; `fetch_starlink_grpc.sh` проти ЛОКАЛЬНОГО сервера: успіх, обірване/замале/без контракту завантаження відхиляється без зміни робочого файлу й без залишків, `.prev`, `--commit`, стрічка недоступна |
+| `test_services.py` | Сервісна логіка (app/services.py) через фікстуру `sink` без Watchdog: target-версії, напрямок зміни прошивки, бекапи, цілісність БД (переклад коду причини), ідентифікатори компонентів |
+| `test_architecture.py` | Граф імпортів між модулями app/: без циклів (навіть лінивих), точки входу не є бібліотеками, `db` не залежить від шару подання |
 | `test_log_redact.py` | Токен бота не потрапляє в логи/повідомлення/БД: `redact()`, фільтр логера (з traceback), наскрізні шляхи помилок Telegram (шар джерела і захисна сітка перевіряються незалежно), AST-гарантія для точок входу |
 | `test_i18n.py` | Цілісність перекладів (паритет плейсхолдерів uk/en, наявність кожного ключа з коду), `get_language()` при зламаній БД, англійські Telegram-сповіщення реальними шляхами коду |
 | `test_system_metrics.py` | Кожна метрика (uptime/cpu/memory/disk/temp) незалежно, ніколи не кидає виняток навіть при повному провалі psutil |

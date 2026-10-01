@@ -28,10 +28,9 @@ GPIO.
 import logging
 import threading
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from app import config, db, gpio_utils, labels, log_redact, pi_power
-from app.shutdown_button import _trigger_shutdown
 
 logging.basicConfig(
     level=logging.INFO,
@@ -281,6 +280,166 @@ def _draw_power_action_message(display: Any, Image: Any, ImageDraw: Any, font: A
     display.image(img)
 
 
+def _open_button(pin: int) -> tuple[Optional[Callable[[], int]], Optional[Callable[[], None]], Optional[gpio_utils.ButtonPressTracker]]:
+    """Відкриває лінію кнопки: (get_value, release, tracker). Частково
+    заповнений стан при збої ЗБЕРЕЖЕНО навмисно: якщо лінію відкрито, а
+    трекер створити не вдалось, release() усе одно потрібен у finally."""
+    get_value = release = tracker = None
+    if pin and pin > 0:
+        try:
+            get_value, release = gpio_utils.open_input_line(pin, "starlink-display-button")
+            tracker = gpio_utils.ButtonPressTracker(config.SHUTDOWN_BUTTON_HOLD_SEC)
+            logger.info("Слухаю кнопку на GPIO%d (коротке=підсвітка, довге=вимкнення Pi)", pin)
+        except Exception as e:
+            logger.error("Не вдалося ініціалізувати кнопку GPIO%d: %s", pin, e)
+    return get_value, release, tracker
+
+
+class DisplayController:
+    """Машина станів дисплея: підсвітка (кнопка, автовимкнення, flash при зміні
+    стану оновлення) і перемальовування кадру. Одна ітерація - `tick()`.
+
+    Раніше це жило в тілі run_forever() (складність 34, 181 рядок, вкладеність
+    6): ініціалізація заліза, стан і чотири різні відповідальності в одному
+    циклі; тести потребували скриптованого годинника й фейкового заліза навіть
+    для логіки, яка від заліза не залежить. Тепер run_forever() лише
+    ініціалізує залізо й крутить цикл, а `tick()` виконує РІВНО ОДНУ
+    ітерацію старого циклу в тому ж порядку.
+
+    Допоміжні функції (`_set_backlight`, `_redraw`, ...) викликаються як
+    глобальні імена модуля - тому наявні патч-цілі в тестах лишились чинними.
+    """
+
+    def __init__(
+        self,
+        *,
+        display: Any,
+        image_cls: Any,
+        draw_cls: Any,
+        fonts: tuple[Any, Any, Any],
+        bl_pin: Any,
+        button_get_value: Optional[Callable[[], int]],
+        button_tracker: Optional[gpio_utils.ButtonPressTracker],
+        button_pin: int,
+    ) -> None:
+        self._display = display
+        self._image_cls = image_cls
+        self._draw_cls = draw_cls
+        self._font_status, self._font_update, self._font_tiny = fonts
+        self._bl_pin = bl_pin
+        self._button_get_value = button_get_value
+        self._button_tracker = button_tracker
+        self._button_pin = button_pin
+        self.backlight_on = True
+        self.last_activity_ts = time.time()
+        self.last_redraw = 0.0
+        # Відстеження зміни update_state (dish/router) для flash-сповіщення
+        # підсвіткою. None на старті - перше зчитування лише ЗАПАМ'ЯТОВУЄ
+        # стан, не вважається "зміною" (інакше кожен запуск сервісу
+        # спалахував би підсвіткою, навіть якщо реальних змін не було).
+        self.prev_dish_state: Optional[str] = None
+        self.prev_router_state: Optional[str] = None
+        self.frame: Optional[tuple[Any, ...]] = None
+        self.flash_until_ts: Optional[float] = None
+
+    def tick(self) -> bool:
+        """Одна ітерація циклу. True - дисплею пора завершити роботу (показано
+        повідомлення про reboot/poweroff)."""
+        if self._show_pending_power_action():
+            return True
+        now = time.time()
+        self._poll_button(now)
+        self._apply_backlight_timers(now)
+        if now - self.last_redraw >= config.DISPLAY_REFRESH_SEC:
+            self._refresh(now)
+        return False
+
+    def _show_pending_power_action(self) -> bool:
+        # Перевіряємо ЩОРАЗУ (швидкий ~100мс цикл, не звичайний
+        # 5-секундний REFRESH_SEC) - reboot/poweroff від pi_power.py
+        # чекає лише DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC (типово 2с)
+        # перед реальним systemctl-викликом, тому потрібно виявити
+        # сигнал майже одразу, а не з затримкою до 5с.
+        try:
+            pending_action = db.get_setting(pi_power.PENDING_ACTION_SETTING_KEY)
+        except Exception:
+            pending_action = None
+        if pending_action not in ("reboot", "poweroff"):
+            return False
+        try:
+            _draw_power_action_message(self._display, self._image_cls, self._draw_cls, self._font_status, pending_action)
+        except Exception:
+            logger.exception("Не вдалося намалювати повідомлення про %s", pending_action)
+        return True
+
+    def _poll_button(self, now: float) -> None:
+        if not (self._button_get_value and self._button_tracker):
+            return
+        try:
+            value = self._button_get_value()
+            event = self._button_tracker.poll(value)
+            if event == "short_press":
+                self.backlight_on = not self.backlight_on
+                _set_backlight(self._bl_pin, self.backlight_on)
+                if self.backlight_on:
+                    self.last_activity_ts = now
+                self.flash_until_ts = None  # ручна дія user - не форсувати вимкнення flash-таймером
+                logger.info("Підсвітка %s (коротке натискання GPIO%d)",
+                            "увімкнена" if self.backlight_on else "вимкнена", self._button_pin)
+            elif event == "long_press":
+                pi_power.shutdown_from_button(self._button_pin)
+        except Exception as e:
+            logger.warning("Помилка читання кнопки: %s", e)
+
+    def _apply_backlight_timers(self, now: float) -> None:
+        if self.flash_until_ts is None and _should_auto_off(
+            self.backlight_on, self.last_activity_ts, now, config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC
+        ):
+            self.backlight_on = False
+            _set_backlight(self._bl_pin, False)
+            logger.info("Підсвітка вимкнена автоматично (%dс після ввімкнення)",
+                        config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC)
+
+        # Явне вимкнення ПІСЛЯ flash-періоду - окремо від звичайного
+        # auto-off (інший, зазвичай коротший, часовий проміжок).
+        if self.flash_until_ts is not None and now >= self.flash_until_ts:
+            self.backlight_on = False
+            _set_backlight(self._bl_pin, False)
+            self.flash_until_ts = None
+            logger.info("Підсвітка вимкнена після flash-сповіщення про зміну статусу оновлення")
+
+    def _refresh(self, now: float) -> None:
+        try:
+            latest = db.get_latest_metric()
+            router_status = db.get_router_status()
+            dish_state = latest.get("update_state") if latest else None
+            router_state = router_status.get("update_state") if router_status else None
+
+            # Зміна ВІДНОСНО ПОПЕРЕДНЬОГО опитування (не з
+            # моменту старту сервісу) - _update_state_changed()
+            # сама обробляє "перше зчитування ще не зміна".
+            state_changed = _update_state_changed(self.prev_dish_state, self.prev_router_state, dish_state, router_state)
+            if state_changed and config.DISPLAY_UPDATE_FLASH_SEC > 0:
+                self.backlight_on = True
+                _set_backlight(self._bl_pin, True)
+                self.last_activity_ts = now  # інакше _should_auto_off() (60с) міг би спрацювати РАНІШЕ за коротший flash-таймер
+                self.flash_until_ts = now + config.DISPLAY_UPDATE_FLASH_SEC
+                logger.info(
+                    "Статус оновлення змінився (dish: %s->%s, router: %s->%s) - "
+                    "підсвітка на %dс",
+                    self.prev_dish_state, dish_state, self.prev_router_state, router_state,
+                    config.DISPLAY_UPDATE_FLASH_SEC,
+                )
+            self.prev_dish_state, self.prev_router_state = dish_state, router_state
+
+            self.frame = _redraw(self._display, self._image_cls, self._draw_cls,
+                                 self._font_status, self._font_update, self._font_tiny,
+                                 data=(latest, router_status), prev_frame=self.frame)
+        except Exception:
+            logger.exception("Помилка оновлення дисплея")
+        self.last_redraw = now
+
+
 def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     if not config.DISPLAY_ENABLED:
         logger.info("DISPLAY_ENABLED не встановлено (0) - дисплей вимкнено, завершення")
@@ -339,118 +498,21 @@ def run_forever(stop_event: Optional[threading.Event] = None) -> None:
     except Exception as e:
         logger.warning("Не вдалося ініціалізувати БД: %s", e)
 
-    button_get_value = None
-    button_release = None
-    button_tracker = None
     button_pin = config.SHUTDOWN_BUTTON_GPIO_PIN
-    if button_pin and button_pin > 0:
-        try:
-            button_get_value, button_release = gpio_utils.open_input_line(
-                button_pin, "starlink-display-button"
-            )
-            button_tracker = gpio_utils.ButtonPressTracker(config.SHUTDOWN_BUTTON_HOLD_SEC)
-            logger.info("Слухаю кнопку на GPIO%d (коротке=підсвітка, довге=вимкнення Pi)", button_pin)
-        except Exception as e:
-            logger.error("Не вдалося ініціалізувати кнопку GPIO%d: %s", button_pin, e)
+    button_get_value, button_release, button_tracker = _open_button(button_pin)
 
-    backlight_on = True
-    last_activity_ts = time.time()
-    last_redraw = 0.0
-    # Відстеження зміни update_state (dish/router) для flash-сповіщення
-    # підсвіткою. None на старті - перше зчитування лише ЗАПАМ'ЯТОВУЄ
-    # стан, не вважається "зміною" (інакше кожен запуск сервісу
-    # спалахував би підсвіткою, навіть якщо реальних змін не було).
-    prev_dish_state: Optional[str] = None
-    prev_router_state: Optional[str] = None
-    frame: Optional[tuple[Any, ...]] = None
-    flash_until_ts: Optional[float] = None
+    controller = DisplayController(
+        display=display, image_cls=Image, draw_cls=ImageDraw,
+        fonts=(font_status, font_update, font_tiny), bl_pin=bl_pin,
+        button_get_value=button_get_value, button_tracker=button_tracker, button_pin=button_pin,
+    )
 
     try:
         while True:
             if stop_event and stop_event.is_set():
                 return
-
-            # Перевіряємо ЩОРАЗУ (швидкий ~100мс цикл, не звичайний
-            # 5-секундний REFRESH_SEC) - reboot/poweroff від pi_power.py
-            # чекає лише DISPLAY_SHUTDOWN_MESSAGE_DELAY_SEC (типово 2с)
-            # перед реальним systemctl-викликом, тому потрібно виявити
-            # сигнал майже одразу, а не з затримкою до 5с.
-            try:
-                pending_action = db.get_setting(pi_power.PENDING_ACTION_SETTING_KEY)
-            except Exception:
-                pending_action = None
-            if pending_action in ("reboot", "poweroff"):
-                try:
-                    _draw_power_action_message(display, Image, ImageDraw, font_status, pending_action)
-                except Exception:
-                    logger.exception("Не вдалося намалювати повідомлення про %s", pending_action)
+            if controller.tick():
                 return
-
-            now = time.time()
-
-            if button_get_value and button_tracker:
-                try:
-                    value = button_get_value()
-                    event = button_tracker.poll(value)
-                    if event == "short_press":
-                        backlight_on = not backlight_on
-                        _set_backlight(bl_pin, backlight_on)
-                        if backlight_on:
-                            last_activity_ts = now
-                        flash_until_ts = None  # ручна дія user - не форсувати вимкнення flash-таймером
-                        logger.info("Підсвітка %s (коротке натискання GPIO%d)",
-                                    "увімкнена" if backlight_on else "вимкнена", button_pin)
-                    elif event == "long_press":
-                        _trigger_shutdown(button_pin)
-                except Exception as e:
-                    logger.warning("Помилка читання кнопки: %s", e)
-
-            if flash_until_ts is None and _should_auto_off(
-                backlight_on, last_activity_ts, now, config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC
-            ):
-                backlight_on = False
-                _set_backlight(bl_pin, False)
-                logger.info("Підсвітка вимкнена автоматично (%dс після ввімкнення)",
-                            config.DISPLAY_BACKLIGHT_AUTO_OFF_SEC)
-
-            # Явне вимкнення ПІСЛЯ flash-періоду - окремо від звичайного
-            # auto-off (інший, зазвичай коротший, часовий проміжок).
-            if flash_until_ts is not None and now >= flash_until_ts:
-                backlight_on = False
-                _set_backlight(bl_pin, False)
-                flash_until_ts = None
-                logger.info("Підсвітка вимкнена після flash-сповіщення про зміну статусу оновлення")
-
-            if now - last_redraw >= config.DISPLAY_REFRESH_SEC:
-                try:
-                    latest = db.get_latest_metric()
-                    router_status = db.get_router_status()
-                    dish_state = latest.get("update_state") if latest else None
-                    router_state = router_status.get("update_state") if router_status else None
-
-                    # Зміна ВІДНОСНО ПОПЕРЕДНЬОГО опитування (не з
-                    # моменту старту сервісу) - _update_state_changed()
-                    # сама обробляє "перше зчитування ще не зміна".
-                    state_changed = _update_state_changed(prev_dish_state, prev_router_state, dish_state, router_state)
-                    if state_changed and config.DISPLAY_UPDATE_FLASH_SEC > 0:
-                        backlight_on = True
-                        _set_backlight(bl_pin, True)
-                        last_activity_ts = now  # інакше _should_auto_off() (60с) міг би спрацювати РАНІШЕ за коротший flash-таймер
-                        flash_until_ts = now + config.DISPLAY_UPDATE_FLASH_SEC
-                        logger.info(
-                            "Статус оновлення змінився (dish: %s->%s, router: %s->%s) - "
-                            "підсвітка на %dс",
-                            prev_dish_state, dish_state, prev_router_state, router_state,
-                            config.DISPLAY_UPDATE_FLASH_SEC,
-                        )
-                    prev_dish_state, prev_router_state = dish_state, router_state
-
-                    frame = _redraw(display, Image, ImageDraw, font_status, font_update, font_tiny,
-                                    data=(latest, router_status), prev_frame=frame)
-                except Exception:
-                    logger.exception("Помилка оновлення дисплея")
-                last_redraw = now
-
             time.sleep(config.DISPLAY_BUTTON_POLL_INTERVAL_SEC)
     finally:
         if button_release:

@@ -10,7 +10,7 @@ from typing import Any, Callable, Iterator, Optional
 from app import config
 
 # Формат backup-файлу (ручний через веб-кнопку і автоматичний
-# періодичний, обидва в monitor.build_backup_dict()) - тут, не в
+# періодичний, обидва в services.build_backup_dict()) - тут, не в
 # webapp.py, щоб бути доступною з monitor.py без циклічного імпорту
 # (webapp.py вже імпортує monitor, тому monitor не може імпортувати
 # щось із webapp.py).
@@ -469,6 +469,13 @@ def vacuum_and_analyze() -> bool:
         conn.close()
 
 
+# Код причини в повідомленні check_integrity() для файлу, що взагалі не є
+# SQLite-базою. Шар даних НЕ перекладає тексти (раніше тут був лінивий імпорт
+# i18n - цикл db <-> i18n): повертає код + технічну деталь, а переклад робить
+# споживач (services.describe_integrity_problem). Формат: "<код>: <деталь>".
+NOT_A_DATABASE = "not_a_database"
+
+
 def check_integrity() -> tuple[bool, str]:
     """PRAGMA quick_check - швидша за повний integrity_check перевірка
     (не перевіряє UNIQUE-обмеження, для нашого use-case достатньо).
@@ -489,8 +496,7 @@ def check_integrity() -> tuple[bool, str]:
         # живим тестом одразу після першої реалізації - без цього
         # DatabaseError поширювався б назовні, замість повернення
         # (False, message), яке викликаючий код очікує.
-        from app import i18n  # не на рівні модуля: i18n сам імпортує db
-        return False, i18n.t("db_not_sqlite", error=e)
+        return False, f"{NOT_A_DATABASE}: {e}"
     finally:
         conn.close()
     messages = [str(r[0]) for r in rows]

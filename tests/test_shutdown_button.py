@@ -90,7 +90,7 @@ def test_watch_button_long_press_triggers_shutdown():
     triggered = []
     with patch("app.gpio_utils.open_input_line",
                return_value=(fake_get_value, lambda: released.append(1))), \
-         patch("app.shutdown_button._trigger_shutdown", side_effect=lambda pin: triggered.append(pin)), \
+         patch("app.pi_power.shutdown_from_button", side_effect=lambda pin: triggered.append(pin)), \
          patch("time.sleep"), \
          patch("time.time", side_effect=lambda: next(fake_times, 100.0)):
         with pytest.raises(SystemExit):
@@ -102,7 +102,7 @@ def test_watch_button_long_press_triggers_shutdown():
 
 def test_watch_button_short_press_does_not_trigger_shutdown():
     """Контрольний тест: коротке натискання (відпущено ДО порогу
-    утримання) НЕ має викликати _trigger_shutdown."""
+    утримання) НЕ має викликати shutdown_from_button."""
     config.SHUTDOWN_BUTTON_GPIO_PIN = 27
     config.DISPLAY_ENABLED = False
     config.SHUTDOWN_BUTTON_HOLD_SEC = 3.0
@@ -119,7 +119,7 @@ def test_watch_button_short_press_does_not_trigger_shutdown():
 
     triggered = []
     with patch("app.gpio_utils.open_input_line", return_value=(fake_get_value, lambda: None)), \
-         patch("app.shutdown_button._trigger_shutdown", side_effect=lambda pin: triggered.append(pin)), \
+         patch("app.pi_power.shutdown_from_button", side_effect=lambda pin: triggered.append(pin)), \
          patch("time.sleep"), \
          patch("time.time", side_effect=lambda: next(fake_times, 100.0)):
         with pytest.raises(SystemExit):
@@ -170,31 +170,6 @@ def test_watch_button_release_called_even_if_loop_raises_unexpected_error():
             shutdown_button.watch_button()
 
     assert released == [1]
-
-
-# ---- _trigger_shutdown() ----
-
-def test_trigger_shutdown_calls_pi_power_with_poweroff_command(db_path):
-    calls = []
-    with patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **kw: calls.append((a, kw))):
-        shutdown_button._trigger_shutdown(27)
-
-    assert len(calls) == 1
-    args = calls[0][0]
-    assert args[0] == ["sudo", "systemctl", "poweroff"]
-    assert args[1] == "poweroff"
-    assert "GPIO27" in args[3]
-
-
-def test_trigger_shutdown_db_init_failure_does_not_block_poweroff():
-    """Реальна мета: навіть якщо db.init_db() провалюється (напр.
-    пошкоджена БД чи заповнена SD-картка), реальний poweroff МАЄ все
-    одно виконатись - фізичне вимкнення важливіше за журналювання."""
-    calls = []
-    with patch("app.db.init_db", side_effect=RuntimeError("БД пошкоджена")), \
-         patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **kw: calls.append(a)):
-        shutdown_button._trigger_shutdown(27)
-    assert len(calls) == 1
 
 
 def test_watch_button_release_exception_does_not_propagate():

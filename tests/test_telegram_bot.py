@@ -1,6 +1,6 @@
 """
 Тести для app/telegram_bot.py - /checkupdates команда. Викликає ту
-саму monitor.check_updates_now(), що веб-кнопка "Перевірити
+саму services.check_updates_now(), що веб-кнопка "Перевірити
 оновлення" (webapp.py /api/check-updates) - не дублює логіку.
 """
 import time
@@ -45,7 +45,7 @@ def test_check_updates_command_updates_known_devices(db_path):
     """Реальна регресійна перевірка: раніше ручна перевірка (веб-
     кнопка) взагалі не записувала known_devices - той самий баг
     міг би повторитись тут, якщо команда НЕ використовує спільну
-    monitor.check_updates_now()."""
+    services.check_updates_now()."""
     bot = telegram_bot.TelegramBot()
     with patch.object(bot.client, "get_status", return_value=_dish()), \
          patch.object(bot.client, "get_router_info", return_value=_router()), \

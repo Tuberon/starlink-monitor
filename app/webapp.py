@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 from flask import Flask, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
-from app import config, config_editor, db, i18n, log_redact, monitor, pi_power, telegram_notify
+from app import config, config_editor, db, i18n, log_redact, pi_power, services, telegram_notify
 from app.starlink_client import StarlinkClient
 
 logging.basicConfig(level=logging.INFO)
@@ -260,12 +260,12 @@ def api_reboot_dish() -> ResponseReturnValue:
 
 @app.route("/api/check-updates", methods=["POST"])
 def api_check_updates() -> ResponseReturnValue:
-    """Ручна перевірка стану оновлень - див. monitor.check_updates_now()
+    """Ручна перевірка стану оновлень - див. services.check_updates_now()
     для повної логіки (спільна з /checkupdates у telegram_bot.py)."""
     def notify(text: str) -> None:
         telegram_notify.send_message(text)
 
-    dish_status, router_info = monitor.check_updates_now(client, notify)
+    dish_status, router_info = services.check_updates_now(client, notify)
 
     return jsonify({
         "success": True,
@@ -530,9 +530,9 @@ def api_telegram_test() -> ResponseReturnValue:
 @app.route("/api/settings-backup")
 def api_settings_backup() -> ResponseReturnValue:
     """Повертає всі налаштування одним JSON-файлом для завантаження -
-    див. monitor.build_backup_dict() для повної логіки (спільна з
+    див. services.build_backup_dict() для повної логіки (спільна з
     автоматичним періодичним backup)."""
-    return jsonify(monitor.build_backup_dict())
+    return jsonify(services.build_backup_dict())
 
 
 @app.route("/api/send-backup-telegram", methods=["POST"])
@@ -544,7 +544,7 @@ def api_send_backup_telegram() -> ResponseReturnValue:
     - лише надсилає вже наявний найновіший; якщо жодного ще немає
     (STARLINK_AUTO_BACKUP_ENABLED=0 чи щойно встановлено), повертає
     зрозуміле повідомлення про це, не 500."""
-    ok, msg = monitor.send_latest_backup_to_telegram()
+    ok, msg = services.send_latest_backup_to_telegram()
     return jsonify({"success": ok, "message": msg})
 
 

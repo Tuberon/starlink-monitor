@@ -8,19 +8,18 @@ Telegram (не блокує цикл при помилках відправки)
 """
 import json
 import logging
-import os
 import queue
 import signal
 import threading
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import psutil
 
-from app import activity_led, config, config_editor, db, i18n, log_redact, telegram_notify
-from app import labels
+from app import activity_led, config, db, i18n, labels, log_redact, services, telegram_notify
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 from app.system_metrics import get_system_metrics
+from app.telegram_bot import TelegramBot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,161 +39,6 @@ def pi_just_booted(threshold_sec: float = 120.0) -> bool:
     return bool(time.time() - psutil.boot_time() < threshold_sec)
 
 
-def version_in_target_list(current_version: Optional[str], target_raw: Optional[str]) -> bool:
-    """Чи current_version входить у target_raw - список версій через
-    кому (db.parse_version_list). Module-level (не метод класу) - щоб
-    бути доступною і з Watchdog (фоновий цикл опитування), і напряму
-    з webapp.py (ручна кнопка "Перевірити оновлення" - окремий процес,
-    не має доступу до інстансу Watchdog з іншого сервісу)."""
-    if not current_version:
-        return False
-    return current_version in db.parse_version_list(target_raw)
-
-
-# Компоненти Starlink Mini передаються як ІДЕНТИФІКАТОРИ ("dish"/"router"),
-# людські назви - лише тут, через i18n. Раніше в коді ходили українські
-# граматичні форми ("тарілки"/"роутера", а подекуди "dish" для того самого
-# компонента), і опечатка тихо ставала сирим текстом у сповіщенні.
-# Дві форми, бо так склались тексти (і вони лишились побайтово тими самими):
-#   _COMPONENT_NAME   - "Останнє оновлення тарілки...", "Прошивка роутера..."
-#   _COMPONENT_UPDATE - "оновлення ПЗ dish готове", "оновлення ПЗ роутера готове"
-_COMPONENT_NAME = {"dish": "comp_dish", "router": "comp_router"}
-_COMPONENT_UPDATE = {"dish": "comp_dish_short", "router": "comp_router"}
-
-
-def _component_text(component: str, forms: dict[str, str], tr: Callable[..., str] = i18n.t) -> str:
-    if component not in forms:
-        raise ValueError(f"невідомий компонент Starlink: {component!r} (очікується 'dish' або 'router')")
-    return tr(forms[component])
-
-
-def check_target_version_reached(
-    component: str, current_version: Optional[str], target_key: str,
-    notified_key: str, dish_id: Optional[str], notify_fn: Callable[[str], None],
-) -> None:
-    """Порівнює встановлену версію (current_version) з очікуваними
-    (target - введені користувачем на /settings через кому, той самий
-    формат, що telegram_chat_ids - корисно, коли SpaceX випускає
-    РІЗНІ номери версій для різних апаратних ревізій під однією
-    умовною версією, і користувач не певен, який саме рядок реально
-    прийде). Матч спрацьовує на БУДЬ-ЯКУ з перелічених версій.
-    notified_key зберігає ТРІЙКУ (dish_id + яка саме версія збіглась +
-    повний список target) - природно "скидається" і при зміні списку,
-    і якщо ТА САМА версія випадково повториться на іншому опитуванні
-    ТОГО САМОГО пристрою, АЛЕ КРИТИЧНО - dish_id у ключі означає, що
-    ІНШИЙ фізичний Starlink (інший dish_id, напр. після заміни
-    обладнання) з тим самим збігом версія+target ЗАВЖДИ отримає своє
-    власне, свіже сповіщення, не заблоковане дедублікацією попереднього
-    пристрою. notify_fn - інʼєкція функції сповіщення (Watchdog передає
-    self._notify, webapp.py передає telegram_notify.send_message напряму
-    - module-level функція сама не залежить від того, ЯК саме сповіщати)."""
-    target_raw = db.get_setting(target_key)
-    if not version_in_target_list(current_version, target_raw):
-        return
-    notified_value = f"{dish_id}|{current_version}|{target_raw}"
-    if db.get_setting(notified_key) == notified_value:
-        return
-    notify_fn(i18n.t("tg_target_reached", component=_component_text(component, _COMPONENT_NAME), version=current_version))
-    db.set_setting(notified_key, notified_value)
-
-
-def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Callable[[str], None]) -> None:
-    """Окремо від per-component сповіщень вище (ті корисні самі по собі
-    - dish оновився, вже цікаво знати, навіть якщо router ще ні) - це
-    додаткове, комбіноване підтвердження: коли ОБИДВІ (тарілка й
-    роутер) очікувані версії одночасно збігаються зі встановленими,
-    надсилає одне повідомлення про завершення ВСІЄЇ процедури
-    оновлення. Викликається з обох poll_once() (dish) і poll_router()
-    (router) - або один, або інший цикл опитування може стати тим,
-    що робить умову істинною одночасно для обох (компоненти
-    опитуються незалежно, різними циклами), а також з api_check_updates()
-    (webapp.py) - ручна кнопка теж має отримувати повний спектр
-    перевірок, не лише читання статусу.
-
-    Дедублікація - той самий принцип, що в check_target_version_reached():
-    notified-ключ включає dish_id (різні фізичні Starlink НЕ ділять
-    дедублікаційний стан), САМЕ ЗНАЧЕННЯ поточних версій обох
-    компонентів і повні target-списки одночасно - природно
-    "скидається", щойно користувач змінить БУДЬ-ЯКИЙ з двох
-    target-списків (напр. додасть версію для іншої апаратної
-    ревізії), без потреби окремо очищати стан."""
-    dish_target = db.get_setting("dish_target_version")
-    router_target = db.get_setting("router_target_version")
-    if not dish_target or not router_target:
-        return
-
-    latest = db.get_latest_metric()
-    router_status = db.get_router_status()
-    dish_current = latest.get("software_version") if latest else None
-    router_current = router_status.get("software_version") if router_status else None
-
-    if not version_in_target_list(dish_current, dish_target) or \
-            not version_in_target_list(router_current, router_target):
-        return
-
-    combo_key = f"{last_known_dish_id}|{dish_current}|{dish_target}|{router_current}|{router_target}"
-    if db.get_setting("both_targets_notified") == combo_key:
-        return
-
-    notify_fn(i18n.t("tg_both_targets", dish=dish_current, router=router_current))
-    db.set_setting("both_targets_notified", combo_key)
-
-
-def _format_firmware_change_message(component: str, old_version: str, new_version: str) -> Optional[str]:
-    """Формує повідомлення про зміну прошивки - лише для реального
-    ОНОВЛЕННЯ (нова версія новіша). db.is_older_version() (толерантний
-    компаратор, вже перевірений на реалістичних версіях) визначає
-    напрямок зміни: якщо це насправді ВІДКАТ (SpaceX інколи відкочує
-    проблемні білди глобально) - навмисно НЕ сповіщаємо (`known_
-    devices` все одно оновлюється незалежно, лише Telegram-сповіщення
-    пропускається для цього напрямку)."""
-    if db.is_older_version(new_version, old_version):
-        return None
-    return i18n.t("tg_firmware_changed", component=_component_text(component, _COMPONENT_NAME), old=old_version, new=new_version)
-
-
-def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None]) -> None:
-    """Записує/оновлює відому версію dish у known_devices, сповіщає
-    при РЕАЛЬНІЙ зміні версії ("🔄 оновлена" чи "⏪ відкочена" - залежно
-    від напрямку, див. _format_firmware_change_message), і перевіряє
-    target-версію. Module-level - той самий принцип, що решта функцій
-    вище: спільна логіка для watchdog-циклу (poll_once) і ручної
-    кнопки "Перевірити оновлення" (webapp.py api_check_updates) - без
-    цього ручна перевірка мовчки НЕ надсилала жодного сповіщення,
-    навіть коли версія якраз збігалась із target (знайдено на
-    реальному запиті користувача - "перевір процедуру перевірки
-    оновлень на помилки")."""
-    if not status.online:
-        return
-    real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
-    if real_change and old_version:
-        msg = _format_firmware_change_message("dish", old_version, status.software_version)
-        if msg:
-            notify_fn(msg)
-    check_target_version_reached(
-        "dish", status.software_version, "dish_target_version", "dish_target_notified", status.dish_id, notify_fn
-    )
-    check_both_targets_reached(status.dish_id, notify_fn)
-
-
-def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn: Callable[[str], None]) -> None:
-    """Аналогічно до upsert_dish_and_notify(), для router. dish_id -
-    router прив'язується до dish_id того самого фізичного Mini
-    (router не має власного окремого ідентифікатора)."""
-    if not info.online:
-        return
-    if dish_id:
-        real_change, old_version = db.upsert_known_device_router(dish_id, info.hardware_version, info.software_version)
-        if real_change and old_version:
-            msg = _format_firmware_change_message("router", old_version, info.software_version)
-            if msg:
-                notify_fn(msg)
-    check_target_version_reached(
-        "router", info.software_version, "router_target_version", "router_target_notified", dish_id, notify_fn
-    )
-    check_both_targets_reached(dish_id, notify_fn)
-
-
 # Ігноровані попередження dish і роутера відкидаються в джерелі -
 # starlink_client.IGNORED_DISH_ALERTS / IGNORED_ROUTER_ALERTS.
 
@@ -206,151 +50,6 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
 # користувача). Попередній стан при цьому НЕ змінюється, тож
 # повернення до завантаження після такої помилки теж не логується.
 HIDDEN_ROUTER_UPDATE_STATES = frozenset({"DOWNLOADING_UPDATE_IMAGE_FAILED"})
-
-
-def build_backup_dict() -> dict[str, Any]:
-    """Формує повний backup-словник (Telegram config, auto-reboot,
-    перевизначені параметри, історія відомих пристроїв) -
-    спільна для webapp.py api_settings_backup() (ручний, через веб-
-    кнопку) і perform_auto_backup() нижче (автоматичний, періодичний,
-    з watchdog-циклу) - уникає дублювання тієї самої логіки в двох
-    місцях. Bot token включається у відкритому вигляді - файл backup
-    потрібно берегти як secret."""
-    token, chat_ids, enabled = telegram_notify.get_telegram_config()
-    env_params = {
-        p["key"]: p["current"]
-        for p in config_editor.read_current_values()
-        if p["overridden"]
-    }
-    return {
-        "format_version": db.BACKUP_FORMAT_VERSION,
-        "created_at": time.time(),
-        "telegram_bot_token": token,
-        "telegram_chat_ids": chat_ids,
-        "telegram_enabled": enabled,
-        "auto_reboot_enabled": db.get_auto_reboot_enabled(),
-        "dish_target_version": db.get_setting("dish_target_version"),
-        "router_target_version": db.get_setting("router_target_version"),
-        "known_devices": db.get_all_known_devices(),
-        "env_params": env_params,
-    }
-
-
-def perform_auto_backup() -> None:
-    """Записує backup у файл з ротацією (зберігає останні AUTO_BACKUP_
-    KEEP_COUNT копій, видаляє старіші) - страховка від втрати known_
-    devices/налаштувань при пошкодженні БД чи виходу SD-картки з ладу,
-    незалежно від того, чи user робив ручний backup через веб-кнопку.
-    Winятки НЕ поширюються назовні - невдалий запис backup не має
-    ламати основний watchdog-цикл (аналогічно до решти periodic-задач
-    у run_forever(), обгорнутих у try/except на рівні виклику)."""
-    os.makedirs(config.AUTO_BACKUP_DIR, exist_ok=True)
-    backup = build_backup_dict()
-    ts = int(backup["created_at"])
-    path = os.path.join(config.AUTO_BACKUP_DIR, f"backup-{ts}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(backup, f, ensure_ascii=False)
-    # Той самий Telegram bot token у відкритому вигляді, що вже
-    # захищений через chmod 600 у install.sh для /etc/starlink-
-    # monitor/env - без явного chmod тут файл покладався б лише на
-    # системний umask, потенційно читабельний іншими локальними
-    # користувачами на тому самому Pi (0644 - типовий umask-дефолт).
-    os.chmod(path, 0o600)
-
-    existing = sorted(
-        (f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json")),
-    )
-    for old_name in existing[:-config.AUTO_BACKUP_KEEP_COUNT] if config.AUTO_BACKUP_KEEP_COUNT > 0 else []:
-        try:
-            os.remove(os.path.join(config.AUTO_BACKUP_DIR, old_name))
-        except OSError as e:
-            logger.warning("Не вдалося видалити старий backup %s: %s", old_name, e)
-
-
-def send_latest_backup_to_telegram() -> tuple[bool, str]:
-    """Знаходить ОСТАННІЙ (найновіший за mtime) backup-файл із
-    AUTO_BACKUP_DIR і надсилає його в Telegram як документ. Спільна
-    логіка для двох викликачів: Watchdog._maybe_send_backup_to_
-    telegram() (періодичний, з перевіркою інтервалу) і webapp.py
-    /api/send-backup-telegram (ручна кнопка на /settings, без
-    перевірки інтервалу - користувач явно натиснув, робити негайно).
-    Записує подію в журнал незалежно від результату."""
-    if not os.path.isdir(config.AUTO_BACKUP_DIR):
-        return False, i18n.t("api_backup_no_dir")
-    backups = [f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.endswith(".json")]
-    if not backups:
-        return False, i18n.t("api_backup_no_files")
-    latest = max(backups, key=lambda f: os.path.getmtime(os.path.join(config.AUTO_BACKUP_DIR, f)))
-    path = os.path.join(config.AUTO_BACKUP_DIR, latest)
-
-    ok, msg = telegram_notify.send_document(path, caption=i18n.t("tg_backup_caption", name=latest))
-    db.insert_event("telegram_backup_sent", f"Backup у Telegram ({latest}): {msg}", success=ok)
-    return ok, f"{latest}: {msg}"
-
-
-def check_db_integrity_and_notify(notify_fn: Callable[[str], None]) -> None:
-    """PRAGMA quick_check раз на добу (той самий цикл, що VACUUM) -
-    виявляє мовчазну деградацію БД ДО того, як вона стане критичною.
-    При виявленому пошкодженні - Telegram-сповіщення + СПРОБА
-    аварійного backup (в try/except: якщо БД РЕАЛЬНО пошкоджена,
-    сам backup теж може провалитись, читаючи з тієї самої БД - але
-    спроба краща за її відсутність, і винятку тут вистачить
-    logger.error, не поширення далі й не крах watchdog-циклу)."""
-    ok, message = db.check_integrity()
-    if ok:
-        return
-    logger.error("PRAGMA quick_check виявив пошкодження БД: %s", message)
-    notify_fn(i18n.t("tg_db_corrupt", message=message))
-    try:
-        perform_auto_backup()
-        notify_fn(i18n.t("tg_emergency_backup_ok"))
-    except Exception as e:
-        logger.error("Аварійний backup теж провалився: %s", e)
-        notify_fn(i18n.t("tg_emergency_backup_failed", error=e))
-
-
-def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) -> tuple[DishStatus, RouterInfo]:
-    """Ручна перевірка стану оновлень - негайно опитує dish і router
-    (замість очікування наступного фонового циклу), записує в БД,
-    викликає ту саму логіку сповіщень (target-версії, "🔄 прошивка
-    оновлена"/"⏪ відкочена"), що фоновий watchdog-цикл. Спільна для
-    /api/check-updates (webapp.py) і /checkupdates (telegram_bot.py)
-    - уникає дублювання ІДЕНТИЧНОЇ логіки в обох місцях (той самий
-    клас прогалини, що вже кілька разів знаходився в цьому проєкті:
-    дублювання накопичується непомітно при паралельних правках).
-
-    ВАЖЛИВО: локальний gRPC API dish/router не має команди "примусово
-    перевірити оновлення в хмарі SpaceX" (підтверджено прямими
-    викликами - software_update повертає помилку, призначений для
-    sideload завантаження прошивки вручну, не перевірки в хмарі).
-    Натомість повертає актуальний поточний стан - це те, що реально
-    доступно через локальний API."""
-    dish_status = client.get_status()
-    db.insert_metric(dish_status.to_dict())
-
-    router_info = client.get_router_info()
-    db.set_router_status(router_info.to_dict())
-
-    # dish_id для router - якщо dish зараз online, беремо ЙОГО
-    # (найсвіжіше джерело правди); інакше падаємо на останній відомий
-    # з known_devices (dish міг бути offline саме в момент цієї
-    # ручної перевірки, поки router усе ще відповідає - той самий
-    # фізичний Mini).
-    dish_id_for_router: Optional[str] = dish_status.dish_id
-    if not dish_id_for_router:
-        known = db.get_all_known_devices()
-        dish_id_for_router = known[0]["dish_id"] if known else None
-
-    upsert_dish_and_notify(dish_status, notify_fn)
-    upsert_router_and_notify(router_info, dish_id_for_router, notify_fn)
-
-    db.insert_event(
-        "manual_update_check",
-        f"Ручна перевірка: dish={dish_status.update_state or 'н/д'}, "
-        f"router={router_info.update_state or 'н/д'}",
-        success=dish_status.online or router_info.online,
-    )
-    return dish_status, router_info
 
 
 def format_duration(seconds: float, tr: Callable[..., str]) -> str:
@@ -423,6 +122,68 @@ class _BackgroundSender:
 
     def is_alive(self) -> bool:
         return self._thread.is_alive()
+
+
+class _Periodic:
+    """Періодична задача циклу монітора: "якщо минув інтервал - виконати, НЕ
+    впавши, і запам'ятати момент".
+
+    Раніше цей шаблон був розгорнутий вручну шість разів у
+    Watchdog.run_forever() (локальні last_*, по try/except у кожного, складність
+    22); єдина відмінність - що виконати, інтервал, текст помилки. Різнилась і
+    обережність: poll_system_metrics()/poll_router() стояли БЕЗ try, тож
+    виняток звідти валив би весь цикл (watchdog, який помирає, - гірше за
+    watchdog, що логує й працює далі); тепер усі задачі захищені однаково.
+
+    - `action` шукається в момент виклику (у викликача це lambda), бо тести й
+      код підміняють атрибути;
+    - `interval` - число або функція (конфіг читається щоразу); `None` - щоразу
+      на кожній ітерації (задача має власний таймер всередині);
+    - `enabled` - функція-умова (напр. AUTO_BACKUP_ENABLED); перевіряється ДО
+      годинника;
+    - `last` стартує з 0.0: перше спрацювання - одразу після старту сервісу.
+    """
+
+    def __init__(
+        self,
+        action: Callable[[], None],
+        *,
+        error: str,
+        interval: Union[float, Callable[[], float], None],
+        enabled: Optional[Callable[[], bool]] = None,
+    ) -> None:
+        self._action = action
+        self._error = error
+        self._interval = interval
+        self._enabled = enabled
+        self.last = 0.0
+
+    def run_if_due(self) -> bool:
+        """Виконує задачу, якщо пора. Повертає, чи виконувалась."""
+        if self._enabled is not None and not self._enabled():
+            return False
+        if self._interval is not None:
+            interval = self._interval() if callable(self._interval) else self._interval
+            if not time.time() - self.last > interval:     # саме так: NaN -> не виконується
+                return False
+        try:
+            self._action()
+        except Exception:
+            logger.exception(self._error)
+        if self._interval is not None:
+            self.last = time.time()      # і після збою: повтор - через інтервал, не щоітерації
+        return True
+
+
+def _optimize_db() -> None:
+    vacuumed = db.vacuum_and_analyze()
+    logger.info("Періодична оптимізація БД: ANALYZE, VACUUM %s",
+                "виконано" if vacuumed else "пропущено (вільних сторінок мало)")
+
+
+def _auto_backup() -> None:
+    services.perform_auto_backup()
+    logger.info("Автоматичний backup виконано")
 
 
 class Watchdog:
@@ -680,7 +441,7 @@ class Watchdog:
             self._notify_first_dish_connection(status)
             if status.dish_id:
                 self.last_known_dish_id = status.dish_id
-            upsert_dish_and_notify(status, self._notify)
+            services.upsert_dish_and_notify(status, self._notify)
             self._log_update_state_change(status)
             self._log_alerts_change(status)
             self._maybe_reboot_for_update(status)
@@ -843,7 +604,7 @@ class Watchdog:
             if not info.online:
                 logger.debug("Роутер недоступний: %s", info.error)
                 return
-            upsert_router_and_notify(info, self.last_known_dish_id, self._notify)
+            services.upsert_router_and_notify(info, self.last_known_dish_id, self._notify)
             self._log_router_update_state_change(info)
             self._log_router_alerts_change(info)
             self._maybe_reboot_for_router_update(info)
@@ -910,7 +671,7 @@ class Watchdog:
         відрізняється), винесено сюди, щоб не дублювати - зокрема захист
         MIN_REBOOT_INTERVAL_SEC/last_reboot_ts, який критично мати
         однаковим в обох місцях (див. reboot-loop баг у _maybe_reboot)."""
-        name_uk = _component_text(component, _COMPONENT_UPDATE, i18n.translator("uk"))
+        name_uk = services.component_text(component, services.COMPONENT_UPDATE, i18n.translator("uk"))
         now = time.time()
         if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
             logger.info(
@@ -936,9 +697,9 @@ class Watchdog:
         # спробу негайно, а почекати MIN_REBOOT_INTERVAL_SEC).
         self.last_reboot_ts = now
         if ok:
-            self._notify_reboot(i18n.t("tg_auto_reboot_update", component=_component_text(component, _COMPONENT_UPDATE), reason=reason))
+            self._notify_reboot(i18n.t("tg_auto_reboot_update", component=services.component_text(component, services.COMPONENT_UPDATE), reason=reason))
         else:
-            self._notify(i18n.t("tg_auto_reboot_update_failed", component=_component_text(component, _COMPONENT_UPDATE), msg=msg))
+            self._notify(i18n.t("tg_auto_reboot_update_failed", component=services.component_text(component, services.COMPONENT_UPDATE), msg=msg))
 
     def _maybe_reboot_for_router_update(self, info: RouterInfo) -> None:
         """Автоматичний reboot усього Starlink Mini, коли роутерний компонент
@@ -984,7 +745,7 @@ class Watchdog:
         self.last_telegram_backup_sent_ts = now
 
         def job() -> None:
-            ok, msg = send_latest_backup_to_telegram()
+            ok, msg = services.send_latest_backup_to_telegram()
             if not ok:
                 logger.warning("Не вдалося надіслати backup у Telegram: %s", msg)
 
@@ -1054,6 +815,40 @@ class Watchdog:
             if not self._notifications_muted():
                 self._notify_reboot(i18n.t("tg_auto_reboot_watchdog", failures=failures))
 
+    def _periodic_tasks(self) -> list[_Periodic]:
+        """Періодичні задачі циклу - у тому ж порядку, що раніше в run_forever()."""
+        return [
+            # CPU/температура/пам'ять змінюються повільно - окремий, довший
+            # інтервал (STARLINK_SYSTEM_METRICS_INTERVAL_SEC), не той самий, що
+            # критичні dish-метрики кожні 10с: без цього SD-картка отримувала б
+            # зайві записи без практичної користі.
+            _Periodic(lambda: self.poll_system_metrics(), error="Помилка опитування метрик Pi",
+                      interval=lambda: config.SYSTEM_METRICS_INTERVAL_SEC),
+            # Роутер опитуємо рідше, ніж dish (STARLINK_ROUTER_POLL_INTERVAL_SEC):
+            # його версія прошивки змінюється нечасто, а зайве навантаження на
+            # WiFi-канал непотрібне при опитуванні dish кожні 10с.
+            _Periodic(lambda: self.poll_router(), error="Помилка опитування роутера",
+                      interval=lambda: config.ROUTER_POLL_INTERVAL_SEC),
+            _Periodic(lambda: db.prune_old(), error="Помилка очищення старих записів", interval=3600),
+            _Periodic(_optimize_db, error="Помилка VACUUM/ANALYZE", interval=86400),
+            # Окремий інтервал від VACUUM (типово той самий 86400с, але реально
+            # конфігурований через DB_INTEGRITY_CHECK_INTERVAL_SEC) - виявляє
+            # мовчазну деградацію БД до того, як вона стане критичною.
+            _Periodic(lambda: services.check_db_integrity_and_notify(self._notify),
+                      error="Помилка перевірки цілісності БД",
+                      interval=lambda: config.DB_INTEGRITY_CHECK_INTERVAL_SEC),
+            # Автоматичний періодичний backup - страховка від втрати
+            # known_devices/налаштувань, незалежно від ручного backup через
+            # веб-кнопку (міг не робитись місяцями).
+            _Periodic(_auto_backup, error="Помилка автоматичного backup",
+                      interval=lambda: config.AUTO_BACKUP_INTERVAL_SEC,
+                      enabled=lambda: config.AUTO_BACKUP_ENABLED),
+            # Окремий, незалежний таймер від створення backup вище: метод має
+            # власну логіку інтервалу й оновлює власний таймер всередині.
+            _Periodic(lambda: self._maybe_send_backup_to_telegram(),
+                      error="Помилка відправки backup у Telegram", interval=None),
+        ]
+
     def run_forever(self) -> None:
         db.init_db()
         if _poll_pause() != config.POLL_INTERVAL_SEC:
@@ -1078,7 +873,6 @@ class Watchdog:
         # NameError. __init__() безпечний для раннього виклику - лише
         # створює StarlinkClient()/ThreadPoolExecutor/порожні
         # структури даних, без мережевих запитів.
-        from app.telegram_bot import TelegramBot
         telegram_bot = TelegramBot()
 
         # Graceful shutdown: flush буфера dish-метрик ПЕРЕД завершенням
@@ -1105,12 +899,7 @@ class Watchdog:
         # "Прогрів" psutil.cpu_percent: перший виклик без базового заміру
         # завжди повертає 0.0, тому робимо його тут і відкидаємо результат.
         psutil.cpu_percent(interval=None)
-        last_prune = 0.0
-        last_vacuum = 0.0
-        last_integrity_check = 0.0
-        last_auto_backup = 0.0  # 0 гарантує перший backup одразу після старту сервісу
-        last_router_poll = 0.0  # 0 гарантує негайне перше опитування роутера
-        last_system_metrics_poll = 0.0  # 0 гарантує негайний перший запис
+        tasks = self._periodic_tasks()
         self._sender = _BackgroundSender()
         db.open_anchor()   # WAL "живе" весь час роботи - див. db.open_anchor()
         try:
@@ -1121,75 +910,14 @@ class Watchdog:
                     logger.exception("Неочікувана помилка в циклі опитування: %s", e)
 
                 # SD-card-wear reduction: batch-flush накопичених dish-
-                # зчитувань замість запису кожного окремо кожні 10с. Той
-                # самий таймер-паттерн, що system_metrics/router нижче.
+                # зчитувань замість запису кожного окремо кожні 10с. Свій
+                # таймер (self.last_batch_flush_ts) - його оновлює й
+                # flush при зміні стану, тож це не _Periodic.
                 if time.time() - self.last_batch_flush_ts > config.DISH_METRICS_BATCH_INTERVAL_SEC:
                     self.flush_metrics_buffer()
 
-                # CPU/температура/пам'ять змінюються повільно - окремий,
-                # довший інтервал (STARLINK_SYSTEM_METRICS_INTERVAL_SEC),
-                # не той самий, що критичні dish-метрики кожні 10с - без
-                # цього SD-картка отримувала б зайві записи без практичної
-                # користі (той самий принцип, що вже застосований до
-                # router нижче).
-                if time.time() - last_system_metrics_poll > config.SYSTEM_METRICS_INTERVAL_SEC:
-                    self.poll_system_metrics()
-                    last_system_metrics_poll = time.time()
-
-                # Роутерний компонент опитуємо рідше, ніж dish (окремий,
-                # довший інтервал, STARLINK_ROUTER_POLL_INTERVAL_SEC) - його
-                # версія прошивки змінюється нечасто, і зайве навантаження
-                # на WiFi-канал непотрібне при опитуванні dish кожні 10с.
-                if time.time() - last_router_poll > config.ROUTER_POLL_INTERVAL_SEC:
-                    self.poll_router()
-                    last_router_poll = time.time()
-
-                if time.time() - last_prune > 3600:
-                    try:
-                        db.prune_old()
-                    except Exception:
-                        logger.exception("Помилка очищення старих записів")
-                    last_prune = time.time()
-
-                if time.time() - last_vacuum > 86400:
-                    try:
-                        vacuumed = db.vacuum_and_analyze()
-                        logger.info("Періодична оптимізація БД: ANALYZE, VACUUM %s",
-                                    "виконано" if vacuumed else "пропущено (вільних сторінок мало)")
-                    except Exception:
-                        logger.exception("Помилка VACUUM/ANALYZE")
-                    last_vacuum = time.time()
-
-                # Окремий інтервал від VACUUM (типово той самий 86400с, але
-                # реально конфігурований через DB_INTEGRITY_CHECK_INTERVAL_SEC,
-                # не жорстко прив'язаний до VACUUM-таймера) - виявляє мовчазну
-                # деградацію БД до того, як вона стане критичною.
-                if time.time() - last_integrity_check > config.DB_INTEGRITY_CHECK_INTERVAL_SEC:
-                    try:
-                        check_db_integrity_and_notify(self._notify)
-                    except Exception:
-                        logger.exception("Помилка перевірки цілісності БД")
-                    last_integrity_check = time.time()
-
-                # Автоматичний періодичний backup - страховка від втрати
-                # known_devices/налаштувань, незалежно від того, чи user
-                # робив ручний backup через веб-кнопку (міг не робити
-                # місяцями).
-                if config.AUTO_BACKUP_ENABLED and time.time() - last_auto_backup > config.AUTO_BACKUP_INTERVAL_SEC:
-                    try:
-                        perform_auto_backup()
-                        logger.info("Автоматичний backup виконано")
-                    except Exception:
-                        logger.exception("Помилка автоматичного backup")
-                    last_auto_backup = time.time()
-
-                # Окремий, незалежний таймер від створення backup вище -
-                # власна логіка (не try/except тут) вже обробляє помилки
-                # й оновлює власний таймер безумовно всередині методу.
-                try:
-                    self._maybe_send_backup_to_telegram()
-                except Exception:
-                    logger.exception("Помилка відправки backup у Telegram")
+                for task in tasks:
+                    task.run_if_due()
 
                 time.sleep(_poll_pause())
         finally:

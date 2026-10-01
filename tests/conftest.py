@@ -45,6 +45,24 @@ def db_path(tmp_path):
     return config.DB_PATH
 
 
+class NotificationSink:
+    """Приймач сповіщень для тестів СЕРВІСНИХ функцій (app/services.py):
+    інтерфейс той самий, що в watchdog-фікстури (`_notify`, `sent`,
+    `last_known_dish_id`), але без створення Watchdog."""
+
+    def __init__(self):
+        self.sent = []
+        self.last_known_dish_id = None
+
+    def _notify(self, text):
+        self.sent.append(text)
+
+
+@pytest.fixture
+def sink(db_path):
+    return NotificationSink()
+
+
 @pytest.fixture
 def watchdog(db_path):
     """Watchdog з mock-ованим _notify() - зібрані повідомлення в

@@ -74,16 +74,16 @@ def test_dish_alert_notification_in_english(watchdog, en):
 
 
 def test_target_version_notification_in_english(en):
-    from app import monitor
+    from app import services
     sent = []
     db.set_setting("dish_target_version", "v2.0")
-    monitor.check_target_version_reached("dish", "v2.0", "dish_target_version", "dish_target_notified", "d1", sent.append)
+    services.check_target_version_reached("dish", "v2.0", "dish_target_version", "dish_target_notified", "d1", sent.append)
     assert sent == ["✅ Latest dish update installed: version v2.0"]
 
 
 def test_firmware_change_message_in_english(en):
-    from app import monitor
-    assert monitor._format_firmware_change_message("router", "r1", "r2") == "🔄 router firmware updated: r1 → r2"
+    from app import services
+    assert services.format_firmware_change_message("router", "r1", "r2") == "🔄 router firmware updated: r1 → r2"
 
 
 def test_pi_reboot_failure_via_web_in_english(client, en):
@@ -97,10 +97,10 @@ def test_pi_reboot_failure_via_web_in_english(client, en):
 
 
 def test_shutdown_button_texts_in_english(en):
-    from app import shutdown_button
+    from app import pi_power
     calls = []
     with patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **kw: calls.append(a)):
-        shutdown_button._trigger_shutdown(27)
+        pi_power.shutdown_from_button(27)
     assert "⏻ Raspberry Pi is shutting down via the physical button (GPIO27)" in calls[0]
     assert "shut down" in calls[0]
 

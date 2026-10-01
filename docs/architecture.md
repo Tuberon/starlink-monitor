@@ -230,13 +230,13 @@ COLUMN`) - менший ризик для вже існуючих БД на ре
   реально відрізняється від РАНІШЕ ВІДОМОГО значення (не `None`, не
   перше знайомство з пристроєм/полем), і завжди оновлюють `known_
   devices` реальною поточною версією незалежно від напрямку зміни.
-  `monitor.upsert_dish_and_notify()`/`upsert_router_and_notify()`
-  сповіщають лише про реальне ОНОВЛЕННЯ (`_format_firmware_change_
-  message()`, використовує `db.is_older_version()` — той самий
+  `services.upsert_dish_and_notify()`/`upsert_router_and_notify()`
+  сповіщають лише про реальне ОНОВЛЕННЯ (`format_firmware_change_message()`,
+  використовує `db.is_older_version()` — той самий
   толерантний компаратор, що для target-версій): "🔄 Прошивка X
   оновлена: X → Y" для forward-змін. Якщо нова версія СТАРІША за
   попередню (SpaceX інколи відкочує прошивку глобально) - навмисно
-  НЕ сповіщає (`_format_firmware_change_message()` повертає `None`,
+  НЕ сповіщає (`format_firmware_change_message()` повертає `None`,
   обидва виклики перевіряють на `None` перед `notify_fn(...)`) - за
   запитом користувача, `known_devices` все одно оновлюється мовчки.
   Спільний для dish і router (та сама функція).
@@ -335,7 +335,7 @@ tuple параметрів INSERT, використовується і `insert_m
 **`SYSTEM_METRICS_INTERVAL_SEC`** (типово 60с) — CPU/температура/
 пам'ять Pi змінюються повільно, записувати їх із тією самою
 частотою, що критичні dish-метрики (10с), зайве навантаження без
-практичної користі. Окремий таймер у `run_forever()`, той самий
+практичної користі. Окрема періодична задача циклу (`_Periodic`), той самий
 паттерн, що вже для router нижче.
 
 ## Надійність: integrity-check, автоматичний backup, Telegram-retry
@@ -349,7 +349,7 @@ integrity_and_notify()` при пошкодженні — Telegram-сповіщ�
 спроба аварійного `perform_auto_backup()` (в `try/except` — backup
 теж може провалитись, читаючи з тієї самої пошкодженої БД).
 
-**`monitor.build_backup_dict()`** — спільна для `webapp.py api_
+**`services.build_backup_dict()`** — спільна для `webapp.py api_
 settings_backup()` (ручний, веб-кнопка) і `perform_auto_backup()`
 (автоматичний, періодичний з `run_forever()`) — уникає дублювання.
 `db.BACKUP_FORMAT_VERSION` (не `webapp.py`) — доступна з `monitor.py`
@@ -393,7 +393,7 @@ watchdog стояв, а `/healthz` перевищував поріг свіжо�
 номери версій для різних апаратних ревізій під однією умовною
 версією. Матч на будь-яку з перелічених версій дає "✅ Останнє
 оновлення встановлено". `db.parse_version_list()` — спільний helper,
-`monitor.check_target_version_reached()` — module-level функція (не
+`services.check_target_version_reached()` — module-level функція (не
 метод класу).
 
 **Дедублікація**: `dish_target_notified` зберігає трійку (`dish_id` +
@@ -429,17 +429,18 @@ Starlink з часом (заміна обладнання), дедублікац
 рядок — команда очистити поле. Відповідь API завжди містить
 `message` з реальним результатом.
 
-`monitor.check_both_targets_reached()` — комбіноване "🎉" при
+`services.check_both_targets_reached()` — комбіноване "🎉" при
 одночасному збігу обох компонентів, доповнює per-component
 сповіщення. Викликається з обох циклів опитування (dish/router
 незалежні). Не входить у backup/restore — internal dedup-стан, не
 user-налаштування.
 
-**Module-level функції, спільні для watchdog і ручної кнопки**:
-`version_in_target_list()`, `check_target_version_reached()`,
-`check_both_targets_reached()`, `upsert_dish_and_notify()`,
-`upsert_router_and_notify()`, `check_updates_now()` — усі поза класом
-`Watchdog`, приймають `notify_fn` замість `self._notify`. Раніше
+**Функції, спільні для watchdog, веб-кнопки і Telegram-бота** (модуль
+`app/services.py`, раніше — `monitor.py`): `version_in_target_list()`,
+`check_target_version_reached()`, `check_both_targets_reached()`,
+`upsert_dish_and_notify()`, `upsert_router_and_notify()`,
+`check_updates_now()` — поза класом `Watchdog`, приймають `notify_fn`
+замість `self._notify`. Раніше
 ручна кнопка "Перевірити оновлення" записувала статус без жодного
 сповіщення — виправлено винесенням спільної логіки.
 
@@ -507,13 +508,13 @@ sent_ts`) ініціалізується `time.time()` у `__init__()` (не `0.
 має спричиняти повторні спроби щоцикл опитування (~10с), а чекати
 повного інтервалу.
 
-Викликається в `run_forever()` окремим `try/except`-блоком (не
-всередині `if AUTO_BACKUP_ENABLED and ...`-блоку створення backup) —
+Викликається в `run_forever()` окремою задачею `_Periodic` з `interval=None`
+(щоітерації; не всередині задачі створення backup з `enabled=AUTO_BACKUP_ENABLED`) —
 метод сам обробляє власні помилки й оновлює власний таймер
 безумовно всередині себе, зовнішній `try/except` тут — лише
 додатковий запобіжник від зовсім неочікуваних винятків.
 
-**`monitor.send_latest_backup_to_telegram()`** — спільна логіка
+**`services.send_latest_backup_to_telegram()`** — спільна логіка
 "знайти найновіший backup + надіслати" винесена в окрему функцію
 рівня модуля (рефакторинг після додавання ручної кнопки) - і
 `Watchdog._maybe_send_backup_to_telegram()` (періодичний виклик, з
@@ -600,12 +601,51 @@ NOPASSWD: ALL`), записати подію в журнал, надіслати
 `gpio` і `python3-libgpiod` (системний пакет, не pip), а не всі
 установки мають фізичну кнопку.
 
+## Залежності модулів (app/) і шари
+
+Точка входу сервісу (модуль із `logging.basicConfig`: `monitor`, `webapp`,
+`display`, `shutdown_button`) — НЕ бібліотека: жоден інший модуль її не
+імпортує. Спільна логіка живе в бібліотечних модулях:
+
+- `services.py` — відстеження версій прошивок і бекапи, що потрібні водночас
+  Watchdog (`monitor`), веб-інтерфейсу і Telegram-боту. Раніше це було в
+  `monitor.py`: `webapp` і `telegram_bot` імпортували його цілком заради трьох
+  функцій, що давало цикл `monitor ↔ telegram_bot` (на лінивому імпорті) і
+  змушувало процес веб-інтерфейсу вантажити весь Watchdog (вимір: 15 → 11
+  модулів, −1.3 МБ).
+- `pi_power.py` — reboot/poweroff, зокрема `shutdown_from_button()` (спільна
+  для `shutdown_button` і `display`; раніше `display` імпортував приватну
+  функцію з іншої точки входу).
+- `db.py` — шар даних: НЕ залежить від `i18n`/`labels`/Telegram/веб-шару.
+  `check_integrity()` повертає КОД причини (`not_a_database: <деталь>`), а
+  людський текст будує споживач (`services.describe_integrity_problem()`) —
+  раніше тут був лінивий імпорт `i18n` (цикл `db ↔ i18n`).
+
+Гарантує `tests/test_architecture.py`: граф імпортів із AST (включно з
+лінивими) без жодного циклу; точки входу не імпортуються іншими модулями;
+`db` не залежить від шару подання. `Watchdog` лишається одним класом у
+`monitor.py` (розбиття не рекомендовано — `docs/decisions-log.md`).
+
+## Цикл монітора: періодичні задачі (`_Periodic`)
+
+Усе періодичне в `Watchdog.run_forever()` — задачі `_Periodic(action, interval,
+error, enabled)` у фіксованому порядку (`Watchdog._periodic_tasks()`): метрики Pi →
+роутер → prune (1 год) → ANALYZE/VACUUM (доба) → перевірка цілісності БД →
+автобекап (`enabled=AUTO_BACKUP_ENABLED`) → відправка бекапу в Telegram
+(`interval=None`: щоітерації, власний таймер всередині). Правила: перше
+спрацювання одразу після старту (`last=0`); інтервал читається з конфігу щоразу;
+`last` оновлюється і ПІСЛЯ збою (повтор через інтервал, не щоітерації); виняток
+логується, а не валить цикл. Раніше цей шаблон був розгорнутий вручну шість разів
+(складність `run_forever` 22), причому `poll_system_metrics()`/`poll_router()`
+стояли без `try` — єдина навмисна зміна поведінки. Пакетний запис метрик
+(`flush_metrics_buffer`) лишається окремо: його таймер спільний зі скиданням при
+зміні стану.
+
 ## Повідомлення на дисплеї при reboot/poweroff (app/pi_power.py)
 
 Спільний модуль для трьох джерел дії (веб-дашборд `webapp.py`,
 фізична кнопка `shutdown_button.py`, і `display.py` — та сама кнопка,
-короткий шлях через прямий import `_trigger_shutdown` з `shutdown_
-button.py`, не дублювання коду) — `execute_pi_power_action()` виконує
+спільна функція `pi_power.shutdown_from_button()`, не дублювання коду) — `execute_pi_power_action()` виконує
 `systemctl reboot`/`poweroff`, записує подію, надсилає Telegram.
 
 **Показ повідомлення на TFT-дисплеї - через DB-сигнал, не прямий
@@ -919,6 +959,16 @@ HTTP-сервері: `test_client()` цей шлях обходить.
 (бібліотека Adafruit CircuitPython ST7789) — лише якщо кадр змінився:
 uptime показується з точністю до хвилини, тож ~11 з 12 перемальовувань
 були марними, а вночі екран годинами не змінюється.
+
+**Структура циклу.** `run_forever()` лише ініціалізує залізо (`_open_button()` —
+лінія кнопки; частково відкритий стан при збої зберігається, бо `release()` потрібен
+у `finally`) і крутить цикл; усю логіку однієї ітерації виконує
+`DisplayController.tick()` в тому ж порядку, що був у тілі циклу: повідомлення про
+reboot/poweroff (ДО всього) → кнопка → таймери підсвітки (автовимкнення, flash) →
+перемальовування. Метод повертає `True`, коли дисплей має завершитись. Допоміжні
+функції (`_set_backlight`, `_redraw`, ...) контролер викликає як глобальні імена
+модуля, тож їх можна підміняти в тестах; логіку перевіряють юніт-тести
+`tick()` без заліза й без циклу.
 `_status_lines()` повертає структурований список `{"kind": ...,
 "text": ...}` (+ `"progress"` для `kind="update"`) — не плаский
 список за позицією (рядок оновлення опційний, індекси були б
@@ -961,7 +1011,7 @@ HIGH; якщо підключено напряму до 3.3V — `DISPLAY_BL_PIN
 
 **Кнопка** — та сама, що `SHUTDOWN_BUTTON_GPIO_PIN` (не окремий пін):
 коротке перемикає підсвітку, довге вимикає Pi через
-`_trigger_shutdown()`, імпортовану напряму з `shutdown_button.py`.
+`pi_power.shutdown_from_button()` (спільна з `shutdown_button.py`).
 Обробляється в цьому самому циклі (не окремим сервісом — керування
 BL-піном можливе лише з процесу, що тримає `digitalio`-об'єкт).
 `shutdown_button.py` сам себе вимикає, коли `DISPLAY_ENABLED=1`, щоб

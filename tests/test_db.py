@@ -108,7 +108,8 @@ def test_check_integrity_detects_fully_invalid_file(db_path):
         f.write(b"not a valid sqlite file" * 50)
     ok, message = db.check_integrity()
     assert ok is False
-    assert "не є валідною SQLite-базою" in message
+    # db повертає КОД + деталь, а не переклад (шар даних не залежить від i18n)
+    assert message.startswith(f"{db.NOT_A_DATABASE}: ")
 
 
 # ---- set_activity_callback() - хук для LED активності SD-картки ----

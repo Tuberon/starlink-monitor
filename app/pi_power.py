@@ -111,3 +111,20 @@ def execute_pi_power_action(
     else:
         notify_fn(i18n.t("tg_pi_action_failed", verb=fail_verb, msg=msg))
     return ok, msg
+
+def shutdown_from_button(pin: int) -> None:
+    """Виключення Pi після довгого утримання фізичної кнопки. Спільне для
+    процесів shutdown_button і display (раніше жило в shutdown_button.py,
+    який display імпортував як бібліотеку: точка входу сервісу не має бути
+    бібліотекою - див. tests/test_architecture.py)."""
+    logger.warning("Кнопка виключення утримана %.1fс на GPIO%d - виконую poweroff", config.SHUTDOWN_BUTTON_HOLD_SEC, pin)
+    try:
+        db.init_db()
+    except Exception as e:
+        logger.warning("Не вдалося ініціалізувати БД: %s", e)
+
+    execute_pi_power_action(
+        ["sudo", "systemctl", "poweroff"], "poweroff",
+        "pi_shutdown", f"Виключення через фізичну кнопку (GPIO{pin})",
+        i18n.t("tg_pi_shutdown_button", pin=pin), i18n.t("verb_shutdown"),
+    )

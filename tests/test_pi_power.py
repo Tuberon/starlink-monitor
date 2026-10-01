@@ -257,3 +257,28 @@ def test_run_system_command_timeout_returns_failure_not_exception():
     from unittest.mock import patch
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("systemctl", 10)):
         assert pi_power.run_system_command(["sudo", "systemctl", "reboot"]) == (False, "timeout")
+
+
+# ---- shutdown_from_button() (виключення по кнопці; спільне для shutdown_button і display) ----
+
+def test_shutdown_from_button_calls_pi_power_with_poweroff_command(db_path):
+    calls = []
+    with patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **kw: calls.append((a, kw))):
+        pi_power.shutdown_from_button(27)
+
+    assert len(calls) == 1
+    args = calls[0][0]
+    assert args[0] == ["sudo", "systemctl", "poweroff"]
+    assert args[1] == "poweroff"
+    assert "GPIO27" in args[3]
+
+
+def test_shutdown_from_button_db_init_failure_does_not_block_poweroff():
+    """Реальна мета: навіть якщо db.init_db() провалюється (напр.
+    пошкоджена БД чи заповнена SD-картка), реальний poweroff МАЄ все
+    одно виконатись - фізичне вимкнення важливіше за журналювання."""
+    calls = []
+    with patch("app.db.init_db", side_effect=RuntimeError("БД пошкоджена")), \
+         patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **kw: calls.append(a)):
+        pi_power.shutdown_from_button(27)
+    assert len(calls) == 1

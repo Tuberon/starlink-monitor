@@ -301,7 +301,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-762 tests (`pytest-randomly` — resilient to execution order), 20
+789 tests (`pytest-randomly` — resilient to execution order), 22
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -338,7 +338,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 762 tests (20 files), pytest-randomly
+├── tests/          # 789 tests (22 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md

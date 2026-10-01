@@ -93,7 +93,7 @@ def test_run_forever_runs_integrity_check_on_first_iteration(db_path):
     config.NOTIFY_PI_STARTUP = False
     wd = monitor.Watchdog()
     wd._notify = lambda t: None
-    with patch("app.monitor.check_db_integrity_and_notify") as mock_check:
+    with patch("app.services.check_db_integrity_and_notify") as mock_check:
         _run_one_iteration(wd)
     mock_check.assert_called_once()
 
@@ -216,7 +216,7 @@ def test_run_forever_sleeps_sanely_and_warns_with_invalid_interval(db_path, monk
 # ---- РЕАЛЬНИЙ обробник SIGTERM і стійкість циклу до збою запису в БД ----
 
 @contextlib.contextmanager
-def _running_loop(wd, poll_once=None, sleep_effect=None, now=None):
+def _running_loop(wd, poll_once=None, sleep_effect=None, now=None, router_effect=None):
     """Один прохід run_forever(); патчі лишаються активними ВСЕРЕДИНІ
     with-блоку тесту (тож mock зупинки бота бачить виклик обробника).
     Обробник - той самий, що реєструє справжній код (а не його копія в
@@ -233,7 +233,7 @@ def _running_loop(wd, poll_once=None, sleep_effect=None, now=None):
         stack.enter_context(patch("time.sleep", side_effect=sleep_effect or SystemExit()))
         stack.enter_context(patch("signal.signal", side_effect=lambda sig, h: handlers.__setitem__(sig, h)))
         stack.enter_context(patch("app.activity_led.ActivityLed", return_value=led))
-        stack.enter_context(patch.object(wd, "poll_router"))
+        stack.enter_context(patch.object(wd, "poll_router", side_effect=router_effect))
         stack.enter_context(patch.object(wd, "_maybe_send_backup_to_telegram"))
         if now is not None:
             stack.enter_context(patch("time.time", side_effect=lambda: now["t"]))
@@ -312,8 +312,8 @@ def test_loop_survives_db_write_failure_when_all_timers_are_due(db_path, monkeyp
     with patch("app.db.insert_metrics_batch", side_effect=sqlite3.OperationalError("database is locked")), \
          patch("app.db.prune_old", side_effect=sqlite3.OperationalError("database is locked")), \
          patch("app.db.vacuum_and_analyze", side_effect=sqlite3.OperationalError("database is locked")), \
-         patch("app.monitor.check_db_integrity_and_notify", side_effect=sqlite3.OperationalError("database is locked")), \
-         patch("app.monitor.perform_auto_backup", side_effect=OSError("диск повний")), \
+         patch("app.services.check_db_integrity_and_notify", side_effect=sqlite3.OperationalError("database is locked")), \
+         patch("app.services.perform_auto_backup", side_effect=OSError("диск повний")), \
          patch("app.db.insert_system_metric", side_effect=sqlite3.OperationalError("database is locked")):
         config.AUTO_BACKUP_ENABLED = True
         with _running_loop(wd, poll_once=poll_and_jump, sleep_effect=fake_sleep, now=now):
@@ -338,10 +338,116 @@ def test_loop_runs_every_due_timer_once(db_path, monkeypatch):
 
     with patch("app.db.prune_old", side_effect=lambda *a, **k: calls.append("prune")), \
          patch("app.db.vacuum_and_analyze", side_effect=lambda: calls.append("vacuum")), \
-         patch("app.monitor.check_db_integrity_and_notify", side_effect=lambda n: calls.append("integrity")), \
-         patch("app.monitor.perform_auto_backup", side_effect=lambda: calls.append("backup")), \
+         patch("app.services.check_db_integrity_and_notify", side_effect=lambda n: calls.append("integrity")), \
+         patch("app.services.perform_auto_backup", side_effect=lambda: calls.append("backup")), \
          patch.object(wd, "poll_system_metrics", side_effect=lambda: calls.append("system")):
         with _running_loop(wd, poll_once=poll_and_jump, now=now):
             pass
     assert sorted(calls) == ["backup", "integrity", "prune", "system", "vacuum"]
     assert wd.metrics_buffer == [] and db.get_latest_metric() is not None      # пакетний запис теж відбувся
+
+
+# ---- _Periodic: "якщо минув інтервал - виконати, не впавши" (замість 6 ручних блоків) ----
+
+def _periodic(action, **kw):
+    kw.setdefault("error", "помилка задачі")
+    kw.setdefault("interval", 10)
+    return monitor._Periodic(action, **kw)
+
+
+def test_periodic_runs_on_first_call_then_waits_for_interval():
+    """last=0 -> перше спрацювання одразу після старту; далі - лише через інтервал."""
+    now = {"t": 1000.0}
+    calls = []
+    task = _periodic(lambda: calls.append(now["t"]), interval=10)
+    with patch("time.time", side_effect=lambda: now["t"]):
+        assert task.run_if_due() is True
+        now["t"] += 5
+        assert task.run_if_due() is False           # ще рано
+        now["t"] += 6
+        assert task.run_if_due() is True            # 11 с > 10 с
+    assert calls == [1000.0, 1011.0]
+
+
+def test_periodic_failure_is_logged_not_raised_and_retried_only_after_interval(caplog):
+    now = {"t": 1000.0}
+    attempts = []
+
+    def boom():
+        attempts.append(now["t"])
+        raise RuntimeError("БД заблокована")
+
+    task = _periodic(boom, interval=10, error="Помилка задачі X")
+    with patch("time.time", side_effect=lambda: now["t"]), caplog.at_level("ERROR", logger="monitor"):
+        assert task.run_if_due() is True            # НЕ кидає
+        now["t"] += 1
+        assert task.run_if_due() is False           # повтор - через інтервал, не щоітерації
+    assert attempts == [1000.0]
+    assert "Помилка задачі X" in caplog.text and "БД заблокована" in caplog.text
+
+
+def test_periodic_interval_is_read_on_every_check_so_config_changes_apply():
+    now = {"t": 1000.0}
+    interval = {"v": 100}
+    task = _periodic(lambda: None, interval=lambda: interval["v"])
+    with patch("time.time", side_effect=lambda: now["t"]):
+        task.run_if_due()
+        now["t"] += 50
+        assert task.run_if_due() is False
+        interval["v"] = 10                           # /settings змінив інтервал
+        assert task.run_if_due() is True
+
+
+def test_periodic_with_interval_none_runs_every_time_even_with_frozen_clock():
+    """Задача з власним таймером всередині (відправка backup у Telegram)."""
+    calls = []
+    task = _periodic(lambda: calls.append(1), interval=None)
+    with patch("time.time", side_effect=lambda: 1000.0):
+        for _ in range(3):
+            assert task.run_if_due() is True
+    assert len(calls) == 3
+
+
+def test_periodic_disabled_task_does_not_run_or_touch_the_clock():
+    task = _periodic(lambda: pytest.fail("не мала виконуватись"), enabled=lambda: False)
+    with patch("time.time", side_effect=AssertionError("годинник не мав читатись")):
+        assert task.run_if_due() is False
+
+
+def test_periodic_nan_interval_never_fires():
+    """Те саме порівняння, що й раніше: NaN -> умова хибна (не крах і не щоітерації)."""
+    task = _periodic(lambda: pytest.fail("не мала виконуватись"), interval=float("nan"))
+    task.last = 1.0
+    assert task.run_if_due() is False
+
+
+def test_periodic_tasks_keep_the_original_order():
+    """Порядок мав значення (метрики Pi -> роутер -> prune -> VACUUM -> цілісність -> backup -> Telegram-backup)."""
+    wd = monitor.Watchdog()
+    errors = [t._error for t in wd._periodic_tasks()]
+    assert errors == ["Помилка опитування метрик Pi", "Помилка опитування роутера", "Помилка очищення старих записів",
+                      "Помилка VACUUM/ANALYZE", "Помилка перевірки цілісності БД", "Помилка автоматичного backup",
+                      "Помилка відправки backup у Telegram"]
+
+
+def test_loop_survives_unexpected_exception_in_router_and_system_metrics_polls(db_path, monkeypatch, caplog):
+    """Єдина навмисна зміна поведінки: poll_system_metrics()/poll_router() стояли
+    БЕЗ try - виняток звідти валив увесь цикл монітора."""
+    config.ACTIVITY_LED_PIN = 0
+    config.NOTIFY_PI_STARTUP = False
+    wd = monitor.Watchdog()
+    wd._notify = lambda t: None
+    now = {"t": time.time()}
+    slept = []
+
+    def fake_sleep(seconds):
+        slept.append(seconds)
+        raise SystemExit()
+
+    with patch.object(wd, "poll_system_metrics", side_effect=RuntimeError("psutil зламався")), \
+         caplog.at_level("ERROR", logger="monitor"):
+        with _running_loop(wd, poll_once=lambda: now.update(t=now["t"] + 10 ** 7), sleep_effect=fake_sleep, now=now,
+                           router_effect=ValueError("роутер віддав сміття")):
+            pass
+    assert slept == [monitor._poll_pause()]                       # цикл дожив до паузи
+    assert "Помилка опитування метрик Pi" in caplog.text and "Помилка опитування роутера" in caplog.text

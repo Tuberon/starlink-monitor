@@ -16,7 +16,7 @@ Pi, як і тут) - цей сервіс тоді одразу завершує
 import logging
 import time
 
-from app import config, db, gpio_utils, i18n, log_redact, pi_power
+from app import config, gpio_utils, log_redact, pi_power
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,7 +66,7 @@ def watch_button() -> None:
                 continue
 
             if tracker.poll(value) == "long_press":
-                _trigger_shutdown(pin)
+                pi_power.shutdown_from_button(pin)
 
             time.sleep(config.SHUTDOWN_BUTTON_POLL_INTERVAL_SEC)
     finally:
@@ -77,20 +77,6 @@ def watch_button() -> None:
             # оригінальну причину завершення, лише debug-слід для
             # рідкісного edge-case.
             logger.debug("Не вдалося звільнити GPIO кнопки виключення при завершенні: %s", e)
-
-
-def _trigger_shutdown(pin: int) -> None:
-    logger.warning("Кнопка виключення утримана %.1fс на GPIO%d - виконую poweroff", config.SHUTDOWN_BUTTON_HOLD_SEC, pin)
-    try:
-        db.init_db()
-    except Exception as e:
-        logger.warning("Не вдалося ініціалізувати БД: %s", e)
-
-    pi_power.execute_pi_power_action(
-        ["sudo", "systemctl", "poweroff"], "poweroff",
-        "pi_shutdown", f"Виключення через фізичну кнопку (GPIO{pin})",
-        i18n.t("tg_pi_shutdown_button", pin=pin), i18n.t("verb_shutdown"),
-    )
 
 
 def main() -> None:

@@ -215,7 +215,7 @@ def test_run_forever_button_long_press_triggers_shutdown(fake_hardware, db_path)
 
     triggered = []
     with patch("app.gpio_utils.open_input_line", return_value=(fake_get_value, lambda: None)), \
-         patch("app.display._trigger_shutdown", side_effect=lambda pin: (triggered.append(pin), stop_event.set())), \
+         patch("app.pi_power.shutdown_from_button", side_effect=lambda pin: (triggered.append(pin), stop_event.set())), \
          patch("time.sleep"), \
          patch("time.time", side_effect=lambda: next(fake_times, 100.0)):
         display.run_forever(stop_event=stop_event)
