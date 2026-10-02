@@ -853,7 +853,7 @@ class Watchdog:
         db.init_db()
         if _poll_pause() != config.POLL_INTERVAL_SEC:
             logger.warning(
-                "STARLINK_POLL_INTERVAL_SEC=%r поза межами 1..3600 - використовую %d с (виправте на /settings)",
+                "STARLINK_POLL_INTERVAL=%r поза межами 1..3600 - використовую %d с (виправте на /settings)",
                 config.POLL_INTERVAL_SEC, _POLL_PAUSE_DEFAULT_SEC,
             )
         logger.info("Starlink watchdog запущено. Опитування кожні %d с.", _poll_pause())

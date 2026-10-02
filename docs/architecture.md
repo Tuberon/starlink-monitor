@@ -214,10 +214,13 @@ WAL journal_mode — паралельне читання (webui) і запис (
   `*_notified` пари — див. нижче)
 
 **Write-only колонки, залишені в схемі без запису** (аудит показав, що
-ніде не читаються - `metrics.currently_obstructed` дублює `obstruction_fraction`, `router_status.bootcount` ніколи не відображався, `events.last_ts` дублював `ts` в одному й тому самому UPDATE): значення `NULL`
-для нових рядків, старі рядки не чіпались. Схема НЕ змінена (без `DROP
-COLUMN`) - менший ризик для вже існуючих БД на реальних пристроях, ніж
-міграція.
+ніколи не читаються: `metrics.currently_obstructed` дублює
+`obstruction_fraction`, `router_status.bootcount` ніколи не
+відображався, `events.last_ts` дублював `ts` в одному й тому самому
+UPDATE): значення `NULL` для нових рядків, старі рядки не чіпались;
+`starlink_client` ці два поля відповіді Starlink більше й не розбирає.
+Схема НЕ змінена (без `DROP COLUMN`) — менший ризик для вже існуючих БД
+на реальних пристроях, ніж міграція.
 - `known_devices` — по одному рядку на dish_id: версії ПЗ dish/router
   і час останньої зміни кожної. Джерело для `/id <dish_id>` у Telegram-боті.
   `upsert_known_device_dish()`/`upsert_known_device_router()` повертають

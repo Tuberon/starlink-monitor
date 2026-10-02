@@ -42,7 +42,7 @@
 - [x] Telegram eth0-fallback (SO_BINDTODEVICE + ручний DNS) при недоступному Starlink
 - [x] Системний WAN-failover (wlan0↔eth0 route-metric) - для всієї системи, не лише Telegram
 - [x] Watchdog для watchdog-а (healthcheck-таймер, force-restart при зависанні)
-- [x] Періодичний VACUUM/ANALYZE SQLite (раз на добу)
+- [x] Періодичний ANALYZE SQLite (раз на добу); VACUUM — лише коли вільних сторінок ≥ 30%
 - [x] Ротація журналу systemd (SystemMaxUse=200M)
 - [x] Менша частота опитування дашборду при прихованій вкладці (visibilitychange)
 - [x] Фізичний TFT-дисплей статусу (ST7789, SPI), вимкнено за замовчуванням

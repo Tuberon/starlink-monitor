@@ -300,7 +300,7 @@ ruff check .
 
 ## ✅ Тести
 
-804 тести (`pytest-randomly` — стійкість до порядку виконання), 23
+805 тестів (`pytest-randomly` — стійкість до порядку виконання), 23
 файли у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -335,7 +335,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 804 тести (23 файли), pytest-randomly
+├── tests/          # 805 тестів (23 файли), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md

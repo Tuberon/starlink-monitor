@@ -158,7 +158,6 @@ class DishStatus:
     ping_latency_ms: float = 0.0
     ping_drop_ratio: float = 0.0
     obstruction_fraction: float = 0.0
-    currently_obstructed: bool = False
     software_version: str = ""
     hardware_version: str = ""
     dish_id: str = ""
@@ -189,7 +188,6 @@ class RouterInfo:
     online: bool
     software_version: str = ""
     hardware_version: str = ""
-    bootcount: int = 0
     error: str = ""
     # Стан оновлення ПЗ роутера (окрема схема WifiSoftwareUpdateStats)
     update_state: str = ""
@@ -244,10 +242,8 @@ class StarlinkClient:
             ping_drop = getattr(resp, "pop_ping_drop_rate", 0.0) or 0.0
 
             obstruction_fraction = 0.0
-            currently_obstructed = False
             if obstruction_stats is not None:
                 obstruction_fraction = getattr(obstruction_stats, "fraction_obstructed", 0.0) or 0.0
-                currently_obstructed = bool(getattr(obstruction_stats, "currently_obstructed", False))
 
             uptime_s = 0
             if device_state is not None:
@@ -305,7 +301,6 @@ class StarlinkClient:
                 ping_latency_ms=round(ping_latency, 1),
                 ping_drop_ratio=round(ping_drop, 4),
                 obstruction_fraction=round(obstruction_fraction, 4),
-                currently_obstructed=currently_obstructed,
                 software_version=software_version,
                 hardware_version=hardware_version,
                 dish_id=dish_id,
@@ -425,7 +420,6 @@ class StarlinkClient:
                 online=True,
                 software_version=str(device_info.get("softwareVersion", "")),
                 hardware_version=str(device_info.get("hardwareVersion", "")),
-                bootcount=int(device_info.get("bootcount", 0) or 0),
                 update_state=update_state,
                 update_progress_pct=update_progress_pct,
                 active_alerts=active_alerts,

@@ -351,7 +351,7 @@ def test_router_parses_full_valid_response():
     assert r.error == ""
     assert r.software_version == "2025.10.03.mr61821"
     assert r.hardware_version == "rev2"
-    assert r.bootcount == 3
+    # bootcount є у відповіді, але клієнт його не читає (ніхто не споживав) - розбір не ламається
 
 
 def test_router_missing_grpcurl_returns_offline():

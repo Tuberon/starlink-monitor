@@ -482,3 +482,24 @@ def test_mypy_config_stays_strict():
     assert sorted(strict - enabled) == [], "ослаблено суворий режим mypy"
     ignored = {sec[5:] for sec in cfg.sections() if sec.startswith("mypy-") and cfg[sec].get("ignore_missing_imports") == "True"}
     assert ignored == {"gpiod.*", "board", "digitalio", "busio", "adafruit_rgb_display.*"}, ignored
+
+
+def test_env_var_names_in_app_strings_exist_in_config():
+    """Повідомлення й докстрінги не називають неіснуючих змінних середовища.
+    Раніше попередження про поганий інтервал радило виправити
+    STARLINK_POLL_INTERVAL_SEC, а справжня змінна - STARLINK_POLL_INTERVAL."""
+    import ast
+    import glob
+    import re
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    known = set(re.findall(r'"(STARLINK_[A-Z0-9_]+)"', (root / "app" / "config.py").read_text(encoding="utf-8")))
+    assert len(known) > 50
+    unknown = []
+    for path in sorted(glob.glob(str(root / "app" / "*.py"))):
+        if path.endswith("config.py"):
+            continue
+        for node in ast.walk(ast.parse(Path(path).read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):     # включно з частинами f-рядків і докстрінгами
+                unknown += [(Path(path).name, node.lineno, name) for name in re.findall(r"\bSTARLINK_[A-Z0-9_]+\b", node.value) if name not in known]
+    assert unknown == [], f"назви змінних, яких немає в config.py: {unknown}"
