@@ -188,6 +188,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "unit_ms": {"uk": "мс", "en": "ms"},
     "unit_ghz": {"uk": "ГГц", "en": "GHz"},
     "example_abbr": {"uk": "напр.", "en": "e.g."},
+    "cross_site_blocked": {"uk": "запит із іншого сайту заблоковано", "en": "cross-site request blocked"},
     "invalid_address": {"uk": "некоректна адреса: очікується host:порт (напр. 192.168.100.1:9200)", "en": "invalid address: expected host:port (e.g. 192.168.100.1:9200)"},
     "unit_dbm": {"uk": "дБм", "en": "dBm"},
     "clients_none": {"uk": "немає підключених клієнтів", "en": "no connected clients"},

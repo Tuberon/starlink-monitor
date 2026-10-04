@@ -149,3 +149,21 @@ def test_readme_test_and_file_counts_match_reality():
             elif int(match.group(1)) != actual:
                 wrong.append(f"{rel}: каже {match.group(1)}, фактично {actual}")
     assert wrong == [], "оновіть лічильники в README: " + "; ".join(wrong)
+
+
+def _github_slug(title):
+    """Якір заголовка як у GitHub: нижній регістр, символи крім літер/цифр/пробілу/дефіса/_ видаляються
+    (разом з емодзі й U+FE0F), пробіли -> дефіси; ведучий пробіл після емодзі дає ведучий дефіс."""
+    return re.sub(r"[^\w\- ]", "", title.lower()).replace(" ", "-")
+
+
+@pytest.mark.parametrize("rel", ["README.md", "README.en.md"])
+def test_readme_table_of_contents_matches_the_headings(rel):
+    """Зміст містить КОЖЕН розділ `##` у тому самому порядку, і кожне посилання веде на існуючий заголовок.
+    Раніше новий розділ міг з'явитись без запису в змісті (або лишитись із застарілим якорем)."""
+    text = _read(rel)
+    toc = re.search(r"\*\*(?:Зміст|Contents)\*\*:(.*?)\n\s*\n", text, re.S)
+    assert toc, "не знайдено рядка змісту"
+    links = [link.replace("\ufe0f", "") for link in re.findall(r"\]\(#([^)]+)\)", toc.group(1))]
+    headings = [_github_slug(h) for h in re.findall(r"(?m)^## (.+)$", re.sub(r"```.*?```", "", text, flags=re.S))]
+    assert links == headings, f"зміст і заголовки розходяться: {sorted(set(links) ^ set(headings))}"

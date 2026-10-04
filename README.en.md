@@ -14,7 +14,7 @@ Autonomous monitor and watchdog for Starlink Mini on Raspberry Pi Zero 2 W.
 [Load reduction](#-reducing-system-load-optional-during-installation) ·
 [Type checking](#-type-checking-mypy) · [Tests](#-tests) ·
 [Structure](#️-project-structure) · [Installation](#-installation-and-updates) ·
-[Configuration](#️-configuration) · [License](#-license)
+[Configuration](#️-configuration) · [Dependencies](#-dependencies) · [License](#-license)
 
 ## 📋 What it does
 
@@ -299,7 +299,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-920 tests (`pytest-randomly` — resilient to execution order), 24
+1023 tests (`pytest-randomly` — resilient to execution order), 25
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -336,7 +336,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 920 tests (24 files), pytest-randomly
+├── tests/          # 1023 tests (25 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
@@ -423,6 +423,23 @@ manually:
 sudo systemctl restart starlink-monitor.service starlink-webui.service
 ```
 
+## 🧩 Dependencies
+
+`requirements.txt` pins the direct packages, `constraints.txt` the
+transitive ones (`install.sh` runs `pip install -r requirements.txt -c
+constraints.txt`; without it pip never upgraded already-installed,
+including system, versions). The hardware `adafruit-*` packages are
+deliberately not pinned. Vulnerability audit: `pip install pip-audit &&
+scripts/audit_deps.sh`.
+
+**Vendored `starlink_grpc.py`.** Its origin is recorded in
+`app/vendor/PROVENANCE` (upstream commit, date, sha256; a test checks
+them against the file). Updating to the latest upstream version is
+optional, via `scripts/fetch_starlink_grpc.sh` (download to a temporary
+file, checks, `.prev` backup, atomic replace; `--commit=<sha>` — a
+specific revision; `--wait-for-dish` — wait until the dish is reachable;
+`--restart-services` — restart the services after success).
+
 ## 📄 License
 
 © 2026 JunioR. Distributed under the MIT license — see the
@@ -433,18 +450,5 @@ from a third-party repository
 [sparky8512/starlink-grpc-tools](https://github.com/sparky8512/starlink-grpc-tools)
 for build reproducibility (not downloaded dynamically during
 installation) — **its license terms are set by its own author**,
-separate from this repository's MIT license (Unlicense — public
-domain). Its origin is recorded in `app/vendor/PROVENANCE` (upstream
-commit, date, sha256; a test checks them against the file). Updating to
-the latest upstream version is optional, via
-`scripts/fetch_starlink_grpc.sh` (download to a temporary file, checks,
-`.prev` backup, atomic replace; `--commit=<sha>` — a specific revision;
-`--wait-for-dish` — wait until the dish is reachable; `--restart-services` —
-restart the services after success).
-
-**Dependencies.** `requirements.txt` pins the direct packages,
-`constraints.txt` the transitive ones (`install.sh` runs `pip install -r
-requirements.txt -c constraints.txt`; without it pip never upgraded
-already-installed, including system, versions). The hardware `adafruit-*`
-packages are deliberately not pinned. Vulnerability audit: `pip install
-pip-audit && scripts/audit_deps.sh`.
+separate from this repository's MIT license (Unlicense — public domain).
+Its origin and update procedure are in the “Dependencies” section.

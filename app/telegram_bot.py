@@ -8,6 +8,7 @@
 """
 import html
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -73,6 +74,16 @@ def _router_state_label(state: str) -> str:
     return labels.router_update_state_label(_shown_router_state(state))
 
 
+def _progress_suffix(pct: Any) -> str:
+    """" (42%)" - відсоток оновлення; нічого, якщо його немає, він нульовий чи не скінченний
+    (раніше друкувалось "(nan%)", "(inf%)", "(-5%)", "(150%)"). Поза 0..100 обрізається - так
+    само, як прогрес-бар на дисплеї."""
+    if not isinstance(pct, (int, float)) or isinstance(pct, bool) or not math.isfinite(pct):
+        return ""
+    clamped = max(0.0, min(100.0, float(pct)))
+    return f" ({clamped:.0f}%)" if clamped else ""
+
+
 def _update_lines(
     status: Any, *, online_key: str, offline_key: str, state_label: Callable[[str], str], with_alerts: bool,
 ) -> list[str]:
@@ -84,7 +95,7 @@ def _update_lines(
     label = state_label(status.update_state) if status.update_state else i18n.t("not_available_short")
     lines = [
         i18n.t(online_key, sw=status.software_version or "?"),
-        i18n.t("tg_update_line", label=label) + (f" ({status.update_progress_pct:.0f}%)" if status.update_progress_pct else ""),
+        i18n.t("tg_update_line", label=label) + _progress_suffix(status.update_progress_pct),
     ]
     if with_alerts and status.active_alerts:
         lines.append(i18n.t("tg_alerts_count_line", n=len(status.active_alerts)))

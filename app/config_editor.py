@@ -15,6 +15,7 @@ import re
 from typing import Any, Callable, Optional
 
 from app import config, i18n
+from app.atomic_io import atomic_write_text
 
 logger = logging.getLogger("config_editor")
 
@@ -318,8 +319,7 @@ def save_values(values: dict[str, str]) -> tuple[bool, str]:
                 new_lines.append(f"{key}={value}\n")
 
         os.makedirs(os.path.dirname(ENV_FILE_PATH), exist_ok=True)
-        with open(ENV_FILE_PATH, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
+        atomic_write_text(ENV_FILE_PATH, "".join(new_lines))      # не обнуляє файл до запису (обрив живлення)
         return True, "збережено"
     except OSError as e:
         logger.warning("Не вдалося записати %s: %s", ENV_FILE_PATH, e)

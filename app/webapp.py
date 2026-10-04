@@ -5,6 +5,7 @@ import os
 import re
 import time
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, render_template, request
 from flask.json.provider import DefaultJSONProvider
@@ -110,6 +111,27 @@ class _FiniteJSONProvider(DefaultJSONProvider):
 
     def dumps(self, obj: Any, **kwargs: Any) -> str:
         return super().dumps(_scrub_non_finite(obj), **kwargs)
+
+
+@app.before_request
+def _reject_cross_site_posts() -> Any:
+    """Захист від CSRF. Автентифікації немає (рішення власника: довірена LAN), але сторінка з
+    будь-якого сайту, відкрита в браузері будь-якого комп'ютера LAN, могла б надіслати "просту"
+    міжсайтову форму (text/plain, без прелайту) на /api/system-shutdown чи /api/system-reboot -
+    і вимкнути станцію разом з інтернетом (виміряно: усі POST-ендпоінти виконувались). Браузер сам
+    виставляє Origin і Sec-Fetch-Site (скрипт сторінки їх підробити не може); curl/скрипти без
+    цих заголовків працюють як раніше. Не захищає від DNS-rebinding (запит тоді "same-origin"
+    з чужого імені)."""
+    if request.method != "POST":
+        return None
+    fetch_site = request.headers.get("Sec-Fetch-Site")
+    origin = request.headers.get("Origin")
+    cross_site = fetch_site is not None and fetch_site not in ("same-origin", "none")
+    if origin is not None and not cross_site:
+        cross_site = urlparse(origin).netloc != request.host            # "null" (opaque origin) -> порожній netloc -> блок
+    if cross_site:
+        return jsonify({"success": False, "error": i18n.t("cross_site_blocked")}), 403
+    return None
 
 
 _json_provider = _FiniteJSONProvider(app)

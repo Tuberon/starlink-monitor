@@ -20,6 +20,7 @@ import time
 from typing import Any, Callable, Optional
 
 from app import config, config_editor, db, i18n, telegram_notify
+from app.atomic_io import atomic_write_text
 from app.starlink_client import DishStatus, RouterInfo, StarlinkClient
 
 logger = logging.getLogger("services")
@@ -208,6 +209,14 @@ def build_backup_dict() -> dict[str, Any]:
     }
 
 
+def _backup_epoch(name: str) -> int:
+    """backup-<epoch>.json -> epoch числом; не-числове ім'я -> -1 (видаляється першим)."""
+    try:
+        return int(name[len("backup-"):-len(".json")])
+    except ValueError:
+        return -1
+
+
 def perform_auto_backup() -> None:
     """Записує backup у файл з ротацією (зберігає останні AUTO_BACKUP_
     KEEP_COUNT копій, видаляє старіші) - страховка від втрати known_
@@ -220,8 +229,7 @@ def perform_auto_backup() -> None:
     backup = build_backup_dict()
     ts = int(backup["created_at"])
     path = os.path.join(config.AUTO_BACKUP_DIR, f"backup-{ts}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(backup, f, ensure_ascii=False)
+    atomic_write_text(path, json.dumps(backup, ensure_ascii=False), mode=0o600)    # обірваний backup не стає "найновішим"
     # Той самий Telegram bot token у відкритому вигляді, що вже
     # захищений через chmod 600 у install.sh для /etc/starlink-
     # monitor/env - без явного chmod тут файл покладався б лише на
@@ -229,10 +237,17 @@ def perform_auto_backup() -> None:
     # користувачами на тому самому Pi (0644 - типовий umask-дефолт).
     os.chmod(path, 0o600)
 
-    existing = sorted(
-        (f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json")),
+    # Щойно записаний файл НІКОЛИ не видаляється, а сортування - числове за epoch в імені:
+    # (1) після зсуву годинника НАЗАД новий backup мав би найменше ім'я й видалявся б тим самим
+    # викликом, що його створив (автобекап мовчки нічого не зберігав би, поки годинник не
+    # "наздожене"); (2) рядкове сортування ставило б backup-9999 пізніше за backup-1790000000.
+    just_written = os.path.basename(path)
+    older = sorted(
+        (f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json") and f != just_written),
+        key=_backup_epoch,
     )
-    for old_name in existing[:-config.AUTO_BACKUP_KEEP_COUNT] if config.AUTO_BACKUP_KEEP_COUNT > 0 else []:
+    to_remove = older[:max(len(older) - (config.AUTO_BACKUP_KEEP_COUNT - 1), 0)] if config.AUTO_BACKUP_KEEP_COUNT > 0 else []
+    for old_name in to_remove:
         try:
             os.remove(os.path.join(config.AUTO_BACKUP_DIR, old_name))
         except OSError as e:

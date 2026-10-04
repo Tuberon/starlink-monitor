@@ -1003,3 +1003,12 @@ def test_status_shows_alert_counts_but_checkupdates_does_not(db_path):
         assert i18n.t("tg_alerts_count_line", n=n) in status_text
         assert i18n.t("tg_alerts_count_line", n=n) not in check_text
     assert i18n.t("tg_dish_online_line", sw="v1") in status_text and i18n.t("tg_dish_line_short", sw="v1") in check_text   # різні рядки "онлайн"
+
+
+@pytest.mark.parametrize("pct, expected", [
+    (42.3, " (42%)"), (0.4, " (0%)"), (0.6, " (1%)"), (0.0, ""), (None, ""), (100.0, " (100%)"),
+    (150.0, " (100%)"), (-5.0, ""), (float("nan"), ""), (float("inf"), ""), (float("-inf"), ""), (True, ""), ("42", ""),
+])
+def test_progress_suffix_is_clamped_and_never_prints_nan_or_inf(pct, expected):
+    """Раніше друкувалось "(nan%)", "(inf%)", "(-5%)", "(150%)"; дисплей обмежував 0..100, Telegram - ні."""
+    assert telegram_bot._progress_suffix(pct) == expected

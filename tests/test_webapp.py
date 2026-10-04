@@ -1146,3 +1146,50 @@ def test_dashboard_shows_current_state_after_clock_step_back(client, db_path):
     db.insert_metric(DishStatus(timestamp=now + 7200, online=True, dish_id="d1").to_dict())
     db.insert_metric(DishStatus(timestamp=now - 5, online=False, dish_id="d1", error="timeout").to_dict())
     assert client.get("/api/status").get_json()["latest"]["online"] == 0
+
+
+# ---- CSRF: POST з чужого сайту відхиляється, нічого не виконується ----
+
+_POST_ROUTES = sorted({r.rule for r in flask_app.url_map.iter_rules() if "POST" in (r.methods or ()) and not r.rule.startswith("/static")})
+_CROSS_SITE_HEADERS = [
+    {"Origin": "http://evil.example"},
+    {"Origin": "null"},                                              # opaque origin (sandboxed iframe, редирект)
+    {"Sec-Fetch-Site": "cross-site"},
+    {"Sec-Fetch-Site": "same-site"},
+    {"Origin": "http://evil.example", "Sec-Fetch-Site": "same-origin"},    # заголовки суперечать - перевага у Origin
+]
+
+
+@pytest.mark.parametrize("path", _POST_ROUTES)
+@pytest.mark.parametrize("headers", _CROSS_SITE_HEADERS, ids=lambda h: "+".join(h))
+def test_cross_site_post_is_rejected_and_nothing_is_executed(client, path, headers):
+    """"Проста" міжсайтова форма (text/plain, без прелайту) виконувала /api/system-shutdown,
+    /api/system-reboot, перезапуск сервісів - з будь-якого сайту, відкритого в LAN."""
+    from unittest.mock import MagicMock, patch
+    executed = []
+    with patch("subprocess.run", side_effect=lambda *a, **k: executed.append(a)), \
+         patch("subprocess.Popen", MagicMock(side_effect=lambda *a, **k: executed.append(a))), \
+         patch("threading.Timer", MagicMock(side_effect=lambda *a, **k: executed.append(a))), \
+         patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **k: executed.append(a)):
+        response = client.post(path, headers=headers, content_type="text/plain", data=b"")
+    assert response.status_code == 403 and response.get_json()["success"] is False
+    assert executed == []
+
+
+@pytest.mark.parametrize("headers", [
+    {},                                                              # curl / скрипти без заголовків браузера
+    {"Origin": "http://localhost"},                                  # той самий origin (test client: Host = localhost)
+    {"Sec-Fetch-Site": "same-origin"},
+    {"Sec-Fetch-Site": "none"},
+    {"Origin": "http://localhost", "Sec-Fetch-Site": "same-origin"},
+], ids=lambda h: "+".join(h) or "без заголовків")
+def test_same_origin_and_non_browser_posts_are_not_blocked(client, db_path, headers):
+    """Не лише "не 403", а справжній успіх з ефектом: слабка версія проходила б і з 400 (неправильний ключ)."""
+    db.set_setting("ui_language", "uk")
+    response = client.post("/api/set-language", json={"lang": "en"}, headers=headers)
+    assert response.status_code == 200 and response.get_json()["success"] is True
+    assert db.get_setting("ui_language") == "en"
+
+
+def test_get_requests_are_not_affected_by_the_cross_site_guard(client):
+    assert client.get("/api/status", headers={"Origin": "http://evil.example", "Sec-Fetch-Site": "cross-site"}).status_code == 200

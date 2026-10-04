@@ -446,3 +446,64 @@ def test_firmware_change_notifies_once_under_concurrent_upserts(sink, db_path):
     new = DishStatus(timestamp=2.0, online=True, dish_id="dRACE", hardware_version="rev4", software_version="v2")
     _run_concurrently(lambda: services.upsert_dish_and_notify(new, sink._notify))
     assert len(sink.sent) == 1 and "v2" in sink.sent[0]
+
+
+# ---- ротація автобекапів ----
+
+def _backup_names(directory):
+    import os
+    return sorted(n[len("backup-"):-len(".json")] for n in os.listdir(directory) if n.startswith("backup-"))
+
+
+def _backup_at(epoch, monkeypatch, tmp_path, keep):
+    from unittest.mock import patch
+    from app import config
+    monkeypatch.setattr(config, "AUTO_BACKUP_DIR", str(tmp_path / "b"))
+    monkeypatch.setattr(config, "AUTO_BACKUP_KEEP_COUNT", keep)
+    with patch("time.time", return_value=float(epoch)):
+        services.perform_auto_backup()
+
+
+def test_backup_rotation_keeps_the_newest_n(db_path, monkeypatch, tmp_path):
+    for epoch in range(1_800_000_000, 1_800_000_000 + 5 * 3600, 3600):
+        _backup_at(epoch, monkeypatch, tmp_path, keep=3)
+    assert _backup_names(tmp_path / "b") == ["1800007200", "1800010800", "1800014400"]
+
+
+def test_new_backup_survives_when_the_clock_steps_back(db_path, monkeypatch, tmp_path):
+    """Після зсуву годинника назад новий backup мав найменше ім'я й видалявся тим самим викликом,
+    що його створив: автобекап мовчки нічого не зберігав."""
+    for epoch in (1_800_003_600, 1_800_007_200, 1_800_010_800):
+        _backup_at(epoch, monkeypatch, tmp_path, keep=3)
+    _backup_at(1_800_000_000, monkeypatch, tmp_path, keep=3)          # годинник на 3 години назад
+    names = _backup_names(tmp_path / "b")
+    assert "1800000000" in names and len(names) == 3
+
+
+def test_backup_rotation_orders_numerically_not_alphabetically(db_path, monkeypatch, tmp_path):
+    """Рядково backup-9999 більший за backup-1790000000 (годинник Pi без RTC після аварійного вимкнення)."""
+    from app import config
+    monkeypatch.setattr(config, "AUTO_BACKUP_DIR", str(tmp_path / "b"))
+    (tmp_path / "b").mkdir()
+    for epoch in (9999, 1_790_000_000):
+        (tmp_path / "b" / f"backup-{epoch}.json").write_text("{}", encoding="utf-8")
+    _backup_at(1_800_000_000, monkeypatch, tmp_path, keep=2)
+    assert _backup_names(tmp_path / "b") == ["1790000000", "1800000000"]       # 9999 - найстаріший, а не найновіший
+
+
+def test_backup_keep_count_one_and_zero(db_path, monkeypatch, tmp_path):
+    _backup_at(1_800_000_000, monkeypatch, tmp_path, keep=1)
+    _backup_at(1_800_003_600, monkeypatch, tmp_path, keep=1)
+    assert _backup_names(tmp_path / "b") == ["1800003600"]
+    _backup_at(1_800_007_200, monkeypatch, tmp_path, keep=0)           # 0 = без ротації
+    assert _backup_names(tmp_path / "b") == ["1800003600", "1800007200"]
+
+
+def test_backup_rotation_ignores_foreign_files(db_path, monkeypatch, tmp_path):
+    (tmp_path / "b").mkdir()
+    (tmp_path / "b" / "notes.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "b" / "backup-abc.json").write_text("{}", encoding="utf-8")       # нечислове ім'я - видаляється першим
+    for epoch in (1_800_000_000, 1_800_003_600):
+        _backup_at(epoch, monkeypatch, tmp_path, keep=2)
+    import os
+    assert (tmp_path / "b" / "notes.txt").exists() and "backup-abc.json" not in os.listdir(tmp_path / "b")

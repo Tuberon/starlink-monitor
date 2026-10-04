@@ -14,7 +14,7 @@
 [Навантаження](#-зниження-системного-навантаження-опційно-при-встановленні) ·
 [Типізація](#-типізація-mypy) · [Тести](#-тести) ·
 [Структура](#️-структура-проєкту) · [Встановлення](#-встановлення-та-оновлення) ·
-[Конфігурація](#️-конфігурація) · [Ліцензія](#-ліцензія)
+[Конфігурація](#️-конфігурація) · [Залежності](#-залежності) · [Ліцензія](#-ліцензія)
 
 ## 📋 Що робить
 
@@ -300,7 +300,7 @@ ruff check .
 
 ## ✅ Тести
 
-920 тестів (`pytest-randomly` — стійкість до порядку виконання), 24
+1023 тести (`pytest-randomly` — стійкість до порядку виконання), 25
 файли у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -335,7 +335,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 920 тестів (24 файли), pytest-randomly
+├── tests/          # 1023 тести (25 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
@@ -419,6 +419,22 @@ GPIO-піни опційних фіч (кнопка/LED/дисплей) — ди
 sudo systemctl restart starlink-monitor.service starlink-webui.service
 ```
 
+## 🧩 Залежності
+
+`requirements.txt` закріплює прямі пакети, `constraints.txt` —
+транзитивні (`install.sh` ставить `pip install -r requirements.txt -c
+constraints.txt`; без цього pip ніколи не оновлював уже встановлені,
+зокрема системні, версії). Апаратні `adafruit-*` свідомо не закріплені.
+Аудит вразливостей: `pip install pip-audit && scripts/audit_deps.sh`.
+
+**Vendored `starlink_grpc.py`.** Походження зафіксовано в
+`app/vendor/PROVENANCE` (upstream-коміт, дата, sha256; тест звіряє їх з
+файлом). Оновлення до найновішої upstream-версії — опційно,
+`scripts/fetch_starlink_grpc.sh` (завантаження у тимчасовий файл,
+перевірки, резервна копія `.prev`, атомарна заміна; `--commit=<sha>` —
+конкретна ревізія; `--wait-for-dish` — чекати доступності тарілки;
+`--restart-services` — перезапустити сервіси після успіху).
+
 ## 📄 Ліцензія
 
 © 2026 JunioR. Розповсюджується під ліцензією MIT — див. файл
@@ -428,17 +444,6 @@ sudo systemctl restart starlink-monitor.service starlink-webui.service
 стороннього репозиторію
 [sparky8512/starlink-grpc-tools](https://github.com/sparky8512/starlink-grpc-tools)
 для відтворюваності збірки (не завантажується динамічно при
-встановленні) — **його ліцензійні умови визначає власний автор**,
-окремо від MIT цього репозиторію (Unlicense — суспільне надбання).
-Походження зафіксовано в `app/vendor/PROVENANCE` (upstream-коміт, дата,
-sha256; тест звіряє їх з файлом). Оновлення до найновішої upstream-версії —
-опційно, `scripts/fetch_starlink_grpc.sh` (завантаження у тимчасовий файл,
-перевірки, резервна копія `.prev`, атомарна заміна; `--commit=<sha>` —
-конкретна ревізія; `--wait-for-dish` — чекати доступності тарілки;
-`--restart-services` — перезапустити сервіси після успіху).
-
-**Залежності.** `requirements.txt` закріплює прямі пакети, `constraints.txt` —
-транзитивні (`install.sh` ставить `pip install -r requirements.txt -c
-constraints.txt`; без цього pip ніколи не оновлював уже встановлені, зокрема
-системні, версії). Апаратні `adafruit-*` свідомо не закріплені. Аудит
-вразливостей: `pip install pip-audit && scripts/audit_deps.sh`.
+встановленні) — **його ліцензійні умови визначає власний автор**, окремо
+від MIT цього репозиторію (Unlicense — суспільне надбання). Походження й
+оновлення — у розділі «Залежності».
