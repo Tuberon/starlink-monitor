@@ -164,7 +164,11 @@ class _Periodic:
             return False
         if self._interval is not None:
             interval = self._interval() if callable(self._interval) else self._interval
-            if not time.time() - self.last > interval:     # саме так: NaN -> не виконується
+            elapsed = time.time() - self.last
+            # elapsed < 0: годинник стрибнув НАЗАД (ручна зміна часу, RTC, збій
+            # NTP). Без цього задача мовчала б, поки годинник не "наздожене"
+            # мітку з майбутнього (вимір: після зсуву на 2 год 6 з 7 задач).
+            if not (elapsed > interval or elapsed < 0):     # NaN-інтервал: не виконується
                 return False
         try:
             self._action()
@@ -665,6 +669,17 @@ class Watchdog:
 
         self.prev_router_alerts = current
 
+    def _clamp_future_timestamps(self, now: float) -> None:
+        """Мітки "останньої події" з МАЙБУТНЬОГО (годинник стрибнув назад) скидаємо
+        на зараз: інакше `now - last < MIN_REBOOT_INTERVAL_SEC` блокувало б авто-reboot
+        зависшої тарілки на весь розмір зсуву (вимір: на 2 год), а відправку бекапу в
+        Telegram - так само. Захист від reboot-loop зберігається: вікно рахується від
+        моменту зсуву."""
+        if self.last_reboot_ts > now:
+            self.last_reboot_ts = now
+        if self.last_telegram_backup_sent_ts > now:
+            self.last_telegram_backup_sent_ts = now
+
     def _reboot_for_update_ready(self, component: str, reason: str) -> None:
         """Спільна логіка для _maybe_reboot_for_update/_maybe_reboot_for_router_update:
         обидва мають ідентичну послідовність дій (лише текст сповіщень
@@ -673,6 +688,7 @@ class Watchdog:
         однаковим в обох місцях (див. reboot-loop баг у _maybe_reboot)."""
         name_uk = services.component_text(component, services.COMPONENT_UPDATE, i18n.translator("uk"))
         now = time.time()
+        self._clamp_future_timestamps(now)
         if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
             logger.info(
                 "Оновлення ПЗ %s готове до встановлення, але пропускаю авто-reboot: "
@@ -735,6 +751,7 @@ class Watchdog:
         if not config.TELEGRAM_BACKUP_ENABLED:
             return
         now = time.time()
+        self._clamp_future_timestamps(now)
         if now - self.last_telegram_backup_sent_ts < config.TELEGRAM_BACKUP_INTERVAL_HOURS * 3600:
             return
 
@@ -770,6 +787,7 @@ class Watchdog:
             return
 
         now = time.time()
+        self._clamp_future_timestamps(now)
         if now - self.last_reboot_ts < config.MIN_REBOOT_INTERVAL_SEC:
             # Один рядок на вікно очікування - раніше писався на КОЖНОМУ
             # опитуванні (~30 рядків за вікно, сотні за ніч на SD-картку).
@@ -913,7 +931,8 @@ class Watchdog:
                 # зчитувань замість запису кожного окремо кожні 10с. Свій
                 # таймер (self.last_batch_flush_ts) - його оновлює й
                 # flush при зміні стану, тож це не _Periodic.
-                if time.time() - self.last_batch_flush_ts > config.DISH_METRICS_BATCH_INTERVAL_SEC:
+                flush_elapsed = time.time() - self.last_batch_flush_ts
+                if flush_elapsed > config.DISH_METRICS_BATCH_INTERVAL_SEC or flush_elapsed < 0:   # < 0: годинник назад
                     self.flush_metrics_buffer()
 
                 for task in tasks:

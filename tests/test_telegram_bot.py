@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app import db, i18n, telegram_bot
+from app import db, i18n, labels, telegram_bot
 from app.starlink_client import DishStatus, RouterInfo
 
 
@@ -936,3 +936,70 @@ def test_id_multiple_matches_keeps_code_tags_and_escapes_ids(db_path):
     text = _sent_texts(lambda: bot._cmd_id("t", "1", "ut<"))[0]
     assert_valid_telegram_html(text)
     assert "<code>ut&lt;1&gt;&amp;a</code>" in text and "<code>ut&lt;2&gt;&amp;b</code>" in text
+
+
+# ---- _update_lines: спільний збирач рядків для /status і /checkupdates ----
+
+def _status(**kw):
+    from app.starlink_client import DishStatus
+    return DishStatus(timestamp=1.0, **kw)
+
+
+def _lines(status, **kw):
+    kw.setdefault("online_key", "tg_dish_online_line")
+    kw.setdefault("offline_key", "tg_dish_offline_line")
+    kw.setdefault("state_label", labels.update_state_label)
+    kw.setdefault("with_alerts", True)
+    return telegram_bot._update_lines(status, **kw)
+
+
+def test_update_lines_offline_gives_one_short_error_line(db_path):
+    lines = _lines(_status(online=False, error='<_Rendezvous\n\tdetails = "refused"\n>'))
+    assert len(lines) == 1 and "refused" in lines[0] and "_Rendezvous" not in lines[0]
+
+
+def test_update_lines_offline_without_error_says_no_response(db_path):
+    assert i18n.t("no_response") in _lines(_status(online=False, error=""))[0]
+
+
+def test_update_lines_online_has_version_and_update_line_and_progress(db_path):
+    lines = _lines(_status(online=True, software_version="v7", update_state="FETCHING", update_progress_pct=42.3))
+    assert len(lines) == 2 and "v7" in lines[0] and lines[1].endswith("(42%)")
+
+
+def test_update_lines_without_state_or_progress_is_clean(db_path):
+    lines = _lines(_status(online=True, software_version="", update_state=""))
+    assert "?" in lines[0] and i18n.t("not_available_short") in lines[1] and "%" not in lines[1]
+
+
+def test_update_lines_alerts_count_only_when_asked(db_path):
+    status = _status(online=True, active_alerts=["roaming", "thermal_throttle"])
+    assert len(_lines(status, with_alerts=True)) == 3 and len(_lines(status, with_alerts=False)) == 2
+    assert len(_lines(_status(online=True, active_alerts=[]), with_alerts=True)) == 2      # немає попереджень - немає рядка
+
+
+def test_router_state_label_hides_temporary_cloud_failures(db_path):
+    shown = telegram_bot._router_state_label("GETTING_TARGET_VERSION_FAILED")
+    assert shown == labels.router_update_state_label("NOT_RUN")                             # як на дашборді й дисплеї
+    assert telegram_bot._router_state_label("FLASHING") == labels.router_update_state_label("FLASHING")
+
+
+def test_status_shows_alert_counts_but_checkupdates_does_not(db_path):
+    """Різниця між командами (раніше - у двох скопійованих блоках): /status рахує
+    попередження dish і роутера, /checkupdates - ні."""
+    from unittest.mock import patch
+    dish = DishStatus(timestamp=1.0, online=True, software_version="v1", update_state="IDLE", active_alerts=["roaming", "thermal_throttle"])
+    router = RouterInfo(timestamp=1.0, online=True, software_version="r1", update_state="NOT_RUN", active_alerts=["thermal_throttle"])
+    bot = telegram_bot.TelegramBot()
+    bot.client.get_status = lambda: dish
+    bot.client.get_router_info = lambda: router
+    sent = []
+    with patch.object(bot, "_send", side_effect=lambda t, c, text: sent.append(text)), \
+         patch("app.services.check_updates_now", return_value=(dish, router)), patch("app.telegram_notify.send_message"):
+        bot._cmd_status("t", "1")
+        bot._cmd_check_updates("t", "1")
+    status_text, check_text = sent
+    for n in (2, 1):
+        assert i18n.t("tg_alerts_count_line", n=n) in status_text
+        assert i18n.t("tg_alerts_count_line", n=n) not in check_text
+    assert i18n.t("tg_dish_online_line", sw="v1") in status_text and i18n.t("tg_dish_line_short", sw="v1") in check_text   # різні рядки "онлайн"

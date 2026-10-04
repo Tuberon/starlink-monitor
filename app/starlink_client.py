@@ -15,6 +15,7 @@ import logging
 import shutil
 import socket
 import subprocess
+import threading
 import time
 import types
 from dataclasses import dataclass, asdict, field
@@ -128,23 +129,43 @@ ROUTER_ALERT_FIELD_NAMES = [
     "wired_mesh_not_using_wan_iface",
 ]
 
-starlink_grpc: Optional[types.ModuleType]
+# Vendored gRPC-модуль вантажиться ЛЕДАЧЕ - при першому зверненні до тарілки, а не при імпорті
+# цього модуля. gRPC + protobuf + yagrc + vendored файл = ~21 МБ RSS і ~85 мс (x86; на Pi Zero
+# 2 W відчутно більше), а веб-процес імпортує app.starlink_client заради двох кнопок ("перевірити
+# оновлення", "перезавантажити тарілку"): дашборд читає лише БД, тож тримав цей стек усе життя
+# даремно. Значення: модуль / None (недоступний) / _UNLOADED (ще не завантажували). Тести
+# підміняють глобальну змінну starlink_grpc напряму (patch.object) - _grpc_module() це поважає.
+_UNLOADED: Any = object()
+starlink_grpc: Any = _UNLOADED
 # Чому модуль недоступний (для повідомлення про локальну несправність)
 _GRPC_UNAVAILABLE_REASON = ""
-try:
-    from app.vendor import starlink_grpc
-except Exception as _e:
-    # Exception, не лише ImportError: обірваний/пошкоджений файл дає
-    # SyntaxError (раніше монітор не стартував узагалі), а відсутній yagrc -
-    # ModuleNotFoundError. Розрізняти причини не потрібно: усі вони ЛОКАЛЬНІ
-    # (див. DishStatus.local_fault) - тарілка тут ні до чого.
-    starlink_grpc = None
-    _GRPC_UNAVAILABLE_REASON = f"{type(_e).__name__}: {_e}"[:200]
-    logger.error(
-        "starlink_grpc недоступний (%s). Відновіть app/vendor/starlink_grpc.py: "
-        "scripts/install.sh або scripts/fetch_starlink_grpc.sh",
-        _GRPC_UNAVAILABLE_REASON,
-    )
+_grpc_load_lock = threading.Lock()
+
+
+def _grpc_module() -> Optional[types.ModuleType]:
+    """Vendored starlink_grpc (завантажується при першому виклику) або None, якщо
+    недоступний - локальна несправність, див. DishStatus.local_fault."""
+    global starlink_grpc, _GRPC_UNAVAILABLE_REASON
+    if starlink_grpc is _UNLOADED:
+        with _grpc_load_lock:              # get_status викликають потоки монітора, бота й веб-запитів
+            if starlink_grpc is _UNLOADED:
+                try:
+                    from app.vendor import starlink_grpc as module
+                except Exception as exc:
+                    # Exception, не лише ImportError: обірваний/пошкоджений файл дає
+                    # SyntaxError (раніше монітор не стартував узагалі), а відсутній yagrc -
+                    # ModuleNotFoundError. Розрізняти причини не потрібно: усі вони ЛОКАЛЬНІ
+                    # (див. DishStatus.local_fault) - тарілка тут ні до чого.
+                    _GRPC_UNAVAILABLE_REASON = f"{type(exc).__name__}: {exc}"[:200]
+                    logger.error(
+                        "starlink_grpc недоступний (%s). Відновіть app/vendor/starlink_grpc.py: "
+                        "scripts/install.sh або scripts/fetch_starlink_grpc.sh",
+                        _GRPC_UNAVAILABLE_REASON,
+                    )
+                    starlink_grpc = None
+                else:
+                    starlink_grpc = module
+    return starlink_grpc  # type: ignore[no-any-return]
 
 
 @dataclass
@@ -218,7 +239,8 @@ class StarlinkClient:
 
     def get_status(self) -> DishStatus:
         """Опитати dish. Ніколи не кидає виняток назовні — помилка кладеться в поле error."""
-        if starlink_grpc is None:
+        grpc_module = _grpc_module()
+        if grpc_module is None:
             return DishStatus(
                 timestamp=time.time(), online=False, local_fault=True,
                 error=f"starlink_grpc module missing ({_GRPC_UNAVAILABLE_REASON or 'не встановлено'})",
@@ -226,8 +248,8 @@ class StarlinkClient:
 
         context = None
         try:
-            context = starlink_grpc.ChannelContext(target=self.dish_addr)
-            resp = starlink_grpc.get_status(context)
+            context = grpc_module.ChannelContext(target=self.dish_addr)
+            resp = grpc_module.get_status(context)
             # resp - сирий protobuf DishGetStatusResponse. Поля читаємо напряму
             # (не через dict()/namedtuple - той API нестабільний між версіями).
             device_state = getattr(resp, "device_state", None)

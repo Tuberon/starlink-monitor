@@ -1,5 +1,6 @@
 """SQLite шар для історії метрик Starlink та журналу подій (reboot, оновлення)."""
 import json
+import math
 import os
 import re
 import sqlite3
@@ -231,6 +232,16 @@ def _migrate_table_columns(conn: sqlite3.Connection, table: str, new_columns: di
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
 
 
+def _finite(value: Any) -> Any:
+    """float inf/-inf -> None (NULL у БД). Нескінченні значення в метриках
+    потім потрапляли б у відповіді API як `Infinity` - це НЕвалідний JSON,
+    і `JSON.parse` у браузері падає (дашборд переставав оновлювати статус).
+    NaN SQLite і так зберігає як NULL; тут те саме правило для inf."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 def _metric_row_params(status_dict: dict[str, Any]) -> tuple[Any, ...]:
     """Формує tuple параметрів для INSERT у metrics - спільний helper
     для insert_metric() (один рядок) і insert_metrics_batch() (кілька
@@ -241,17 +252,17 @@ def _metric_row_params(status_dict: dict[str, Any]) -> tuple[Any, ...]:
         int(status_dict["online"]),
         status_dict.get("state", ""),
         status_dict.get("uptime_s", 0),
-        status_dict.get("downlink_mbps", 0),
-        status_dict.get("uplink_mbps", 0),
-        status_dict.get("ping_latency_ms", 0),
-        status_dict.get("ping_drop_ratio", 0),
-        status_dict.get("obstruction_fraction", 0),
+        _finite(status_dict.get("downlink_mbps", 0)),
+        _finite(status_dict.get("uplink_mbps", 0)),
+        _finite(status_dict.get("ping_latency_ms", 0)),
+        _finite(status_dict.get("ping_drop_ratio", 0)),
+        _finite(status_dict.get("obstruction_fraction", 0)),
         status_dict.get("software_version", ""),
         status_dict.get("hardware_version", ""),
         status_dict.get("dish_id", ""),
         status_dict.get("error", ""),
         status_dict.get("update_state", ""),
-        status_dict.get("update_progress_pct", 0),
+        _finite(status_dict.get("update_progress_pct", 0)),
         int(status_dict.get("update_requires_reboot", False)),
         int(status_dict.get("update_install_pending", False)),
         status_dict.get("active_alerts", "[]"),
@@ -340,14 +351,14 @@ def insert_system_metric(m: dict[str, Any]) -> None:
             (
                 m["timestamp"],
                 m.get("uptime_s", 0),
-                m.get("cpu_percent", 0),
-                m.get("mem_total_mb", 0),
-                m.get("mem_used_mb", 0),
-                m.get("mem_free_mb", 0),
-                m.get("disk_total_gb", 0),
-                m.get("disk_used_gb", 0),
-                m.get("disk_free_gb", 0),
-                m.get("temp_c"),
+                _finite(m.get("cpu_percent", 0)),
+                _finite(m.get("mem_total_mb", 0)),
+                _finite(m.get("mem_used_mb", 0)),
+                _finite(m.get("mem_free_mb", 0)),
+                _finite(m.get("disk_total_gb", 0)),
+                _finite(m.get("disk_used_gb", 0)),
+                _finite(m.get("disk_free_gb", 0)),
+                _finite(m.get("temp_c")),
             ),
         )
 
@@ -384,7 +395,7 @@ def set_router_status(r: dict[str, Any]) -> None:
                 r.get("hardware_version", ""),
                 r.get("error", ""),
                 r.get("update_state", ""),
-                r.get("update_progress_pct", 0),
+                _finite(r.get("update_progress_pct", 0)),
                 int(r.get("update_install_pending", False)),
                 r.get("active_alerts", "[]"),
                 r.get("clients", "[]"),
@@ -403,9 +414,18 @@ def get_router_status() -> Optional[dict[str, Any]]:
         return d
 
 
+# "Останній" запис вибирається за ts (настінний час), тож рядок з МАЙБУТНЬОГО (годинник
+# стрибнув назад: ручна зміна, RTC, збій NTP, Pi без RTC після аварійного вимкнення)
+# лишався б "останнім" і дашборд показував би застарілий стан, поки годинник не
+# "наздожене" його (вимір: тарілка вже offline, а дашборд - online на 2 год). Рядки
+# з ts пізніше "зараз + допуск" ігноруються.
+_FUTURE_TOLERANCE_SEC = 600
+
+
 def get_latest_system_metric() -> Optional[dict[str, Any]]:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM system_metrics ORDER BY ts DESC LIMIT 1").fetchone()
+        row = conn.execute("SELECT * FROM system_metrics WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
+                           (time.time() + _FUTURE_TOLERANCE_SEC,)).fetchone()
         return dict(row) if row else None
 
 
@@ -425,7 +445,8 @@ def get_recent_events(limit: int = 50) -> list[dict[str, Any]]:
 
 def get_latest_metric() -> Optional[dict[str, Any]]:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM metrics ORDER BY ts DESC LIMIT 1").fetchone()
+        row = conn.execute("SELECT * FROM metrics WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
+                           (time.time() + _FUTURE_TOLERANCE_SEC,)).fetchone()
         return _parse_metric_row(dict(row)) if row else None
 
 
@@ -526,6 +547,12 @@ def _upsert_known_device(dish_id: str, component: str, hardware_version: str, so
     sw_col = f"{component}_software_version"
     ts_col = f"{component}_software_updated_ts"
     with get_conn(durable=True) as conn:
+        # BEGIN IMMEDIATE ДО читання: інакше (sqlite3 починає транзакцію лише
+        # перед записом) два одночасних виклики - монітор і веб-кнопка, або два
+        # потоки Telegram-бота - обидва прочитали б СТАРУ версію й обидва
+        # порахували б це "реальною зміною": дубльовані сповіщення про одне
+        # оновлення прошивки (виміряно: 8 потоків -> 8 сповіщень).
+        conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute(
             f"SELECT {sw_col} FROM known_devices WHERE dish_id = ?", (dish_id,)  # noqa: S608 - колонки лише з "dish"/"router" (перевірка вище)
         ).fetchone()
@@ -672,6 +699,26 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     with get_conn() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
+
+
+def claim_setting(key: str, value: str) -> bool:
+    """Атомарно: якщо settings[key] != value - записує value й повертає True
+    (виклик "захопив" значення); якщо вже дорівнює - False. Одна транзакція
+    (BEGIN IMMEDIATE): дедублікаційні прапорці виду "про це вже сповіщено"
+    не можна робити як get_setting -> сповістити -> set_setting - два
+    одночасні виклики обидва бачили б "ще не сповіщено" (8 потоків -> 8
+    однакових сповіщень)."""
+    with get_conn(durable=True) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        if row is not None and row["value"] == value:
+            return False
+        conn.execute(
+            """INSERT INTO settings (key, value) VALUES (?, ?)
+               ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (key, value),
+        )
+        return True
 
 
 def set_setting(key: str, value: str) -> None:

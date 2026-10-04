@@ -63,9 +63,9 @@ try {
 
   <div class="grid">
     <div class="metric wide"><div class="label">{{ t('label_state') }}</div><div class="value text-value" id="mState">—</div></div>
-    <div class="metric"><div class="label">{{ t('label_downlink') }}</div><div class="value" id="mDown">—<span class="unit">Мбіт/с</span></div></div>
-    <div class="metric"><div class="label">{{ t('label_uplink') }}</div><div class="value" id="mUp">—<span class="unit">Мбіт/с</span></div></div>
-    <div class="metric"><div class="label">{{ t('label_latency') }}</div><div class="value" id="mPing">—<span class="unit">мс</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_downlink') }}</div><div class="value" id="mDown">—<span class="unit">{{ t('unit_mbps') }}</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_uplink') }}</div><div class="value" id="mUp">—<span class="unit">{{ t('unit_mbps') }}</span></div></div>
+    <div class="metric"><div class="label">{{ t('label_latency') }}</div><div class="value" id="mPing">—<span class="unit">{{ t('unit_ms') }}</span></div></div>
     <div class="metric"><div class="label">{{ t('label_packet_loss') }}</div><div class="value" id="mDrop">—<span class="unit">%</span></div></div>
     <div class="metric"><div class="label">{{ t('label_obstruction') }}</div><div class="value" id="mObs">—<span class="unit">%</span></div></div>
     <div class="metric"><div class="label">{{ t('label_uptime_dish') }}</div><div class="value" id="mUptime">—</div></div>

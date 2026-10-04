@@ -229,3 +229,33 @@ def test_short_error_extracts_grpc_details_and_handles_odd_input():
     assert labels.short_error("перший рядок\nдругий рядок") == "перший рядок"
     assert labels.short_error(None) == "" and labels.short_error("") == "" and labels.short_error("  \n ") == ""
     assert len(labels.short_error("x" * 500)) == 200 and labels.short_error("x" * 500).endswith("…")
+
+
+# ---- фронтенд: жодного вбудованого українського тексту поза t() ----
+
+def _frontend_code_lines():
+    """(файл, номер, рядок) коду JS і шаблонів БЕЗ коментарів, Jinja-виразів і console.*"""
+    import glob
+    import re
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    for path in sorted(glob.glob(str(root / "static" / "*.js")) + glob.glob(str(root / "templates" / "*.html"))):
+        text = Path(path).read_text(encoding="utf-8")
+        text = re.sub(r"/\*.*?\*/|\{#.*?#\}|<!--.*?-->", "", text, flags=re.S)
+        for number, line in enumerate(text.splitlines(), 1):
+            line = re.sub(r"(^|\s)//.*$", "", line)
+            line = re.sub(r"\{\{.*?\}\}|\{%.*?%\}", "", line)
+            if "console." in line:
+                continue
+            yield Path(path).name, number, line
+
+
+def test_frontend_has_no_hardcoded_cyrillic_text():
+    """Англійський інтерфейс не має містити українських слів. Раніше таблиця
+    клієнтів роутера, "активних попереджень немає", "Backup завантажено",
+    одиниці Мбіт/с, дБм, ГГц були вбудовані в JS і шаблон, хоча ключі в
+    i18n.py вже існували - просто не викликались."""
+    import re
+    offenders = [f"{name}:{n}: {line.strip()[:70]}" for name, n, line in _frontend_code_lines()
+                 if re.search(r"[А-Яа-яІіЇїЄєҐґ]", line)]
+    assert offenders == [], "вбудований український текст у фронтенді (використайте t('ключ')): " + "; ".join(offenders[:6])

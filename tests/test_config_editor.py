@@ -503,3 +503,85 @@ def test_env_var_names_in_app_strings_exist_in_config():
             if isinstance(node, ast.Constant) and isinstance(node.value, str):     # включно з частинами f-рядків і докстрінгами
                 unknown += [(Path(path).name, node.lineno, name) for name in re.findall(r"\bSTARLINK_[A-Z0-9_]+\b", node.value) if name not in known]
     assert unknown == [], f"назви змінних, яких немає в config.py: {unknown}"
+
+
+# ---- адреси dish/роутера: лише host:порт ----
+
+_GOOD_ADDRESSES = ["192.168.100.1:9200", "192.168.1.1:9000", "router.lan:9000", "dish-1.local:9200", "[fd00::1]:9000", "a:1", "host:65535"]
+_BAD_ADDRESSES = [
+    "http://192.168.100.1:9200", "192.168.100.1 9200", "192.168.100.1;9200", '192.168.100.1:9200"', "192.168.100.1:9200'",
+    "192.168.100.1:9200\\", "$HOME:9200", "192.168.100.1:99999", "192.168.100.1:0", ":9200", "192.168.100.1", "192.168.100.1:abc",
+    "192.168.100.1:", "-host:9200", "host-:9200", "host name:9200", "#коментар:9200", "a" * 300 + ":9200", "[::1:9000", "хост:9200",
+]
+
+
+@pytest.mark.parametrize("key", ["STARLINK_DISH_ADDR", "STARLINK_ROUTER_ADDR"])
+@pytest.mark.parametrize("address", _GOOD_ADDRESSES)
+def test_valid_addresses_are_accepted(tmp_path, monkeypatch, key, address):
+    monkeypatch.setattr(config_editor, "ENV_FILE_PATH", str(tmp_path / "env"))
+    ok, message = config_editor.save_values({key: address})
+    assert ok, message
+    assert f"{key}={address}\n" in (tmp_path / "env").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("key", ["STARLINK_DISH_ADDR", "STARLINK_ROUTER_ADDR"])
+@pytest.mark.parametrize("address", _BAD_ADDRESSES)
+def test_malformed_addresses_are_rejected_and_nothing_is_written(tmp_path, monkeypatch, db_path, key, address):
+    """Раніше приймались усі: URL, лапки, слеш, порт 99999, 300 символів."""
+    env = tmp_path / "env"
+    env.write_text("STARLINK_POLL_INTERVAL=7\n", encoding="utf-8")
+    monkeypatch.setattr(config_editor, "ENV_FILE_PATH", str(env))
+    ok, message = config_editor.save_values({key: address})
+    assert ok is False and message
+    assert env.read_text(encoding="utf-8") == "STARLINK_POLL_INTERVAL=7\n"        # файл не змінено
+
+
+def test_empty_address_removes_the_override(tmp_path, monkeypatch):
+    env = tmp_path / "env"
+    env.write_text("STARLINK_DISH_ADDR=10.0.0.1:9200\nSTARLINK_POLL_INTERVAL=7\n", encoding="utf-8")
+    monkeypatch.setattr(config_editor, "ENV_FILE_PATH", str(env))
+    ok, _ = config_editor.save_values({"STARLINK_DISH_ADDR": ""})
+    assert ok and env.read_text(encoding="utf-8") == "STARLINK_POLL_INTERVAL=7\n"
+
+
+def test_default_addresses_pass_their_own_validation():
+    from app import config
+    for key, default in (("STARLINK_DISH_ADDR", config.DISH_ADDR), ("STARLINK_ROUTER_ADDR", config.ROUTER_ADDR)):
+        assert config_editor._address_problem(default) is None, (key, default)
+
+
+# ---- таблиця валідаторів за типом (замість ланцюжка if/elif у _validate_value) ----
+
+def test_every_param_type_has_a_validator():
+    """Тип без запису в _VALIDATORS проходив би без перевірки мовчки."""
+    types = {p["type"] for p in config_editor.EDITABLE_PARAMS}
+    assert types <= set(config_editor._VALIDATORS), sorted(types - set(config_editor._VALIDATORS))
+
+
+def test_bool_validator_accepts_only_zero_and_one(db_path):
+    param = {"type": "bool", "key": "X"}
+    assert config_editor._check_bool(param, "0") is None and config_editor._check_bool(param, "1") is None
+    for bad in ("2", "true", "yes", "01"):
+        assert config_editor._check_bool(param, bad)
+
+
+def test_number_validator_int_float_range_and_finiteness(db_path):
+    integer = {"type": "int", "key": "STARLINK_HISTORY_DAYS"}
+    floating = {"type": "float", "key": "STARLINK_OBSTRUCTION_WARN"}
+    assert config_editor._check_number(integer, "14") is None
+    assert config_editor._check_number(integer, "0")                 # поза межами: HISTORY_DAYS=0 видаляв би всю історію
+    assert config_editor._check_number(floating, "0.5") is None
+    assert config_editor._check_number(floating, "nan") and config_editor._check_number(floating, "inf")
+    with pytest.raises(ValueError):                                  # нечисло: ValueError ловить _validate_value
+        config_editor._check_number(integer, "abc")
+
+
+def test_str_validator_checks_only_address_parameters(db_path):
+    assert config_editor._check_str({"type": "str", "key": "STARLINK_DISH_ADDR"}, "192.168.100.1:9200") is None
+    assert config_editor._check_str({"type": "str", "key": "STARLINK_DISH_ADDR"}, "http://x")
+    assert config_editor._check_str({"type": "str", "key": "STARLINK_SOMETHING_ELSE"}, "будь-який текст з пробілами") is None
+
+
+def test_validate_value_reports_type_error_for_non_numbers(db_path):
+    ok, message = config_editor._validate_value({"type": "int", "key": "STARLINK_HISTORY_DAYS"}, "abc")
+    assert ok is False and message

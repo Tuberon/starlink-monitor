@@ -24,7 +24,7 @@
 
 | Файл | Опис |
 |---|---|
-| `starlink_client.py` | gRPC-клієнт: статус dish/router, `reboot_dish()` |
+| `starlink_client.py` | gRPC-клієнт: статус dish/router, `reboot_dish()`; vendored gRPC-стек вантажиться ліниво (`_grpc_module()`) |
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота (точка входу) |
 | `services.py` | Спільна логіка для monitor/webapp/telegram_bot: відстеження версій прошивок (`check_updates_now`, `upsert_*`, `check_*_targets_reached`), бекапи (`build_backup_dict`, `perform_auto_backup`, `send_latest_backup_to_telegram`, `check_db_integrity_and_notify`) |
 | `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
@@ -32,7 +32,7 @@
 | `i18n.py` | Мультимовний інтерфейс (uk/en) - словник перекладів, `t()`, мова з settings |
 | `telegram_notify.py` | Вихідні сповіщення |
 | `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` |
-| `labels.py` | Спільні label-мапи (monitor.py + telegram_bot.py), `short_error()` для чату |
+| `labels.py` | Таблиці "код -> ключ перекладу" для станів оновлення й alert-прапорців (monitor.py + telegram_bot.py), `short_error()` для чату |
 | `log_redact.py` | Очищення токена бота з текстів помилок і логів (`redact()`, `RedactingFilter`, `install()`) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
 | `shutdown_button.py` | Фізична кнопка виключення через GPIO (окремий процес) |
@@ -103,6 +103,7 @@
 | `test_docs.py` | Охоронні перевірки документації: код-спани не розірвані посеред ідентифікатора, посилання `модуль.функція()` ведуть на існуючий код, паритет двох README, покриття файлів у index.md |
 | `test_services.py` | Сервісна логіка (app/services.py) через фікстуру `sink` без Watchdog: target-версії, напрямок зміни прошивки, бекапи, цілісність БД (переклад коду причини), ідентифікатори компонентів |
 | `test_architecture.py` | Граф імпортів між модулями app/: без циклів (навіть лінивих), точки входу не є бібліотеками, `db` не залежить від шару подання |
+| `test_labels.py` | Повнота таблиць міток: кожен ключ існує в обох мовах, кожен alert-прапорець dish/роутера має мітку, невідомий код повертається як є, мітки слідують за мовою, переклад лише потрібного коду |
 | `test_log_redact.py` | Токен бота не потрапляє в логи/повідомлення/БД: `redact()`, фільтр логера (з traceback), наскрізні шляхи помилок Telegram (шар джерела і захисна сітка перевіряються незалежно), AST-гарантія для точок входу |
 | `test_i18n.py` | Цілісність перекладів (паритет плейсхолдерів uk/en, наявність кожного ключа з коду), `get_language()` при зламаній БД, англійські Telegram-сповіщення реальними шляхами коду |
 | `test_system_metrics.py` | Кожна метрика (uptime/cpu/memory/disk/temp) незалежно, ніколи не кидає виняток навіть при повному провалі psutil |

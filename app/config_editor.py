@@ -12,7 +12,7 @@ import logging
 import math
 import os
 import re
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from app import config, i18n
 
@@ -173,6 +173,53 @@ def _range_problem(key: Optional[str], number: float) -> Optional[str]:
     return None
 
 
+# Адреси (STARLINK_DISH_ADDR/ROUTER_ADDR - єдині вільнотекстові параметри): host:порт, де host - ім'я,
+# IPv4 або IPv6 у дужках. Раніше приймався БУДЬ-ЯКИЙ друкований текст (URL, пробіли, лапки,
+# зворотний слеш, порт 99999, 300 символів): помилка в адресі -> тарілка/роутер "недоступні"
+# назавжди, а лапка чи слеш у кінці рядка за правилами systemd EnvironmentFile міняють розбір
+# наступних рядків файлу.
+_ADDRESS_KEYS = {"STARLINK_DISH_ADDR", "STARLINK_ROUTER_ADDR"}
+_HOST_PORT_RE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9A-Fa-f:.]{2,45}\]):(\d{1,5})$")
+
+
+def _address_problem(value: str) -> Optional[str]:
+    match = _HOST_PORT_RE.match(value)
+    if not match or not 1 <= int(match.group(1)) <= 65535:
+        return i18n.t("invalid_address")
+    return None
+
+
+# Перевірки значення за ТИПОМ параметра: функція повертає текст помилки або None. Раніше це був
+# ланцюжок if/elif усередині _validate_value (складність 17, і кожен новий тип чи ключ додавав
+# гілку); невідомий тип проходив без перевірки мовчки - тепер тест вимагає, щоб кожен тип
+# параметрів з EDITABLE_PARAMS мав запис у _VALIDATORS. ValueError (int("abc")) ловить викликач.
+def _check_bool(param: dict[str, Any], value: str) -> Optional[str]:
+    return None if value in ("0", "1") else i18n.t("expected_0_or_1")
+
+
+def _check_number(param: dict[str, Any], value: str) -> Optional[str]:
+    number = int(value) if param["type"] == "int" else float(value)
+    # isfinite - лише для float: на дуже великому int вона кидає OverflowError (int не має
+    # NaN/inf, але має довільну величину)
+    if param["type"] == "float" and not math.isfinite(number):
+        return i18n.t("not_finite")
+    return _range_problem(param.get("key"), number)
+
+
+def _check_str(param: dict[str, Any], value: str) -> Optional[str]:
+    if param.get("key") in _ADDRESS_KEYS:
+        return _address_problem(value)
+    return None          # інший "str" - без додаткової перевірки
+
+
+_VALIDATORS: dict[str, Callable[[dict[str, Any], str], Optional[str]]] = {
+    "bool": _check_bool,
+    "int": _check_number,
+    "float": _check_number,
+    "str": _check_str,
+}
+
+
 def _validate_value(param: dict[str, Any], raw_value: str) -> tuple[bool, Optional[str]]:
     """Перевіряє значення проти заявленого типу. Повертає (ok, error_or_value)."""
     t = param["type"]
@@ -187,23 +234,12 @@ def _validate_value(param: dict[str, Any], raw_value: str) -> tuple[bool, Option
     # WEBUI_HOST), NUL - зламав би розбір EnvironmentFile у systemd.
     if any(ord(c) < 32 or ord(c) == 127 for c in v):
         return False, i18n.t("invalid_control_chars")
+    check = _VALIDATORS.get(t)
     try:
-        if t == "bool":
-            if v not in ("0", "1"):
-                return False, i18n.t("expected_0_or_1")
-        elif t in ("int", "float"):
-            number = int(v) if t == "int" else float(v)
-            # isfinite - лише для float: на дуже великому int вона кидає
-            # OverflowError (int не має NaN/inf, але має довільну величину)
-            if t == "float" and not math.isfinite(number):
-                return False, i18n.t("not_finite")
-            problem = _range_problem(param.get("key"), number)
-            if problem:
-                return False, problem
-        # "str" - без додаткової перевірки
-        return True, v
+        problem = check(param, v) if check else None
     except ValueError:
         return False, i18n.t("expected_type", type=t)
+    return (False, problem) if problem else (True, v)
 
 
 def read_current_values() -> list[dict[str, Any]]:

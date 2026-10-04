@@ -11,7 +11,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 
@@ -67,6 +67,28 @@ def _shown_router_state(state: str) -> str:
     """Тимчасові хмарні помилки показуються як "немає оновлень" - так
     само, як на дашборді й TFT-дисплеї (спільний список у labels.py)."""
     return "NOT_RUN" if state in labels.ROUTER_STATES_SHOWN_AS_NO_UPDATES else state
+
+
+def _router_state_label(state: str) -> str:
+    return labels.router_update_state_label(_shown_router_state(state))
+
+
+def _update_lines(
+    status: Any, *, online_key: str, offline_key: str, state_label: Callable[[str], str], with_alerts: bool,
+) -> list[str]:
+    """Рядки про dish або роутер для /status і /checkupdates. Раніше цей блок був
+    скопійований чотири рази (два компоненти x дві команди, 77% подібності);
+    різниці між командами - лише ключ рядка "онлайн" і кількість попереджень."""
+    if not status.online:
+        return [i18n.t(offline_key, error=labels.short_error(status.error) or i18n.t("no_response"))]
+    label = state_label(status.update_state) if status.update_state else i18n.t("not_available_short")
+    lines = [
+        i18n.t(online_key, sw=status.software_version or "?"),
+        i18n.t("tg_update_line", label=label) + (f" ({status.update_progress_pct:.0f}%)" if status.update_progress_pct else ""),
+    ]
+    if with_alerts and status.active_alerts:
+        lines.append(i18n.t("tg_alerts_count_line", n=len(status.active_alerts)))
+    return lines
 
 
 def _obj(value: Any) -> dict[str, Any]:
@@ -253,35 +275,12 @@ class TelegramBot:
     def _cmd_status(self, token: str, chat_id: str) -> None:
         dish = self.client.get_status()
         router = self.client.get_router_info()
-
         lines = [i18n.t("tg_status_title"), ""]
-
-        if dish.online:
-            dish_label = labels.update_state_label(dish.update_state) if dish.update_state else i18n.t('not_available_short')
-            lines.append(i18n.t("tg_dish_online_line", sw=dish.software_version or "?"))
-            lines.append(
-                i18n.t("tg_update_line", label=dish_label)
-                + (f" ({dish.update_progress_pct:.0f}%)" if dish.update_progress_pct else "")
-            )
-            if dish.active_alerts:
-                lines.append(i18n.t("tg_alerts_count_line", n=len(dish.active_alerts)))
-        else:
-            lines.append(i18n.t("tg_dish_offline_line", error=labels.short_error(dish.error) or i18n.t("no_response")))
-
+        lines += _update_lines(dish, online_key="tg_dish_online_line", offline_key="tg_dish_offline_line",
+                               state_label=labels.update_state_label, with_alerts=True)
         lines.append("")
-
-        if router.online:
-            router_label = labels.router_update_state_label(_shown_router_state(router.update_state)) if router.update_state else i18n.t('not_available_short')
-            lines.append(i18n.t("tg_router_online_line", sw=router.software_version or "?"))
-            lines.append(
-                i18n.t("tg_update_line", label=router_label)
-                + (f" ({router.update_progress_pct:.0f}%)" if router.update_progress_pct else "")
-            )
-            if router.active_alerts:
-                lines.append(i18n.t("tg_alerts_count_line", n=len(router.active_alerts)))
-        else:
-            lines.append(i18n.t("tg_router_offline_line", error=labels.short_error(router.error) or i18n.t("no_response")))
-
+        lines += _update_lines(router, online_key="tg_router_online_line", offline_key="tg_router_offline_line",
+                               state_label=_router_state_label, with_alerts=True)
         self._send(token, chat_id, "\n".join(lines))
 
     def _cmd_check_updates(self, token: str, chat_id: str) -> None:
@@ -293,31 +292,12 @@ class TelegramBot:
             telegram_notify.send_message(text)
 
         dish, router = services.check_updates_now(self.client, notify)
-
         lines = [i18n.t("tg_check_updates_title"), ""]
-
-        if dish.online:
-            dish_label = labels.update_state_label(dish.update_state) if dish.update_state else i18n.t('not_available_short')
-            lines.append(i18n.t("tg_dish_line_short", sw=dish.software_version or "?"))
-            lines.append(
-                i18n.t("tg_update_line", label=dish_label)
-                + (f" ({dish.update_progress_pct:.0f}%)" if dish.update_progress_pct else "")
-            )
-        else:
-            lines.append(i18n.t("tg_dish_offline_line", error=labels.short_error(dish.error) or i18n.t("no_response")))
-
+        lines += _update_lines(dish, online_key="tg_dish_line_short", offline_key="tg_dish_offline_line",
+                               state_label=labels.update_state_label, with_alerts=False)
         lines.append("")
-
-        if router.online:
-            router_label = labels.router_update_state_label(_shown_router_state(router.update_state)) if router.update_state else i18n.t('not_available_short')
-            lines.append(i18n.t("tg_router_line_short", sw=router.software_version or "?"))
-            lines.append(
-                i18n.t("tg_update_line", label=router_label)
-                + (f" ({router.update_progress_pct:.0f}%)" if router.update_progress_pct else "")
-            )
-        else:
-            lines.append(i18n.t("tg_router_offline_line", error=labels.short_error(router.error) or i18n.t("no_response")))
-
+        lines += _update_lines(router, online_key="tg_router_line_short", offline_key="tg_router_offline_line",
+                               state_label=_router_state_label, with_alerts=False)
         self._send(token, chat_id, "\n".join(lines))
 
     def _cmd_reboot_request(self, token: str, chat_id: str) -> None:

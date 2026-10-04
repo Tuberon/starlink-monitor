@@ -1233,3 +1233,50 @@ def test_genuine_dish_failure_still_reboots(watchdog):
         for _ in range(config.MAX_CONSECUTIVE_FAILURES):
             watchdog.poll_once()
     rb.assert_called_once()
+
+
+# ---- авто-reboot не блокується на години після зсуву годинника назад ----
+
+def _watchdog_with_hung_dish(monkeypatch, clock):
+    from app import config
+    monkeypatch.setattr(config, "MAX_CONSECUTIVE_FAILURES", 3)
+    monkeypatch.setattr(config, "MIN_REBOOT_INTERVAL_SEC", 300)
+    wd = monitor.Watchdog()
+    wd._notify = lambda t: None
+    reboots = []
+    wd.client.reboot_dish = lambda: reboots.append(clock["t"]) or (True, "ok")
+    wd.consecutive_failures = 3
+    return wd, reboots
+
+
+def test_auto_reboot_waits_min_interval_after_clock_step_back_not_hours(db_path, monkeypatch):
+    clock = {"t": 1_800_000_000.0}
+    wd, reboots = _watchdog_with_hung_dish(monkeypatch, clock)
+    with patch("time.time", side_effect=lambda: clock["t"]):
+        wd.last_reboot_ts = clock["t"]                    # щойно перезавантажили
+        clock["t"] -= 7200                                # годинник стрибнув на 2 години назад
+        wd._maybe_reboot()
+        assert reboots == [] and wd.last_reboot_ts == clock["t"]    # захист від reboot-loop зберігся: вікно від ЗАРАЗ
+        clock["t"] += 301                                 # MIN_REBOOT_INTERVAL_SEC минув
+        wd._maybe_reboot()
+    assert len(reboots) == 1                              # раніше - лише через 2 год 5 хв
+
+
+def test_update_ready_reboot_also_recovers_after_clock_step_back(db_path, monkeypatch):
+    clock = {"t": 1_800_000_000.0}
+    wd, reboots = _watchdog_with_hung_dish(monkeypatch, clock)
+    with patch("time.time", side_effect=lambda: clock["t"]):
+        wd.last_reboot_ts = clock["t"]
+        clock["t"] -= 7200
+        wd._reboot_for_update_ready("dish", "тест")
+        assert reboots == []
+        clock["t"] += 301
+        wd._reboot_for_update_ready("dish", "тест")
+    assert len(reboots) == 1
+
+
+def test_clamp_future_timestamps_only_touches_future_marks():
+    wd = monitor.Watchdog()
+    wd.last_reboot_ts, wd.last_telegram_backup_sent_ts = 5000.0, 900.0
+    wd._clamp_future_timestamps(1000.0)
+    assert wd.last_reboot_ts == 1000.0 and wd.last_telegram_backup_sent_ts == 900.0     # минулі мітки не чіпаємо

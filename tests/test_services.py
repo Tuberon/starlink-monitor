@@ -416,3 +416,33 @@ def test_describe_integrity_problem_translates_the_code_by_ui_language(db_path, 
 def test_describe_integrity_problem_passes_other_messages_through():
     assert services.describe_integrity_problem("row 5 missing from index idx_x") == "row 5 missing from index idx_x"
     assert services.describe_integrity_problem("ok") == "ok"
+
+
+# ---- одночасні перевірки не дублюють сповіщень ----
+
+def test_target_reached_notifies_once_under_concurrent_checks(sink, db_path):
+    from test_db import _run_concurrently
+    db.set_setting("dish_target_version", "v9")
+    _run_concurrently(lambda: services.check_target_version_reached(
+        "dish", "v9", "dish_target_version", "dish_target_notified", "dX", sink._notify))
+    assert len(sink.sent) == 1
+
+
+def test_both_targets_notifies_once_under_concurrent_checks(sink, db_path):
+    from test_db import _run_concurrently
+    from app.starlink_client import DishStatus, RouterInfo
+    db.set_setting("dish_target_version", "v9")
+    db.set_setting("router_target_version", "r9")
+    db.insert_metric(DishStatus(timestamp=1000.0, online=True, software_version="v9", dish_id="dX").to_dict())
+    db.set_router_status(RouterInfo(timestamp=1000.0, online=True, software_version="r9").to_dict())
+    _run_concurrently(lambda: services.check_both_targets_reached("dX", sink._notify))
+    assert len(sink.sent) == 1
+
+
+def test_firmware_change_notifies_once_under_concurrent_upserts(sink, db_path):
+    from test_db import _run_concurrently
+    from app.starlink_client import DishStatus
+    services.upsert_dish_and_notify(DishStatus(timestamp=1.0, online=True, dish_id="dRACE", hardware_version="rev4", software_version="v1"), sink._notify)
+    new = DishStatus(timestamp=2.0, online=True, dish_id="dRACE", hardware_version="rev4", software_version="v2")
+    _run_concurrently(lambda: services.upsert_dish_and_notify(new, sink._notify))
+    assert len(sink.sent) == 1 and "v2" in sink.sent[0]

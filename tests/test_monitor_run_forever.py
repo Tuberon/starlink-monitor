@@ -451,3 +451,40 @@ def test_loop_survives_unexpected_exception_in_router_and_system_metrics_polls(d
             pass
     assert slept == [monitor._poll_pause()]                       # цикл дожив до паузи
     assert "Помилка опитування метрик Pi" in caplog.text and "Помилка опитування роутера" in caplog.text
+
+
+# ---- зсув настінного годинника НАЗАД (ручна зміна часу, RTC, збій NTP) ----
+
+def test_loop_runs_periodic_tasks_and_flush_after_clock_steps_backwards(db_path):
+    """Раніше після зсуву на 2 год 6 з 7 періодичних задач і пакетний запис
+    метрик мовчали, поки годинник не "наздожене" мітки з майбутнього."""
+    config.ACTIVITY_LED_PIN = 0
+    config.NOTIFY_PI_STARTUP = False
+    wd = monitor.Watchdog()
+    wd._notify = lambda t: None
+    now = {"t": 2_000_000_000.0}
+    real_tasks = wd._periodic_tasks
+
+    def tasks_whose_last_run_is_in_the_future():
+        tasks = real_tasks()
+        for task in tasks:
+            task.last = now["t"] + 7200          # виконувались "в майбутньому" відносно годинника після стрибка
+        return tasks
+
+    wd.last_batch_flush_ts = now["t"] + 7200
+    with patch.object(wd, "_periodic_tasks", side_effect=tasks_whose_last_run_is_in_the_future), \
+         patch.object(wd, "flush_metrics_buffer") as flush, patch.object(wd, "poll_system_metrics") as system_poll, \
+         patch("app.db.prune_old") as prune:
+        with _running_loop(wd, poll_once=lambda: None, now=now):
+            pass
+    assert system_poll.called and prune.called and flush.called
+
+
+def test_periodic_task_runs_when_last_run_is_in_the_future():
+    task = monitor._Periodic(lambda: calls.append(1), error="x", interval=3600)
+    calls = []
+    task.last = 5000.0
+    with patch("time.time", side_effect=lambda: 1000.0):         # годинник на 4000 с НАЗАД відносно last
+        assert task.run_if_due() is True
+        assert task.last == 1000.0                               # мітка скинута на "зараз"
+        assert task.run_if_due() is False                        # далі - звичайний інтервал

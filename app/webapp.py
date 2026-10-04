@@ -1,11 +1,13 @@
 """Flask веб-інтерфейс: дашборд статусу Starlink, журнал подій, ручний reboot."""
 import logging
+import math
 import os
 import re
 import time
 from typing import Any, Callable, Optional
 
 from flask import Flask, jsonify, render_template, request
+from flask.json.provider import DefaultJSONProvider
 from flask.typing import ResponseReturnValue
 
 from app import config, config_editor, db, i18n, log_redact, pi_power, services, telegram_notify
@@ -87,7 +89,32 @@ _JS_I18N_KEYS = _collect_js_i18n_keys(app.static_folder or "static")
 # UTF-8 замість \uXXXX для кирилиці: 2 байти на літеру замість 6 -
 # і в window.I18N, і в JSON-відповідях API. Безпека вбудовування в
 # <script> не залежить від цього: tojson окремо екранує < > & '.
-app.json.ensure_ascii = False  # type: ignore[attr-defined]
+
+
+def _scrub_non_finite(value: Any) -> Any:
+    """float inf/-inf/NaN -> None рекурсивно (див. db._finite)."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _scrub_non_finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub_non_finite(v) for v in value]
+    return value
+
+
+class _FiniteJSONProvider(DefaultJSONProvider):
+    """Flask за замовчуванням віддає inf як `Infinity`, а NaN як `NaN` - це
+    НЕвалідний JSON, `JSON.parse` у браузері падає, і дашборд переставав
+    оновлювати статус. Будь-яке нескінченне значення (навіть уже збережене в
+    БД до виправлення в db._finite) віддається як null."""
+
+    def dumps(self, obj: Any, **kwargs: Any) -> str:
+        return super().dumps(_scrub_non_finite(obj), **kwargs)
+
+
+_json_provider = _FiniteJSONProvider(app)
+_json_provider.ensure_ascii = False
+app.json = _json_provider
 
 
 @app.context_processor

@@ -700,3 +700,54 @@ def test_broken_vendor_file_does_not_stop_the_monitor_from_starting(tmp_path, co
     out = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, (label, out.stderr[-300:])
     assert out.stdout.startswith("True False starlink_grpc module missing"), out.stdout
+
+
+# ---- ледаче завантаження vendored gRPC-модуля (пам'ять веб-процесу) ----
+
+def _run_python(code, cwd=None):
+    import subprocess
+    import sys
+    return subprocess.run([sys.executable, "-c", code], cwd=cwd or Path(__file__).resolve().parent.parent,
+                          capture_output=True, text=True, timeout=90)
+
+
+@pytest.mark.parametrize("module", ["app.starlink_client", "app.webapp", "app.services", "app.telegram_bot", "app.monitor"])
+def test_importing_the_module_does_not_load_the_grpc_stack(module):
+    """gRPC + protobuf + yagrc + vendored файл - ~13 МБ RSS і ~50 мс при імпорті (x86). Веб-процес
+    імпортує клієнта заради двох кнопок, тож тримав це все життя; тепер стек вантажиться при
+    першому зверненні до тарілки."""
+    out = _run_python(f"import sys, {module}; print(sorted({{m.split('.')[0] for m in sys.modules}} & {{'grpc', 'yagrc'}}))")
+    assert out.returncode == 0, out.stderr[-300:]
+    assert out.stdout.strip() == "[]", out.stdout
+
+
+def test_first_status_call_loads_the_vendored_module_once():
+    out = _run_python("import sys; from app import starlink_client as c; before = 'grpc' in sys.modules; "
+                      "import types; m1 = c._grpc_module(); m2 = c._grpc_module(); "
+                      "print(before, m1 is m2 and isinstance(m1, types.ModuleType) and hasattr(m1, 'get_status'), 'grpc' in sys.modules)")
+    assert out.returncode == 0, out.stderr[-300:]
+    assert out.stdout.strip() == "False True True", out.stdout
+
+
+def test_concurrent_first_calls_with_a_broken_module_log_the_error_once(tmp_path):
+    """get_status викликають потоки монітора, Telegram-бота й веб-запитів: без блокування
+    кожен із них пробував би імпорт і писав би власне повідомлення про помилку."""
+    import shutil
+    root = Path(__file__).resolve().parent.parent
+    shutil.copytree(root / "app", tmp_path / "app", ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "app" / "vendor" / "starlink_grpc.py").write_text("raise RuntimeError('boom at import')\n")
+    code = (
+        "import logging, sys, threading\n"
+        "logging.basicConfig(stream=sys.stderr, level=logging.ERROR, format='%(message)s')\n"
+        "from app import starlink_client as c\n"
+        "bar = threading.Barrier(8); res = []\n"
+        "def work():\n"
+        "    bar.wait(); res.append(c.StarlinkClient().get_status().local_fault)\n"
+        "threads = [threading.Thread(target=work) for _ in range(8)]\n"
+        "[t.start() for t in threads]; [t.join() for t in threads]\n"
+        "print(all(res), len(res))\n"
+    )
+    out = _run_python(code, cwd=tmp_path)
+    assert out.returncode == 0, out.stderr[-300:]
+    assert out.stdout.strip() == "True 8"
+    assert out.stderr.count("starlink_grpc недоступний") == 1, out.stderr

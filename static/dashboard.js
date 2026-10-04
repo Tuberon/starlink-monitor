@@ -257,7 +257,7 @@ function renderAlerts(latest) {
   const body = el('alertsBody');
   const alerts = latest.active_alerts;
   if (!alerts || !alerts.length) {
-    body.innerHTML = '<span class="alerts-none">активних попереджень немає</span>';
+    body.innerHTML = '<span class="alerts-none">' + t('alerts_none') + '</span>';
     return;
   }
   body.innerHTML = alerts
@@ -351,20 +351,20 @@ function renderRouterClients(clients) {
     <div class="clients-row">
       <span class="client-name">${escapeHtml(c.name || c.mac || '—')}</span>
       <span>${escapeHtml(c.ip || '—')}</span>
-      <span>${escapeHtml((c.iface || '').replace('WIFI_', '').replace('GHZ', ' ГГц') || '—')}</span>
-      <span class="clients-signal ${signalClass(c.signal)}">${c.signal != null ? c.signal + ' дБм' : '—'}</span>
+      <span>${escapeHtml((c.iface || '').replace('WIFI_', '').replace('GHZ', ' ' + t('unit_ghz')) || '—')}</span>
+      <span class="clients-signal ${signalClass(c.signal)}">${c.signal != null ? c.signal + ' ' + t('unit_dbm') : '—'}</span>
       <span>${fmtDuration(c.connected_s)}</span>
     </div>
   `).join('');
 
-  const header = '<div class="clients-row clients-header"><span>Пристрій</span><span>IP</span><span>Діапазон</span><span>Сигнал</span><span>У мережі</span></div>';
+  const header = '<div class="clients-row clients-header"><span>' + t('th_device') + '</span><span>IP</span><span>' + t('th_band') + '</span><span>' + t('th_signal') + '</span><span>' + t('th_uptime_net') + '</span></div>';
 
   if (!clients) {
     countEl.textContent = '—';
-    table.innerHTML = header + '<div class="clients-row"><span>ще не опитано</span></div>';
+    table.innerHTML = header + '<div class="clients-row"><span>' + t('not_polled_yet') + '</span></div>';
   } else if (filtered.length === 0) {
-    countEl.textContent = '0 підключено';
-    table.innerHTML = header + '<div class="clients-row"><span>немає підключених клієнтів</span></div>';
+    countEl.textContent = t('clients_connected', {n: 0});
+    table.innerHTML = header + '<div class="clients-row"><span>' + t('clients_none') + '</span></div>';
   } else {
     countEl.textContent = t('clients_connected', {n: filtered.length});
     table.innerHTML = header + rows;
@@ -401,7 +401,7 @@ function renderRouterAlerts(latest) {
   const body = el('routerAlertsBody');
   const alerts = latest.active_alerts;
   if (!alerts || !alerts.length) {
-    body.innerHTML = '<span class="alerts-none">активних попереджень немає</span>';
+    body.innerHTML = '<span class="alerts-none">' + t('alerts_none') + '</span>';
     return;
   }
   body.innerHTML = alerts

@@ -1106,3 +1106,43 @@ def test_documented_post_only_actions_really_reject_get(client):
     assert len(post_only) >= 5          # лише перевірка, що розбір таблиць знайшов рядки
     for path in sorted(post_only):
         assert client.get(path).status_code == 405, path
+
+
+# ---- відповіді API завжди валідний JSON, навіть якщо в БД лежить inf (рядки до виправлення) ----
+
+def _strict_json(body):
+    import json
+
+    def reject(constant):
+        raise AssertionError(f"недійсна константа JSON {constant}: браузерний JSON.parse впаде")
+    return json.loads(body, parse_constant=reject)
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf")])
+def test_api_returns_valid_json_even_with_infinity_already_in_db(client, db_path, bad):
+    from app.starlink_client import DishStatus
+    db.insert_metric(DishStatus(timestamp=2000.0, online=True, uptime_s=5, dish_id="d1").to_dict())
+    db.insert_system_metric({"timestamp": 2000.0, "cpu_percent": 1.0, "temp_c": 40.0})
+    with db.get_conn() as conn:                          # обходимо db._finite: імітуємо рядок, збережений ДО виправлення
+        conn.execute("UPDATE metrics SET ping_latency_ms = ?, downlink_mbps = ?", (bad, bad))
+        conn.execute("UPDATE system_metrics SET temp_c = ?", (bad,))
+    status = _strict_json(client.get("/api/status").get_data(as_text=True))
+    system = _strict_json(client.get("/api/system-status").get_data(as_text=True))
+    assert status["latest"]["ping_latency_ms"] is None and status["latest"]["downlink_mbps"] is None
+    assert system["latest"]["temp_c"] is None if "latest" in system else system["temp_c"] is None
+
+
+def test_json_scrub_leaves_ordinary_values_alone():
+    from app.webapp import _scrub_non_finite
+    data = {"a": 1, "b": 0.0, "c": [1.5, float("nan"), {"d": float("inf"), "e": "текст", "f": None, "g": True}]}
+    assert _scrub_non_finite(data) == {"a": 1, "b": 0.0, "c": [1.5, None, {"d": None, "e": "текст", "f": None, "g": True}]}
+
+
+def test_dashboard_shows_current_state_after_clock_step_back(client, db_path):
+    """Тарілка вже OFFLINE (новий запис), а дашборд показував online із запису
+    "з майбутнього" ще дві години."""
+    from app.starlink_client import DishStatus
+    now = time.time()
+    db.insert_metric(DishStatus(timestamp=now + 7200, online=True, dish_id="d1").to_dict())
+    db.insert_metric(DishStatus(timestamp=now - 5, online=False, dish_id="d1", error="timeout").to_dict())
+    assert client.get("/api/status").get_json()["latest"]["online"] == 0

@@ -153,7 +153,7 @@ async function handleSettingsBackup() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    hint.textContent = 'Backup завантажено';
+    hint.textContent = t('backup_downloaded');
   } catch (e) {
     hint.textContent = t('backup_load_error');
     console.error('settings backup failed', e);
@@ -249,7 +249,7 @@ async function loadEnvConfig() {
       return `<h3 class="env-category-head">${label}</h3>${fields}`;
     }).join('');
   } catch (e) {
-    form.innerHTML = '<span class="hint">Помилка завантаження параметрів</span>';
+    form.innerHTML = '<span class="hint">' + t('params_load_error') + '</span>';
     console.error('env config load failed', e);
   }
 }

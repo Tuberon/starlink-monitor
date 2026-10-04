@@ -358,3 +358,97 @@ def test_vacuum_runs_when_most_pages_are_free(db_path):
 
 def test_vacuum_and_analyze_on_fresh_database_is_safe(db_path):
     assert db.vacuum_and_analyze() is False
+
+
+# ---- нескінченні значення в метриках не потрапляють у БД (див. db._finite) ----
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_floats_are_stored_as_null(db_path, bad):
+    from app.starlink_client import DishStatus, RouterInfo
+    db.insert_metric(DishStatus(timestamp=1000.0, online=True, ping_latency_ms=bad, downlink_mbps=bad, ping_drop_ratio=bad,
+                                obstruction_fraction=bad).to_dict())
+    db.insert_system_metric({"timestamp": 1000.0, "cpu_percent": bad, "temp_c": bad})
+    db.set_router_status(RouterInfo(timestamp=1000.0, online=True, update_progress_pct=bad).to_dict())
+    metric, system, router = db.get_latest_metric(), db.get_latest_system_metric(), db.get_router_status()
+    for row, columns in ((metric, ("ping_latency_ms", "downlink_mbps", "ping_drop_ratio", "obstruction_fraction")),
+                         (system, ("cpu_percent", "temp_c")), (router, ("update_progress_pct",))):
+        assert all(row[c] is None for c in columns), (columns, row)
+
+
+def test_finite_values_are_stored_unchanged(db_path):
+    from app.starlink_client import DishStatus
+    db.insert_metric(DishStatus(timestamp=1000.0, online=True, ping_latency_ms=31.5, downlink_mbps=0.0).to_dict())
+    metric = db.get_latest_metric()
+    assert metric["ping_latency_ms"] == 31.5 and metric["downlink_mbps"] == 0.0     # нуль - не "відсутнє"
+
+
+# ---- атомарність "прочитати -> вирішити -> записати" (дублікати сповіщень при одночасних викликах) ----
+
+def _run_concurrently(fn, workers=8):
+    import threading
+    barrier = threading.Barrier(workers)
+    results = []
+    lock = threading.Lock()
+
+    def work():
+        barrier.wait()
+        value = fn()
+        with lock:
+            results.append(value)
+    threads = [threading.Thread(target=work) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return results
+
+
+def test_claim_setting_is_true_only_for_the_first_caller(db_path):
+    assert db.claim_setting("flag", "a") is True
+    assert db.claim_setting("flag", "a") is False
+    assert db.claim_setting("flag", "b") is True          # нове значення - знову "захоплення"
+    assert db.get_setting("flag") == "b"
+
+
+def test_concurrent_claims_of_the_same_value_have_exactly_one_winner(db_path):
+    results = _run_concurrently(lambda: db.claim_setting("dish_target_notified", "d1|v9|v9"))
+    assert results.count(True) == 1 and results.count(False) == 7
+
+
+def test_concurrent_known_device_upserts_report_one_real_change(db_path):
+    """Один перехід прошивки, 8 одночасних викликів (монітор + веб-кнопка +
+    Telegram): рівно одна "реальна зміна", інакше - 8 однакових сповіщень."""
+    db.upsert_known_device_dish("dRACE", "rev4", "v1")
+    results = _run_concurrently(lambda: db.upsert_known_device_dish("dRACE", "rev4", "v2"))
+    assert [r[0] for r in results].count(True) == 1
+    assert {r[1] for r in results if r[0]} == {"v1"}
+
+
+# ---- "останній" запис ігнорує рядки з майбутнього (годинник стрибнув назад) ----
+
+def test_latest_metric_ignores_rows_from_the_future(db_path):
+    from app.starlink_client import DishStatus
+    now = time.time()
+    db.insert_metric(DishStatus(timestamp=now + 7200, online=True, dish_id="d1").to_dict())       # записано ДО стрибка годинника
+    db.insert_metric(DishStatus(timestamp=now - 5, online=False, dish_id="d1", error="timeout").to_dict())   # актуальне
+    latest = db.get_latest_metric()
+    assert latest is not None and latest["online"] == 0       # раніше повертався рядок із майбутнього (online) ще 2 год
+
+
+def test_latest_metric_is_none_when_every_row_is_in_the_future(db_path):
+    from app.starlink_client import DishStatus
+    db.insert_metric(DishStatus(timestamp=time.time() + 7200, online=True, dish_id="d1").to_dict())
+    assert db.get_latest_metric() is None
+
+
+def test_latest_metric_tolerates_small_clock_skew(db_path):
+    from app.starlink_client import DishStatus
+    db.insert_metric(DishStatus(timestamp=time.time() + 60, online=True, dish_id="d1").to_dict())   # у межах допуску
+    assert db.get_latest_metric() is not None
+
+
+def test_latest_system_metric_ignores_rows_from_the_future(db_path):
+    now = time.time()
+    db.insert_system_metric({"timestamp": now + 7200, "cpu_percent": 99.0})
+    db.insert_system_metric({"timestamp": now - 5, "cpu_percent": 5.0})
+    assert db.get_latest_system_metric()["cpu_percent"] == 5.0

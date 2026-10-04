@@ -77,10 +77,11 @@ def check_target_version_reached(
     if not version_in_target_list(current_version, target_raw):
         return
     notified_value = f"{dish_id}|{current_version}|{target_raw}"
-    if db.get_setting(notified_key) == notified_value:
+    # Атомарне "захоплення" прапорця ДО сповіщення (раніше get -> notify -> set:
+    # одночасні перевірки - монітор і веб-кнопка - обидві сповіщали б).
+    if not db.claim_setting(notified_key, notified_value):
         return
     notify_fn(i18n.t("tg_target_reached", component=component_text(component, COMPONENT_NAME), version=current_version))
-    db.set_setting(notified_key, notified_value)
 
 
 def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Callable[[str], None]) -> None:
@@ -118,11 +119,10 @@ def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Cal
         return
 
     combo_key = f"{last_known_dish_id}|{dish_current}|{dish_target}|{router_current}|{router_target}"
-    if db.get_setting("both_targets_notified") == combo_key:
+    if not db.claim_setting("both_targets_notified", combo_key):
         return
 
     notify_fn(i18n.t("tg_both_targets", dish=dish_current, router=router_current))
-    db.set_setting("both_targets_notified", combo_key)
 
 
 def format_firmware_change_message(component: str, old_version: str, new_version: str) -> Optional[str]:

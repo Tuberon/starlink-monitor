@@ -299,7 +299,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-805 tests (`pytest-randomly` — resilient to execution order), 23
+920 tests (`pytest-randomly` — resilient to execution order), 24
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -336,7 +336,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 805 tests (23 files), pytest-randomly
+├── tests/          # 920 tests (24 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
@@ -399,7 +399,8 @@ the DB).
 numeric parameter: it rejects `nan`/`inf`, negative values and `0` for timers
 (there `0` would mean "on every iteration", not "disabled"); zero stays
 allowed only where it really means "disabled" (pins, backlight auto-off).
-Manual editing of the `env` file is not checked.
+The addresses `STARLINK_DISH_ADDR`/`STARLINK_ROUTER_ADDR` are accepted only as
+`host:port` (port 1–65535). Manual editing of the `env` file is not checked.
 
 Most important for initial setup:
 
