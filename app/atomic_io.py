@@ -6,10 +6,16 @@
 "найновішим". Після os.replace читач бачить або старий файл, або новий - ніколи проміжний.
 """
 import contextlib
+import glob
 import os
 import stat
 import tempfile
+import time
 from typing import Optional
+
+# Тимчасові файли, що пережили SIGKILL/втрату живлення (між mkstemp і os.replace), прибираються при
+# наступному записі; "застарілі" - старші за це число секунд, щоб не зачепити паралельний запис.
+_STALE_TEMP_SEC = 600
 
 
 def atomic_write_text(path: str, text: str, mode: Optional[int] = None) -> None:
@@ -37,3 +43,13 @@ def atomic_write_text(path: str, text: str, mode: Optional[int] = None) -> None:
             os.fsync(dir_fd)
         finally:
             os.close(dir_fd)
+    _remove_stale_temp_files(directory)
+
+
+def _remove_stale_temp_files(directory: str) -> None:
+    """Виміряно: 60 SIGKILL у випадковий момент запису лишили до 22 файлів .atomic-*.tmp."""
+    cutoff = time.time() - _STALE_TEMP_SEC
+    for leftover in glob.glob(os.path.join(directory, ".atomic-*.tmp")):
+        with contextlib.suppress(OSError):
+            if os.stat(leftover).st_mtime < cutoff:
+                os.unlink(leftover)

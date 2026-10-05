@@ -167,6 +167,24 @@ else
   echo "==> venv вже існує, requirements.txt/constraints.txt без змін — пропускаю pip install"
 fi
 
+# >>> root-owned-scripts
+# Усе, що виконує root, - власність root. Юніти starlink-monitor-healthcheck і starlink-wan-failover
+# працюють від root (systemctl restart, route-metric) і щохвилини/кожні 30 с запускають скрипти з
+# $PROJECT_DIR/scripts; те саме робить адміністратор: `sudo bash .../scripts/update.sh`. Після
+# `chown -R $RUN_USER` вище ці скрипти належали RUN_USER, під яким працюють веб-інтерфейс без
+# автентифікації, монітор і дисплей: будь-який збій там дозволяв переписати скрипт і за хвилину
+# отримати root. Права на сам скрипт недостатні - власник батьківського каталогу може підмінити
+# `scripts/` цілком, тож root-власником має бути й $PROJECT_DIR. Сервісам запис у корінь проєкту
+# не потрібен (ProtectSystem=strict, ReadWritePaths лише /var/lib і /etc/starlink-monitor);
+# RUN_USER лишається власником app/ (fetch-юніт оновлює app/vendor) і venv. Блок стоїть ПІСЛЯ
+# усіх кроків від RUN_USER (venv/pip потребують запису в $PROJECT_DIR) і перевіряється тестом.
+echo "==> Каталог проєкту і scripts/ - власність root (root виконує ці скрипти)"
+chown root:root "$PROJECT_DIR"
+chmod 755 "$PROJECT_DIR"
+chown -R root:root "$PROJECT_DIR/scripts"
+chmod -R go-w "$PROJECT_DIR/scripts"
+# <<< root-owned-scripts
+
 echo "==> Каталог даних"
 mkdir -p /var/lib/starlink-monitor
 chown -R "$RUN_USER:$RUN_USER" /var/lib/starlink-monitor
@@ -191,7 +209,6 @@ chmod 600 /etc/starlink-monitor/env
 
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
-# необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi,
 # необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi.
 # Це навмисно вузько — НЕ blanket "ALL=(ALL) NOPASSWD: ALL".
 cat > /etc/sudoers.d/starlink-monitor <<EOF

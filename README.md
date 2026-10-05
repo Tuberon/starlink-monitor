@@ -300,7 +300,7 @@ ruff check .
 
 ## ✅ Тести
 
-1023 тести (`pytest-randomly` — стійкість до порядку виконання), 25
+1034 тести (`pytest-randomly` — стійкість до порядку виконання), 26
 файли у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -335,7 +335,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 1023 тести (25 файлів), pytest-randomly
+├── tests/          # 1034 тести (26 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md
@@ -367,6 +367,12 @@ sudo bash /opt/starlink-monitor/scripts/update.sh
 не чіпаються, синхронізуються лише змінені файли, мережевий запит не
 повторюється. SHA-256 запобігає повторному встановленню того самого
 архіву; шлях можна вказати аргументом.
+
+Після установки каталог `/opt/starlink-monitor` і `scripts/` належать
+root: їх виконує root (юніти healthcheck і WAN-failover та `update.sh`
+під `sudo`), тож непривілейований користувач сервісів не може їх
+підмінити. Редагувати їх вручну — через `sudo`; `app/` і `venv`
+лишаються за користувачем сервісів.
 
 **✅ Після встановлення:**
 1. `sudo nmcli device wifi connect "<SSID>" password "<пароль>" ifname wlan0`

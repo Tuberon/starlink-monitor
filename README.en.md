@@ -299,7 +299,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-1023 tests (`pytest-randomly` — resilient to execution order), 25
+1034 tests (`pytest-randomly` — resilient to execution order), 26
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -336,7 +336,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 1023 tests (25 files), pytest-randomly
+├── tests/          # 1034 tests (26 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
@@ -368,6 +368,12 @@ Unpacks and calls `install.sh` in update mode: system packages
 aren't touched, only changed files are synced, the network prompt
 isn't repeated. SHA-256 prevents re-installing the same archive
 twice; the path can be given as an argument.
+
+After installation the `/opt/starlink-monitor` directory and `scripts/`
+belong to root: root executes them (the healthcheck and WAN-failover
+units and `update.sh` under `sudo`), so the unprivileged service user
+cannot replace them. Edit them manually via `sudo`; `app/` and `venv`
+stay with the service user.
 
 **✅ After installation:**
 1. `sudo nmcli device wifi connect "<SSID>" password "<password>" ifname wlan0`

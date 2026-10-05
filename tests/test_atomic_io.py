@@ -126,3 +126,41 @@ def test_failed_auto_backup_write_leaves_no_partial_file(db_path, monkeypatch, t
         services.perform_auto_backup()
     monkeypatch.undo()
     assert os.listdir(tmp_path / "b") == []
+
+
+# ---- прибирання тимчасових файлів, що пережили SIGKILL ----
+
+def _make_temp(directory, name, age_sec):
+    import time
+    path = directory / name
+    path.write_text("залишок", encoding="utf-8")
+    old = time.time() - age_sec
+    os.utime(path, (old, old))
+    return path
+
+
+def test_stale_temp_files_from_killed_writers_are_removed_on_the_next_write(tmp_path):
+    """60 SIGKILL у випадковий момент запису лишили до 22 файлів .atomic-*.tmp."""
+    stale = [_make_temp(tmp_path, f".atomic-dead{i}.tmp", 86400) for i in range(3)]
+    atomic_io.atomic_write_text(str(tmp_path / "env"), "A=1\n")
+    assert not any(p.exists() for p in stale)
+
+
+def test_fresh_temp_files_of_a_concurrent_writer_are_kept(tmp_path):
+    fresh = _make_temp(tmp_path, ".atomic-concurrent.tmp", 5)
+    atomic_io.atomic_write_text(str(tmp_path / "env"), "A=1\n")
+    assert fresh.exists()
+
+
+def test_cleanup_touches_only_atomic_temp_files(tmp_path):
+    keep = [_make_temp(tmp_path, name, 86400) for name in (".atomic-notes.txt", ".atomic-x.tmp.bak", "other.tmp", ".hidden", "env.old")]
+    atomic_io.atomic_write_text(str(tmp_path / "env"), "A=1\n")
+    assert all(p.exists() for p in keep)
+
+
+def test_failure_to_remove_a_stale_file_does_not_fail_the_write(tmp_path, monkeypatch):
+    _make_temp(tmp_path, ".atomic-dead.tmp", 86400)
+    real_unlink = os.unlink
+    monkeypatch.setattr(os, "unlink", lambda p, *a, **k: (_ for _ in ()).throw(PermissionError("не мій")) if ".atomic-dead" in str(p) else real_unlink(p, *a, **k))
+    atomic_io.atomic_write_text(str(tmp_path / "env"), "A=1\n")
+    assert (tmp_path / "env").read_text(encoding="utf-8") == "A=1\n"
