@@ -175,7 +175,7 @@ mv -f "$STAGED" "$CURRENT"
 PROV_TMP="$VENDOR_DIR/.PROVENANCE.new"
 cat > "$PROV_TMP" <<EOF2
 # Походження app/vendor/starlink_grpc.py - СТОРОННІЙ код, не наш (див.
-# docs/decisions-log.md: "starlink_grpc.py винесено як vendor-файл").
+# docs/decisions-log.md: «Процеси, systemd, привілеї і vendor-файл»).
 # Формат: KEY=value (рядки з # - коментарі). Файл пише scripts/fetch_starlink_grpc.sh;
 # тест перевіряє, що SHA256 нижче збігається з фактичним файлом.
 UPSTREAM_REPO=https://github.com/sparky8512/starlink-grpc-tools
