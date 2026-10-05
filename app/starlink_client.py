@@ -48,7 +48,10 @@ IGNORED_DISH_ALERTS = frozenset({"obstruction_map_reset"})
 # check_updates_now() (виправлено точково), потім Telegram /status
 # ("⚠️ Попереджень: 1" при порожньому списку на дашборді). У джерелі -
 # одна точка, через яку проходять УСІ читання стану роутера.
-IGNORED_ROUTER_ALERTS = frozenset({"wired_mesh_not_using_wan_iface"})
+IGNORED_ROUTER_ALERTS = frozenset({"wired_mesh_not_using_wan_iface", "lan_eth_slow_link_100"})
+# lan_eth_slow_link_100 (\"повільне LAN Ethernet з'єднання (100 Мбіт/с)\") - рішення користувача: не
+# виводити, не надсилати в Telegram і не записувати (БД, журнал, дашборд, дисплей). Лише варіант на
+# 100 Мбіт/с: lan_eth_slow_link_10 (10 Мбіт/с) НЕ ігнорується - це справжня деградація лінку.
 
 # Точна відповідність до enum SpaceX.API.Device.SoftwareUpdateState
 SOFTWARE_UPDATE_STATE_NAMES = {

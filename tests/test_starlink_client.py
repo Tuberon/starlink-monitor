@@ -577,6 +577,58 @@ def test_router_ignored_alert_dropped_at_source():
     assert r.active_alerts == ["thermal_throttle"]
 
 
+@pytest.mark.parametrize("camel", ["wiredMeshNotUsingWanIface", "lanEthSlowLink100"])
+def test_every_ignored_router_alert_is_dropped_at_source_while_others_stay(camel):
+    """Кожен код з IGNORED_ROUTER_ALERTS відкидається при розборі; інше попередження з тієї ж відповіді - на місці."""
+    import json
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["alerts"] = {camel: True, "thermalThrottle": True}
+    assert run_router_info(stdout=json.dumps(payload)).active_alerts == ["thermal_throttle"]
+
+
+def test_only_the_100_mbps_slow_lan_alert_is_ignored_not_the_10_mbps_one():
+    """"Повільне LAN Ethernet з'єднання (100 Мбіт/с)" не виводиться, а варіант на 10 Мбіт/с - справжня деградація - так."""
+    import json
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["alerts"] = {"lanEthSlowLink10": True, "lanEthSlowLink100": True}
+    assert run_router_info(stdout=json.dumps(payload)).active_alerts == ["lan_eth_slow_link_10"]
+
+
+def test_ignored_alert_codes_are_real_alert_fields():
+    """Опечатка в коді мовчки вимкнула б фільтр (рядок ніколи не збігся б з полем відповіді)."""
+    assert starlink_client.IGNORED_ROUTER_ALERTS <= set(starlink_client.ROUTER_ALERT_FIELD_NAMES)
+    assert starlink_client.IGNORED_DISH_ALERTS <= set(starlink_client.ALERT_FIELD_NAMES)
+
+
+def _poll_router_with_alerts(alerts):
+    """Справжній розбір відповіді роутера -> Watchdog.poll_router(): (надіслані сповіщення, типи подій журналу, alerts у БД)."""
+    import json
+    from unittest.mock import patch
+    from app import db, monitor
+    payload = make_router_payload()
+    payload["wifiGetStatus"]["alerts"] = alerts
+    info = run_router_info(stdout=json.dumps(payload))
+    watchdog = monitor.Watchdog()
+    sent = []
+    watchdog._notify = sent.append
+    watchdog.prev_router_alerts = set()                       # стан уже ініціалізовано: нове попередження - подія
+    with patch.object(watchdog.client, "get_router_info", return_value=info):
+        watchdog.poll_router()
+    kinds = [event["kind"] for event in db.get_recent_events(50)]
+    return sent, kinds, str(db.get_router_status()["active_alerts"])
+
+
+def test_slow_lan_100_alert_produces_no_notification_no_journal_event_and_no_db_record(db_path):
+    sent, kinds, stored = _poll_router_with_alerts({"lanEthSlowLink100": True})
+    assert sent == [] and "router_alert" not in kinds and "lan_eth_slow_link_100" not in stored
+
+
+def test_control_other_router_alerts_still_notify_and_are_recorded(db_path):
+    """Контроль: без нього попередній тест проходив би й при зламаному опитуванні роутера."""
+    sent, kinds, stored = _poll_router_with_alerts({"lanEthSlowLink10": True})
+    assert len(sent) == 1 and "10" in sent[0] and "router_alert" in kinds and "lan_eth_slow_link_10" in stored
+
+
 # ---- reboot_dish(): функція, заради якої існує watchdog, раніше не виконувалась жодним тестом ----
 
 def _reboot_client():

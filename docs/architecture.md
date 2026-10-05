@@ -23,11 +23,14 @@ router — різні enum з різними назвами станів).
 | Файл | Відповідальність |
 |---|---|
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, reboot_dish(); vendored gRPC-стек вантажиться ліниво (`_grpc_module()`) |
-| `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота |
-| `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
-| `db.py` | SQLite: metrics, events, system_metrics, router_status, settings |
-| `telegram_notify.py` | Вихідні сповіщення |
-| `telegram_bot.py` | Вхідні команди `/status`, `/reboot`, `/help` (обробка кожного update у пулі потоків, не блокує polling) |
+| `monitor.py` | Watchdog: цикл опитування (періодичні задачі `_Periodic`), авто-reboot, логування подій, запуск Telegram-бота (точка входу) |
+| `services.py` | Спільна логіка для monitor/webapp/telegram_bot: відстеження версій прошивок (`check_updates_now`, `upsert_*`), бекапи (`perform_auto_backup` з ротацією), перевірка цілісності БД |
+| `webapp.py` | Flask, REST API (довідник нижче), роздає `/`, `/settings`, `/stats`, `/healthz`; відхиляє POST із чужого сайту (CSRF), у JSON немає `Infinity`/`NaN` |
+| `db.py` | SQLite: metrics, events, system_metrics, router_status, known_devices, settings; атомарні "прочитати → вирішити → записати" (`claim_setting`, `BEGIN IMMEDIATE`), "останній" запис ігнорує рядки з майбутнього |
+| `i18n.py` | Мультимовний інтерфейс (uk/en): словник перекладів, `t()`, мова з settings |
+| `telegram_notify.py` | Вихідні сповіщення (повторна спроба, eth0-fallback; токен не потрапляє в логи) |
+| `log_redact.py` | Маскування токена бота в текстах помилок і логах (`redact()`, `RedactingFilter`) |
+| `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` (`/start` = `/help`); обробка кожного update у пулі потоків, не блокує polling |
 | `atomic_io.py` | Атомарний запис файлів (temp → fsync → replace): env зі /settings і автобекапи не обнуляються до запису |
 | `labels.py` | Спільні таблиці "код -> ключ перекладу" для станів оновлення й alert-прапорців (monitor.py + telegram_bot.py, без дублювання; `_label()` перекладає лише потрібний код) |
 | `system_metrics.py` | Метрики Pi (CPU/RAM/диск/температура) |
@@ -37,7 +40,7 @@ router — різні enum з різними назвами станів).
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес) |
 | `gpio_utils.py` | Спільна gpiod v1/v2-сумісна логіка читання GPIO-входу (shutdown_button.py + display.py) і запису GPIO-виходу (activity_led.py) |
 | `config.py` | Конфігурація, env-змінні |
-| `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
+| `config_editor.py` | Читання, валідація (таблиця `_VALIDATORS`, межі `LIMITS`, формат адрес) і атомарний запис `/etc/starlink-monitor/env` через `/settings` |
 
 `app/vendor/starlink_grpc.py` — **vendored** (фізично включений в архів
 проєкту, не в таблиці вище, бо не наш код) файл зі стороннього
@@ -437,7 +440,7 @@ user-налаштування.
 ручна кнопка "Перевірити оновлення" записувала статус без жодного
 сповіщення — виправлено винесенням спільної логіки.
 
-**`IGNORED_ROUTER_ALERTS`** (`wired_mesh_not_using_wan_iface`) —
+**`IGNORED_ROUTER_ALERTS`** (`wired_mesh_not_using_wan_iface`, `lan_eth_slow_link_100`) —
 відкидається в джерелі, `starlink_client.get_router_info()`, поруч з
 `IGNORED_DISH_ALERTS`. Історія: фільтр спершу стояв лише у фоновому
 циклі (ручна перевірка повертала прихований alert), потім на двох шляхах

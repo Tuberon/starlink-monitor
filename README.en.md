@@ -10,7 +10,7 @@ Autonomous monitor and watchdog for Starlink Mini on Raspberry Pi Zero 2 W.
 [TFT display](#️-physical-tft-display-st7789-spi) ·
 [Telegram](#-telegram-notifications-and-commands) · [Backup](#-settings-backuprestore) ·
 [healthz/PWA](#-extra-healthz-pwa) · [Reliability](#️-reliability) ·
-[Manual update check](#-about-manual-update-checks) · [Network](#-important-network-notes) ·
+[Manual update check](#-about-manual-update-checks) · [Network](#-important-network-notes) · [Security](#-security) ·
 [Load reduction](#-reducing-system-load-optional-during-installation) ·
 [Type checking](#-type-checking-mypy) · [Tests](#-tests) ·
 [Structure](#️-project-structure) · [Installation](#-installation-and-updates) ·
@@ -194,10 +194,11 @@ safeguard in case the DB and backup remain on the same SD card.
 
 ## ➕ Extra: healthz, PWA
 
-- **`GET /healthz`** — for external monitoring (UptimeRobot etc.):
-  DB available + the watchdog is actually polling the dish (metric
-  freshness < 3 poll cycles). `200 ok` / `503 degraded`, writes
-  nothing to the log — safe to poll frequently.
+- **`GET /healthz`** — for external monitoring (UptimeRobot etc.): DB
+  available + the watchdog is actually polling the dish (metric
+  freshness no older than 3 poll cycles + the batch-write interval
+  `DISH_METRICS_BATCH_INTERVAL_SEC`, 60 s by default). `200 ok` / `503
+  degraded`, writes nothing to the log — safe to poll frequently.
 - **Installable dashboard (PWA)** — "Add to home screen" in
   Chrome/Edge. The service worker caches only static assets
   (CSS/JS/icons) — API data is always live, the service worker never
@@ -212,8 +213,8 @@ safeguard in case the DB and backup remain on the same SD card.
 
 ## 🛡️ Reliability
 
-- **A watchdog for the watchdog** — `healthcheck.timer` (once/min)
-  polls `/healthz`, forces a restart on a hang (not a crash)
+- **A watchdog for the watchdog** — `starlink-monitor-healthcheck.timer`
+  (once/min) polls `/healthz`, forces a restart on a hang (not a crash)
 - **Fewer writes to the SD card** — dish metrics are batch-INSERTed
   once per `DISH_METRICS_BATCH_INTERVAL_SEC` (30s), not every time (a
   state change — online/offline or update — is written at once); a
@@ -259,6 +260,26 @@ have their own additional fallback (`SO_BINDTODEVICE` on `eth0` +
 manual DNS resolution if needed) — works independently, no
 configuration required.
 
+## 🔒 Security
+
+- **The web interface has no authentication** (port `8080`,
+  `STARLINK_WEBUI_HOST=0.0.0.0`) — a deliberate decision for a trusted
+  local network. Do not expose the port to the internet (port
+  forwarding, public tunnels): whoever can see the dashboard can reboot
+  the dish and shut the Pi down.
+- **Cross-site request protection**: a POST from another website (judged
+  by the `Origin` and `Sec-Fetch-Site` headers, which the browser sets
+  itself) is rejected with 403; `curl` and scripts without those headers
+  work. DNS rebinding is not covered (a request from a foreign name that
+  resolves to the station's IP).
+- **Privileges**: the services run as an unprivileged user; `sudo`
+  allows it exactly four commands (`systemctl restart` of two services,
+  `reboot`, `poweroff`). Only the healthcheck and WAN-failover run as
+  root, and the scripts they execute belong to root.
+- **Secrets**: the Telegram token is in the `env` file (mode 600) and in
+  the DB (data directory 700); it is masked in logs automatically. **A
+  backup contains the token** — keep it as a secret.
+
 ## 📉 Reducing system load (optional, during installation)
 
 `install.sh` (only on first installation) offers to disable services
@@ -274,17 +295,21 @@ Network services (`ssh`, `NetworkManager`, `dhcpcd`) are never
 offered — a headless device without physical access can't risk
 being locked out of SSH. Separately — `apt-get autoremove`/`clean`.
 
+Conversely, `install.sh` enables `fstrim.timer` (periodic TRIM for the
+SD card; if the card doesn't support it, it does nothing and does no
+harm).
+
 ## 🔍 Type checking (mypy)
 
-All of the project's code (except `app/vendor/` — third-party code)
-is typed and passes `mypy` in **strict mode** (`app/*` — the equivalent of
-`--strict`, flags in `mypy.ini`; typing in `tests/` is lenient). Calls into
-`requests`, `psutil`, `dns` are checked against real stubs (`types-*` in
-`requirements-dev.txt`); import-ignoring is allowed only for the Pi hardware
-libraries — strictness is held by `test_mypy_config_stays_strict`. The `mypy`
-result depends on the installed packages (31 errors without Flask), so run it
-in the full dev environment. Check
-before committing/updating:
+All of the project's code (except `app/vendor/` — third-party code) is
+typed and passes `mypy` in **strict mode** (`app/*` — the equivalent of
+`--strict`, flags in `mypy.ini`; typing in `tests/` is lenient). Calls
+into `requests`, `psutil`, `dns` are checked against real stubs
+(`types-*` in `requirements-dev.txt`); import-ignoring is allowed only
+for the Pi hardware libraries — strictness is held by
+`test_mypy_config_stays_strict`. The `mypy` result depends on the
+installed packages (over 30 errors without Flask, all in `webapp.py`),
+so run it in the full dev environment. Check before committing/updating:
 ```bash
 pip install -r requirements-dev.txt
 mypy app/
@@ -299,7 +324,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-1034 tests (`pytest-randomly` — resilient to execution order), 26
+1053 tests (`pytest-randomly` — resilient to execution order), 26
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -316,6 +341,9 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 Coverage by module: `pytest --cov=app --cov-report=term-missing`.
+
+The root-ownership tests (`test_install_security.py`) run only as root
+and are skipped for an ordinary user.
 
 **On the Pi itself** — in a separate environment (not the live
 `/opt/.../venv`, no `--break-system-packages`) and without hardware
@@ -336,13 +364,17 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 1034 tests (26 files), pytest-randomly
+├── tests/          # 1053 tests (26 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
-├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md
+├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md, plan.md
 ├── requirements.txt      # production dependencies (direct, exact pins)
 ├── constraints.txt       # pinned TRANSITIVE versions (pip install -c)
-└── requirements-dev.txt  # mypy/pytest/ruff/pip-audit
+├── requirements-dev.txt  # mypy/pytest/ruff/pip-audit
+├── mypy.ini              # mypy: strict mode for app/*
+├── pytest.ini            # pytest settings
+├── ruff.toml             # ruff: rules F, B, E9, PLE, S
+└── LICENSE               # MIT
 ```
 
 Detailed description of every file — [`docs/index.md`](docs/index.md).

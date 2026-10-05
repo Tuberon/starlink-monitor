@@ -27,11 +27,11 @@
 | `starlink_client.py` | gRPC-клієнт: статус dish/router, `reboot_dish()`; vendored gRPC-стек вантажиться ліниво (`_grpc_module()`) |
 | `monitor.py` | Watchdog: цикл опитування, авто-reboot, логування подій, запуск Telegram-бота (точка входу) |
 | `services.py` | Спільна логіка для monitor/webapp/telegram_bot: відстеження версій прошивок (`check_updates_now`, `upsert_*`, `check_*_targets_reached`), бекапи (`build_backup_dict`, `perform_auto_backup`, `send_latest_backup_to_telegram`, `check_db_integrity_and_notify`) |
-| `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz` |
-| `db.py` | SQLite: metrics, events, system_metrics, router_status, known_devices, settings |
+| `webapp.py` | Flask, REST API, роздає `/`, `/settings`, `/stats`, `/healthz`; відхиляє POST із чужого сайту (CSRF), у JSON немає `Infinity`/`NaN` |
+| `db.py` | SQLite: metrics, events, system_metrics, router_status, known_devices, settings; атомарні `claim_setting`/`BEGIN IMMEDIATE`, "останній" запис ігнорує рядки з майбутнього |
 | `i18n.py` | Мультимовний інтерфейс (uk/en) - словник перекладів, `t()`, мова з settings |
 | `telegram_notify.py` | Вихідні сповіщення |
-| `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` |
+| `telegram_bot.py` | Вхідні команди `/status`, `/checkupdates`, `/reboot`, `/id`, `/help` (`/start` = `/help`) |
 | `atomic_io.py` | Атомарний запис файлів (тимчасовий файл → fsync → os.replace), права існуючого файлу зберігаються; для env і автобекапів |
 | `labels.py` | Таблиці "код -> ключ перекладу" для станів оновлення й alert-прапорців (monitor.py + telegram_bot.py), `short_error()` для чату |
 | `log_redact.py` | Очищення токена бота з текстів помилок і логів (`redact()`, `RedactingFilter`, `install()`) |
@@ -42,7 +42,7 @@
 | `display.py` | Фізичний TFT-дисплей статусу (ST7789, SPI, окремий процес); `DisplayController.tick()` — логіка однієї ітерації без заліза |
 | `gpio_utils.py` | Спільна gpiod v1/v2-логіка читання GPIO (shutdown_button.py + display.py) і запису GPIO (activity_led.py) |
 | `config.py` | Конфігурація, env-змінні |
-| `config_editor.py` | Читання/валідація/запис `/etc/starlink-monitor/env` через `/settings` |
+| `config_editor.py` | Читання/валідація (`_VALIDATORS`, `LIMITS`, формат адрес)/атомарний запис `/etc/starlink-monitor/env` через `/settings` |
 | `vendor/starlink_grpc.py` | Vendored (не наш код) — gRPC-хелпери з sparky8512/starlink-grpc-tools (Unlicense) |
 | `vendor/PROVENANCE` | Походження vendored файлу: upstream-коміт, дата, sha256 (тест звіряє з файлом); пише `fetch_starlink_grpc.sh` |
 
@@ -83,7 +83,7 @@
 
 | Файл | Опис |
 |---|---|
-| `install.sh` | Повне встановлення (системні пакети, venv, sudo-права, systemd) |
+| `install.sh` | Повне встановлення (системні пакети, venv, sudo-права, systemd); після кроків від користувача сервісів каталог проєкту й `scripts/` стають власністю root |
 | `update.sh` | Оновлення вже встановленого проєкту |
 | `uninstall.sh` | Повне видалення |
 | `fetch_starlink_grpc.sh` | Опційне оновлення vendored `starlink_grpc.py`: тимчасовий файл → перевірки (розмір, синтаксис, ChannelContext/get_status) → `.prev` → атомарна заміна; `--commit=<sha>`; пише `PROVENANCE` |
@@ -101,7 +101,7 @@
 | `test_webapp.py` | Компаратор версій прошивки, `/api/target-versions`; основні status-endpoints, `/healthz` except-гілки, `/api/telegram-test` |
 | `test_dependencies.py` | Піни requirements/constraints (точні, без дублів, без adafruit), версії urllib3/idna не нижче виправлених, install.sh передає `-c constraints.txt`, логіка `REQ_CHANGED` (СПРАВЖНІЙ фрагмент скрипту у 4 сценаріях) |
 | `test_vendor_fetch.py` | `PROVENANCE` збігається з файлом побайтово; `fetch_starlink_grpc.sh` проти ЛОКАЛЬНОГО сервера: успіх, обірване/замале/без контракту завантаження відхиляється без зміни робочого файлу й без залишків, `.prev`, `--commit`, стрічка недоступна |
-| `test_docs.py` | Охоронні перевірки документації: код-спани не розірвані посеред ідентифікатора, посилання `модуль.функція()` ведуть на існуючий код, паритет двох README, покриття файлів у index.md |
+| `test_docs.py` | Охоронні перевірки документації: код-спани не розірвані посеред ідентифікатора, посилання `модуль.функція()` ведуть на існуючий код, паритет двох README, покриття файлів у index.md, зміст README збігається із заголовками, згадані в README файли/змінні/тести існують, команди Telegram збігаються з ботом, твердження розділу «Безпека» звірені з install.sh, юнітами й конфігом, таблиця модулів в architecture.md = модулі app/, команди бота в README/architecture/index/plan = бот, дерево проєкту в README = корінь, структура двох README збігається по розділах |
 | `test_services.py` | Сервісна логіка (app/services.py) через фікстуру `sink` без Watchdog: target-версії, напрямок зміни прошивки, бекапи, цілісність БД (переклад коду причини), ідентифікатори компонентів |
 | `test_architecture.py` | Граф імпортів між модулями app/: без циклів (навіть лінивих), точки входу не є бібліотеками, `db` не залежить від шару подання |
 | `test_atomic_io.py` | Атомарний запис: обрив посеред запису не чіпає старий файл, збій на кожному кроці без тимчасового сміття, права файлу, `save_values` і автобекап |

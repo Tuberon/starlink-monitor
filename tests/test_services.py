@@ -299,7 +299,7 @@ def test_check_updates_now_keeps_other_router_alerts(db_path):
 
 def test_ignored_router_alerts_contains_expected_value():
     from app import starlink_client
-    assert starlink_client.IGNORED_ROUTER_ALERTS == {"wired_mesh_not_using_wan_iface"}
+    assert starlink_client.IGNORED_ROUTER_ALERTS == {"wired_mesh_not_using_wan_iface", "lan_eth_slow_link_100"}
 
 
 # ---- perform_auto_backup() - ротація, вміст ----
