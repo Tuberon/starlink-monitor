@@ -8,12 +8,10 @@ EnvironmentFile=-/etc/starlink-monitor/env
 ExecStart=/opt/starlink-monitor/scripts/watchdog_healthcheck.sh
 StandardOutput=journal
 StandardError=journal
-# Таймер запускає юніт тисячі разів на добу; systemd пише 3 рядки
-# (Starting/Deactivated/Finished, рівень info) на КОЖЕН запуск - ~13 000
-# рядків/добу на SD-картку від двох таймерів. LogLevelMax=notice відсікає
-# їх (systemd >= 248 застосовує фільтр і до повідомлень PID 1 про юніт),
-# а SyslogLevel=notice піднімає власний вивід скрипта до notice, щоб
-# корисні рядки ("==> ...") і помилки не відсіклись разом із шумом.
+# Таймер запускає юніт тисячі разів на добу, а systemd пише 3 рядки (Starting/Deactivated/Finished,
+# info) на КОЖЕН запуск — ~13 000 рядків/добу на SD від двох таймерів. LogLevelMax=notice їх
+# відсікає (systemd >= 248 застосовує фільтр і до повідомлень PID 1), а SyslogLevel=notice піднімає
+# вивід самого скрипта до notice, щоб корисні рядки ("==> ...") і помилки лишились.
 LogLevelMax=notice
 SyslogLevel=notice
 

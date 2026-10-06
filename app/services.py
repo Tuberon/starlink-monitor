@@ -1,17 +1,10 @@
-"""
-Сервісна логіка, спільна для кількох процесів: відстеження версій прошивок
-(`upsert_*_and_notify`, `check_*_targets_reached`, `check_updates_now`) і
-бекапи (`build_backup_dict`, `perform_auto_backup`,
-`send_latest_backup_to_telegram`, `check_db_integrity_and_notify`).
-
-Раніше жила в monitor.py (точка входу сервісу starlink-monitor): webapp і
-telegram_bot імпортували його цілком заради трьох функцій, що створювало
-цикл monitor <-> telegram_bot (тримався на лінивому імпорті) і змушувало
-процес веб-інтерфейсу вантажити весь Watchdog. Перенесено ЛИШЕ ці функції,
-тіла не змінено (перевірено порівнянням AST): змінились тільки назви, що
-стали публічними при виході за межі модуля - component_text, COMPONENT_NAME,
-COMPONENT_UPDATE, format_firmware_change_message. Сам Watchdog лишився в
-monitor.py: його розбиття на класи не рекомендовано (docs/decisions-log.md).
+"""Сервісна логіка, спільна для кількох процесів: відстеження версій прошивок (`upsert_*_and_notify`,
+`check_*_targets_reached`, `check_updates_now`) і бекапи (`build_backup_dict`, `perform_auto_backup`,
+`send_latest_backup_to_telegram`, `check_db_integrity_and_notify`). Винесено з monitor.py (точка входу
+сервісу), щоб webapp і telegram_bot не імпортували його цілком (цикл monitor <-> telegram_bot, зайвий
+Watchdog у веб-процесі); тіла не змінено (перевірено AST), публічними стали component_text,
+COMPONENT_NAME, COMPONENT_UPDATE, format_firmware_change_message. Розбиття Watchdog на класи не
+рекомендовано (docs/decisions-log.md).
 """
 import json
 import logging
@@ -37,13 +30,11 @@ def version_in_target_list(current_version: Optional[str], target_raw: Optional[
     return current_version in db.parse_version_list(target_raw)
 
 
-# Компоненти Starlink Mini передаються як ІДЕНТИФІКАТОРИ ("dish"/"router"),
-# людські назви - лише тут, через i18n. Раніше в коді ходили українські
-# граматичні форми ("тарілки"/"роутера", а подекуди "dish" для того самого
-# компонента), і опечатка тихо ставала сирим текстом у сповіщенні.
-# Дві форми, бо так склались тексти (і вони лишились побайтово тими самими):
-#   COMPONENT_NAME   - "Останнє оновлення тарілки...", "Прошивка роутера..."
-#   COMPONENT_UPDATE - "оновлення ПЗ dish готове", "оновлення ПЗ роутера готове"
+# Компоненти Starlink Mini — ІДЕНТИФІКАТОРИ ("dish"/"router"), людські назви лише тут, через i18n
+# (раніше ходили українські форми "тарілки"/"роутера", і опечатка тихо ставала сирим текстом у
+# сповіщенні). Дві форми, бо так склались тексти (побайтово ті самі): COMPONENT_NAME — "Останнє
+# оновлення тарілки...", "Прошивка роутера..."; COMPONENT_UPDATE — "оновлення ПЗ dish готове",
+# "оновлення ПЗ роутера готове".
 COMPONENT_NAME = {"dish": "comp_dish", "router": "comp_router"}
 COMPONENT_UPDATE = {"dish": "comp_dish_short", "router": "comp_router"}
 
@@ -58,22 +49,14 @@ def check_target_version_reached(
     component: str, current_version: Optional[str], target_key: str,
     notified_key: str, dish_id: Optional[str], notify_fn: Callable[[str], None],
 ) -> None:
-    """Порівнює встановлену версію (current_version) з очікуваними
-    (target - введені користувачем на /settings через кому, той самий
-    формат, що telegram_chat_ids - корисно, коли SpaceX випускає
-    РІЗНІ номери версій для різних апаратних ревізій під однією
-    умовною версією, і користувач не певен, який саме рядок реально
-    прийде). Матч спрацьовує на БУДЬ-ЯКУ з перелічених версій.
-    notified_key зберігає ТРІЙКУ (dish_id + яка саме версія збіглась +
-    повний список target) - природно "скидається" і при зміні списку,
-    і якщо ТА САМА версія випадково повториться на іншому опитуванні
-    ТОГО САМОГО пристрою, АЛЕ КРИТИЧНО - dish_id у ключі означає, що
-    ІНШИЙ фізичний Starlink (інший dish_id, напр. після заміни
-    обладнання) з тим самим збігом версія+target ЗАВЖДИ отримає своє
-    власне, свіже сповіщення, не заблоковане дедублікацією попереднього
-    пристрою. notify_fn - інʼєкція функції сповіщення (Watchdog передає
-    self._notify, webapp.py передає telegram_notify.send_message напряму
-    - module-level функція сама не залежить від того, ЯК саме сповіщати)."""
+    """Порівнює встановлену версію (current_version) з очікуваними (target — введені на /settings через
+    кому, як telegram_chat_ids; корисно, коли SpaceX видає різні номери для різних апаратних ревізій).
+    Матч — на БУДЬ-ЯКУ з перелічених. notified_key зберігає трійку (dish_id, яка версія збіглась, повний
+    список target): скидається при зміні списку чи повторі тієї ж версії на тому ж пристрої, а dish_id
+    гарантує, що ІНШИЙ фізичний Starlink (напр. після заміни обладнання) з тим самим збігом отримає
+    власне сповіщення. notify_fn — ін'єкція функції сповіщення (Watchdog передає self._notify, webapp.py
+    — telegram_notify.send_message).
+    """
     target_raw = db.get_setting(target_key)
     if not version_in_target_list(current_version, target_raw):
         return
@@ -86,25 +69,14 @@ def check_target_version_reached(
 
 
 def check_both_targets_reached(last_known_dish_id: Optional[str], notify_fn: Callable[[str], None]) -> None:
-    """Окремо від per-component сповіщень вище (ті корисні самі по собі
-    - dish оновився, вже цікаво знати, навіть якщо router ще ні) - це
-    додаткове, комбіноване підтвердження: коли ОБИДВІ (тарілка й
-    роутер) очікувані версії одночасно збігаються зі встановленими,
-    надсилає одне повідомлення про завершення ВСІЄЇ процедури
-    оновлення. Викликається з обох poll_once() (dish) і poll_router()
-    (router) - або один, або інший цикл опитування може стати тим,
-    що робить умову істинною одночасно для обох (компоненти
-    опитуються незалежно, різними циклами), а також з api_check_updates()
-    (webapp.py) - ручна кнопка теж має отримувати повний спектр
-    перевірок, не лише читання статусу.
-
-    Дедублікація - той самий принцип, що в check_target_version_reached():
-    notified-ключ включає dish_id (різні фізичні Starlink НЕ ділять
-    дедублікаційний стан), САМЕ ЗНАЧЕННЯ поточних версій обох
-    компонентів і повні target-списки одночасно - природно
-    "скидається", щойно користувач змінить БУДЬ-ЯКИЙ з двох
-    target-списків (напр. додасть версію для іншої апаратної
-    ревізії), без потреби окремо очищати стан."""
+    """Комбіноване підтвердження поверх per-component сповіщень: коли ОБИДВІ очікувані версії (dish і
+    router) одночасно збігаються зі встановленими — одне повідомлення про завершення всієї процедури
+    оновлення. Викликається з poll_once() (dish), poll_router() (router) — будь-який із незалежних
+    циклів може зробити умову істинною — та з api_check_updates() (webapp.py), щоб ручна кнопка мала ті
+    самі перевірки. Дедублікація як у check_target_version_reached(): notified-ключ містить dish_id
+    (різні фізичні Starlink не ділять стан), поточні версії обох компонентів і повні target-списки, тож
+    "скидається" при зміні будь-якого з двох списків без явного очищення.
+    """
     dish_target = db.get_setting("dish_target_version")
     router_target = db.get_setting("router_target_version")
     if not dish_target or not router_target:
@@ -140,16 +112,11 @@ def format_firmware_change_message(component: str, old_version: str, new_version
 
 
 def upsert_dish_and_notify(status: DishStatus, notify_fn: Callable[[str], None]) -> None:
-    """Записує/оновлює відому версію dish у known_devices, сповіщає
-    при РЕАЛЬНІЙ зміні версії ("🔄 оновлена" чи "⏪ відкочена" - залежно
-    від напрямку, див. format_firmware_change_message), і перевіряє
-    target-версію. Module-level - той самий принцип, що решта функцій
-    вище: спільна логіка для watchdog-циклу (poll_once) і ручної
-    кнопки "Перевірити оновлення" (webapp.py api_check_updates) - без
-    цього ручна перевірка мовчки НЕ надсилала жодного сповіщення,
-    навіть коли версія якраз збігалась із target (знайдено на
-    реальному запиті користувача - "перевір процедуру перевірки
-    оновлень на помилки")."""
+    """Записує/оновлює відому версію dish у known_devices, сповіщає при РЕАЛЬНІЙ зміні ("🔄 оновлена"/"⏪
+    відкочена", див. format_firmware_change_message) і перевіряє target-версію. Module-level: спільна
+    логіка для watchdog-циклу (poll_once) і кнопки "Перевірити оновлення" (webapp.py api_check_updates)
+    — без цього ручна перевірка мовчки не надсилала сповіщень, навіть коли версія збігалась із target.
+    """
     if not status.online:
         return
     real_change, old_version = db.upsert_known_device_dish(status.dish_id, status.hardware_version, status.software_version)
@@ -308,21 +275,13 @@ def check_db_integrity_and_notify(notify_fn: Callable[[str], None]) -> None:
 
 
 def check_updates_now(client: StarlinkClient, notify_fn: Callable[[str], None]) -> tuple[DishStatus, RouterInfo]:
-    """Ручна перевірка стану оновлень - негайно опитує dish і router
-    (замість очікування наступного фонового циклу), записує в БД,
-    викликає ту саму логіку сповіщень (target-версії, "🔄 прошивка
-    оновлена"/"⏪ відкочена"), що фоновий watchdog-цикл. Спільна для
-    /api/check-updates (webapp.py) і /checkupdates (telegram_bot.py)
-    - уникає дублювання ІДЕНТИЧНОЇ логіки в обох місцях (той самий
-    клас прогалини, що вже кілька разів знаходився в цьому проєкті:
-    дублювання накопичується непомітно при паралельних правках).
-
-    ВАЖЛИВО: локальний gRPC API dish/router не має команди "примусово
-    перевірити оновлення в хмарі SpaceX" (підтверджено прямими
-    викликами - software_update повертає помилку, призначений для
-    sideload завантаження прошивки вручну, не перевірки в хмарі).
-    Натомість повертає актуальний поточний стан - це те, що реально
-    доступно через локальний API."""
+    """Ручна перевірка оновлень: негайно опитує dish і router (без очікування фонового циклу), пише в БД і
+    викликає ту саму логіку сповіщень (target-версії, "🔄 прошивка оновлена"/"⏪ відкочена"), що й
+    watchdog. Спільна для /api/check-updates (webapp.py) і /checkupdates (telegram_bot.py), щоб не
+    дублювати логіку. Локальний gRPC API не має команди "примусово перевірити оновлення в хмарі SpaceX"
+    (software_update — для sideload прошивки), тож повертається актуальний поточний стан — усе, що
+    доступно локально.
+    """
     dish_status = client.get_status()
     db.insert_metric(dish_status.to_dict())
 

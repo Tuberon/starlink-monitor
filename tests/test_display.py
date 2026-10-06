@@ -105,11 +105,10 @@ def test_auto_off_disabled_when_timeout_zero():
 # ---- HIDDEN_ROUTER_STATES / _status_lines - "тимчасова хмарна помилка" не показується ----
 
 def test_getting_target_version_failed_fully_hidden():
-    """GETTING_TARGET_VERSION_FAILED - навмисно прихований стан (той
-    самий підхід, що вже застосований до DOWNLOADING_UPDATE_IMAGE_
-    FAILED) - "тимчасова хмарна помилка перевірки оновлення на боці
-    SpaceX", не проблема моніторингу. Рядок про router-оновлення НЕ
-    з'являється взагалі, не лише текст замінюється."""
+    """GETTING_TARGET_VERSION_FAILED — навмисно прихований стан (як DOWNLOADING_UPDATE_IMAGE_FAILED):
+    тимчасова хмарна помилка SpaceX, не проблема моніторингу. Рядок про router-оновлення НЕ з'являється
+    взагалі, а не лише змінюється текст.
+    """
     lines = _status_lines(_dish_metric(), _router_status(update_state="GETTING_TARGET_VERSION_FAILED"))
     update_lines = [l for l in lines if l["kind"] == "update" and "Оновл.Р" in l["text"]]
     assert update_lines == []
@@ -173,11 +172,9 @@ def test_draw_power_action_message_reboot_renders_without_error():
 
 
 def test_draw_power_action_message_uses_only_verified_glyphs():
-    """Реальна регресія, знайдена живим тестом під час реалізації:
-    emoji-символи (⏻, 🔁) виглядали як порожні "тофу"-квадрати на
-    DejaVu-шрифті, хоча автоматизована getbbox()-перевірка хибно
-    показувала "гліф є". Перевіряємо, що використовується безпечний,
-    перевірений символ (●), не ці конкретні emoji."""
+    """Регресія: emoji (⏻, 🔁) на DejaVu — порожні "тофу"-квадрати, хоча автоматична getbbox()-перевірка
+    хибно показувала "гліф є". Перевіряється, що використовується безпечний символ (●).
+    """
     import inspect
     from app import display
     source = inspect.getsource(display._draw_power_action_message)

@@ -42,13 +42,10 @@ systemctl disable starlink-monitor.service starlink-webui.service \
   starlink-wan-failover.timer starlink-monitor-healthcheck.timer \
   starlink-display.service 2>/dev/null || true
 
-# Якщо WAN failover-таймер щойно знизив пріоритет wlan0 (metric=9999,
-# бо Starlink був без інтернету), відновлюємо нормальний пріоритет -
-# інакше після видалення проєкту (і самого таймера, який це коригував)
-# wlan0 лишився б назавжди з metric=9999. Керуємо через nmcli (той
-# самий підхід, що й wan_failover_check.sh) - пряма зміна ip route в
-# обхід NetworkManager конфліктує з його власною persistent-конфігурацією
-# з'єднання, яку воно періодично перевідновлює.
+# Якщо WAN failover щойно знизив пріоритет wlan0 (metric=9999, бо Starlink без інтернету),
+# відновлюємо нормальний — інакше після видалення проєкту (і таймера, який це коригував) wlan0
+# лишився б із metric=9999. Через nmcli, як у wan_failover_check.sh: пряма зміна ip route в обхід
+# NetworkManager конфліктує з його persistent-конфігурацією.
 CONN_NAME="$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | awk -F: -v d="wlan0" '$2==d{print $1; exit}' || true)"
 if [[ -n "$CONN_NAME" ]]; then
   CURRENT_METRIC="$(nmcli -t -g ipv4.route-metric connection show "$CONN_NAME" 2>/dev/null || true)"

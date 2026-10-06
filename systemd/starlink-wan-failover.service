@@ -8,21 +8,16 @@ Type=oneshot
 ExecStart=/opt/starlink-monitor/scripts/wan_failover_check.sh
 StandardOutput=journal
 StandardError=journal
-# Таймер запускає юніт тисячі разів на добу; systemd пише 3 рядки
-# (Starting/Deactivated/Finished, рівень info) на КОЖЕН запуск - ~13 000
-# рядків/добу на SD-картку від двох таймерів. LogLevelMax=notice відсікає
-# їх (systemd >= 248 застосовує фільтр і до повідомлень PID 1 про юніт),
-# а SyslogLevel=notice піднімає власний вивід скрипта до notice, щоб
-# корисні рядки ("==> ...") і помилки не відсіклись разом із шумом.
+# Таймер запускає юніт тисячі разів на добу, а systemd пише 3 рядки (Starting/Deactivated/Finished,
+# info) на КОЖЕН запуск — ~13 000 рядків/добу на SD від двох таймерів. LogLevelMax=notice їх
+# відсікає (systemd >= 248 застосовує фільтр і до повідомлень PID 1), а SyslogLevel=notice піднімає
+# вивід самого скрипта до notice, щоб корисні рядки ("==> ...") і помилки лишились.
 LogLevelMax=notice
 SyslogLevel=notice
 
-# Потребує root для зміни таблиці маршрутизації (ip route) - на
-# відміну від решти сервісів проєкту (ті працюють як RUN_USER з
-# вузькими sudo-правами лише на конкретні systemctl-команди). Це
-# єдиний сервіс проєкту, що працює як root, тому звужуємо можливості
-# до мінімально потрібних (CAP_NET_ADMIN для ip route, CAP_NET_RAW для
-# ping) - навіть root тут не має решти системних можливостей.
+# Потребує root для зміни таблиці маршрутизації (ip route) — єдиний сервіс проєкту від root (решта —
+# RUN_USER із вузькими sudo-правилами), тому можливості звужено до потрібних: CAP_NET_ADMIN (ip
+# route) і CAP_NET_RAW (ping).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

@@ -1,17 +1,8 @@
-"""
-GPIO-світлодіод, що коротко блимає при кожному реальному записі в
-SQLite (dish-метрики, system_metrics, events, router-status, backup,
-VACUUM) - візуальна індикація активності SD-картки, аналогічна
-вбудованому activity-LED настільних дисків. Опційно, вимкнено за
-замовчуванням (ACTIVITY_LED_PIN=0).
-
-Не блокує основний потік: blink() вмикає LED одразу й запускає
-неблокуючий threading.Timer, який вимкне його через ACTIVITY_LED_
-BLINK_MS - виклик з db.py (кожен commit) не має додавати затримку
-до самого запису.
-
-Використовує gpiod (той самий, що gpio_utils.py) - open_output_line(),
-не open_input_line() (LED - вихід, не вхід, як кнопка).
+"""GPIO-світлодіод, що коротко блимає при кожному реальному записі в SQLite (метрики, events,
+router-status, backup, VACUUM) — індикація активності SD, як activity-LED диска. Опційно, вимкнено за
+замовчуванням (ACTIVITY_LED_PIN=0). Не блокує потік: blink() вмикає LED і запускає threading.Timer, що
+вимикає його через ACTIVITY_LED_BLINK_MS (виклик із db.py на кожен commit не має додавати затримку).
+gpiod як у gpio_utils.py, але open_output_line() (LED — вихід).
 """
 import logging
 import threading

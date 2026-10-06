@@ -1,19 +1,8 @@
-"""
-Тести для app/display.py:run_forever() - головний цикл, що ініціалізує
-реальне SPI/GPIO залізо (board/digitalio/busio/adafruit_rgb_display) і
-опитує його в нескінченному циклі.
-
-Апаратні бібліотеки підмінюються fake-модулями в sys.modules ПЕРЕД
-викликом (run_forever() сам робить `import board` тощо лише
-всередині себе, не на рівні модуля - тому підміна в sys.modules
-реально підхоплюється, той самий підхід, що вже застосований для
-gpiod у test_gpio_utils.py/test_shutdown_button.py).
-
-На відміну від shutdown_button.py:watch_button(), ця функція вже має
-stop_event-параметр - чистіший спосіб зупинки циклу в тестах, ніж
-SystemExit-трюк (потрібен лише для сценаріїв, де сама функція
-завершується через return, не чекаючи stop_event - напр. pending
-shutdown-сигнал).
+"""Тести app/display.py:run_forever() — цикл, що ініціалізує SPI/GPIO
+(board/digitalio/busio/adafruit_rgb_display). Апаратні бібліотеки підмінюються fake-модулями в
+sys.modules ПЕРЕД викликом (run_forever() імпортує їх лише всередині — як gpiod у test_gpio_utils.py).
+Функція має stop_event — чистіший спосіб зупинки, ніж SystemExit-трюк (він потрібен лише коли функція
+завершується через return, напр. pending shutdown-сигнал).
 """
 import sys
 import threading
@@ -44,12 +33,10 @@ class _FakeHardwareDisplay:
 
 @pytest.fixture(autouse=True)
 def _restore_display_enabled(monkeypatch):
-    """Тести цього файлу присвоюють config.DISPLAY_ENABLED напряму -
-    monkeypatch.setattr запам'ятовує початкове значення і ВІДНОВЛЮЄ
-    його після кожного тесту (незалежно від проміжних присвоєнь).
-    Без цього True протікав би в інші тестові файли (pi_power.py і
-    shutdown_button.py читають цей прапорець), роблячи їхню поведінку
-    залежною від порядку виконання під pytest-randomly."""
+    """Тести присвоюють config.DISPLAY_ENABLED напряму: monkeypatch.setattr відновлює початкове значення
+    після кожного тесту, інакше True протікав би в інші файли (pi_power.py і shutdown_button.py читають
+    прапорець) і залежав від порядку під pytest-randomly.
+    """
     monkeypatch.setattr(config, "DISPLAY_ENABLED", config.DISPLAY_ENABLED)
 
 
@@ -94,16 +81,11 @@ def test_run_forever_disabled_returns_immediately(caplog):
 
 
 def test_run_forever_missing_hardware_libs_returns(caplog, monkeypatch):
-    """Реальний сценарій: пакети adafruit-blinka/adafruit-circuitpython-
-    rgb-display не встановлені (DISPLAY_ENABLED=1 виставлено, але
-    пакети не поставлені) - МАЄ логувати помилку і завершитись, не
-    кидати виняток назовні.
-
-    sys.modules[m] = None (не .pop()) - стандартний механізм Python,
-    що змушує `import m` кидати ImportError НЕЗАЛЕЖНО від того, чи
-    пакет реально є на диску. .pop() лише чистив кеш імпорту, і на
-    машині з повним requirements.txt (adafruit-blinka встановлено)
-    тест падав - перевіряв середовище, а не код."""
+    """Пакети adafruit-blinka/adafruit-circuitpython-rgb-display не встановлені при DISPLAY_ENABLED=1 — МАЄ
+    логувати помилку й завершитись без винятку. sys.modules[m] = None (не .pop()) змушує `import m`
+    кидати ImportError незалежно від наявності пакета на диску; .pop() лише чистив кеш, і на машині з
+    повним requirements.txt тест перевіряв середовище, а не код.
+    """
     config.DISPLAY_ENABLED = True
     for m in ("board", "digitalio", "busio", "adafruit_rgb_display"):
         monkeypatch.setitem(sys.modules, m, None)

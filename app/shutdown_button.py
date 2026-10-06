@@ -1,17 +1,8 @@
-"""
-GPIO-кнопка виключення Pi (pull-up, LOW = натиснуто). Утримання довше
-SHUTDOWN_BUTTON_HOLD_SEC -> systemctl poweroff + подія + Telegram.
-Окремий сервіс, виходить одразу якщо SHUTDOWN_BUTTON_GPIO_PIN=0.
-
-Якщо DISPLAY_ENABLED=1 - та сама кнопка обробляється всередині
-display.py (коротке натискання перемикає підсвітку, довге - вимикає
-Pi, як і тут) - цей сервіс тоді одразу завершується, щоб не
-конкурувати з display.py за той самий GPIO-пін (два процеси не
-можуть одночасно тримати запит на один і той самий вхід).
-
-Використовує gpiod (character-device API, не застарілий RPi.GPIO) -
-детальна v1/v2-сумісна логіка й детекція короткого/довгого натискання
-в app/gpio_utils.py (спільна з display.py).
+"""GPIO-кнопка виключення Pi (pull-up, LOW = натиснуто): утримання довше SHUTDOWN_BUTTON_HOLD_SEC ->
+systemctl poweroff + подія + Telegram. Окремий сервіс; одразу виходить при SHUTDOWN_BUTTON_GPIO_PIN=0 і
+при DISPLAY_ENABLED=1 (тоді кнопку обробляє display.py: коротке — підсвітка, довге — вимкнення Pi; два
+процеси не можуть тримати один вхід). Використовує gpiod (character-device API, не RPi.GPIO);
+v1/v2-сумісність і детекція short/long — у app/gpio_utils.py.
 """
 import logging
 import time

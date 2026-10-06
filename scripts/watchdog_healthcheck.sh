@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
-# Watchdog для самого watchdog-механізму: якщо starlink-monitor.service
-# зависає (deadlock/livelock, не crash) - процес технічно живий,
-# systemd's Restart=always цього не бачить і не втручається, бо сам
-# процес не завершився. /healthz (starlink-webui.service, окремий
-# процес) вже перевіряє свіжість метрик у БД - якщо watchdog не пише
-# нових даних довше 3 циклів опитування, /healthz поверне 503.
-#
-# Тут - примусовий `systemctl restart starlink-monitor.service` у
-# відповідь на таку деградацію. Запускається через systemd timer
-# (starlink-monitor-healthcheck.timer, раз/хв) - рідше за поріг
-# застарілості /healthz (POLL_INTERVAL_SEC*3, типово 30с), щоб не
-# реагувати на короткі транзієнтні затримки.
+# Watchdog для самого watchdog: якщо starlink-monitor.service зависає (deadlock/livelock, не crash),
+# процес живий і Restart=always цього не бачить. /healthz (starlink-webui.service, окремий процес)
+# перевіряє свіжість метрик у БД: без нових даних довше 3 циклів опитування — 503. Тут — примусовий
+# `systemctl restart starlink-monitor.service` у відповідь. Запускається таймером
+# starlink-monitor-healthcheck.timer (раз/хв) — рідше за поріг /healthz (POLL_INTERVAL_SEC*3, типово
+# 30 с), щоб не реагувати на короткі затримки.
 set -euo pipefail
 
 WEBUI_PORT="${STARLINK_WEBUI_PORT:-8080}"

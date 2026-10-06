@@ -26,12 +26,10 @@ else
   echo "==> Існуючої інсталяції не знайдено — повне встановлення"
 fi
 
-# Суттєва зміна = у новому requirements.txt з'явився пакет, якого не було
-# в попередній інсталяції (порівняння за НАЗВОЮ пакета, без версії - зміна
-# версії існуючого пакета не вважається суттєвою і не вимагає перевстановлення).
-# Новий пакет типово вимагає додаткового системного ПЗ (build-залежності,
-# системні бібліотеки тощо), тому в такому випадку безпечніше повністю
-# видалити попередню інсталяцію і пройти install-потік з нуля.
+# Суттєва зміна = у новому requirements.txt з'явився пакет, якого не було в попередній інсталяції
+# (порівняння за НАЗВОЮ, без версії: зміна версії існуючого пакета не потребує перевстановлення).
+# Новий пакет типово вимагає додаткового системного ПЗ (build-залежності, бібліотеки), тому
+# безпечніше повністю видалити попередню інсталяцію й пройти install з нуля.
 MAJOR_CHANGE=0
 if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
   NEW_PKGS="$(grep -oE '^[A-Za-z0-9_.-]+' "$SRC_DIR/requirements.txt" | tr 'A-Z' 'a-z' | sort -u)"
@@ -150,18 +148,12 @@ if [[ ! -d "$PROJECT_DIR/venv" ]]; then
   sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -c "$PROJECT_DIR/constraints.txt"
 elif [[ "$REQ_CHANGED" -eq 1 ]]; then
   echo "==> requirements.txt/constraints.txt змінились — оновлюю залежності"
-  # БЕЗ --upgrade: requirements.txt тепер має ЛИШЕ точні == піни (не
-  # >=), тому звичайний install ідемпотентний і торкається ЛИШЕ
-  # пакетів, чий точний pin реально відрізняється від встановленого.
-  # --upgrade тут раніше (баг, знайдений на реальному Pi) оновлював
-  # УСІ пакети у файлі до найновіших версій, що задовольняють >=,
-  # навіть ті, чий рядок не змінювався - одного разу так випадково
-  # оновився adafruit-blinka (8.x->9.2.0, hardware-критичний для
-  # TFT-дисплея), хоч ми explicitly домовились його не чіпати.
-  # -c constraints.txt: закріплені ТРАНЗИТИВНІ версії (urllib3, idna, Werkzeug...).
-  # Без нього pip вважає вже встановлені (в т.ч. системні, через
-  # --system-site-packages) версії задоволеними і не оновлює їх ніколи.
-  # Constraints не додають пакетів - апаратні adafruit-* не зачіпаються.
+  # БЕЗ --upgrade: requirements.txt має ЛИШЕ точні == піни, тож install ідемпотентний і чіпає тільки
+  # пакети, чий pin змінився. --upgrade оновлював УСІ пакети до найновіших версій (так випадково
+  # оновився hardware-критичний adafruit-blinka 8.x->9.2.0). -c constraints.txt закріплює
+  # ТРАНЗИТИВНІ версії (urllib3, idna, Werkzeug...): без нього pip вважає вже встановлені (зокрема
+  # системні через --system-site-packages) версії задоволеними й не оновлює. Constraints пакетів не
+  # додають — апаратні adafruit-* не зачіпаються.
   sudo -u "$RUN_USER" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -c "$PROJECT_DIR/constraints.txt"
 else
   echo "==> venv вже існує, requirements.txt/constraints.txt без змін — пропускаю pip install"
@@ -241,15 +233,11 @@ systemctl enable --now starlink-monitor.service
 systemctl enable --now starlink-webui.service
 systemctl enable --now starlink-shutdown-button.service
 systemctl enable --now starlink-display.service
-# starlink-grpc-fetch.service НЕ enable/start автоматично -
-# starlink_grpc.py тепер vendored (app/vendor/starlink_grpc.py, вже в
-# архіві проєкту) для відтворюваності збірки, не завантажується
-# динамічно з інтернету при встановленні. Unit-файл встановлюється
-# (вище) лише для ручного, опційного оновлення vendored копії до
-# найновішої upstream-версії: `sudo systemctl start
-# starlink-grpc-fetch.service`.
-# .timer вмикається й запускається одразу (не .service - той лише
-# oneshot, запускається таймером за розкладом, не при завантаженні).
+# starlink-grpc-fetch.service НЕ вмикається й не стартує автоматично: starlink_grpc.py vendored
+# (app/vendor/, в архіві проєкту) для відтворюваності, а не завантажується з інтернету. Unit
+# встановлюється (вище) лише для ручного оновлення vendored копії: `sudo systemctl start
+# starlink-grpc-fetch.service`. .timer вмикається й запускається одразу (.service — лише oneshot за
+# розкладом).
 systemctl enable --now starlink-wan-failover.timer
 systemctl enable --now starlink-monitor-healthcheck.timer
 
@@ -263,12 +251,9 @@ if ! grep -q "^SystemMaxUse=" /etc/systemd/journald.conf 2>/dev/null; then
   systemctl restart systemd-journald
 fi
 
-# fstrim.timer - періодичний TRIM для flash-носіїв (та сама лінія, що
-# PRAGMA synchronous=NORMAL: зменшення зношення SD-картки). Стандартна
-# частина util-linux, майже напевно вже встановлена на Raspberry Pi
-# OS - лише enable+start, без встановлення пакету. Безпечно навіть
-# якщо конкретна SD-картка НЕ підтримує TRIM - fstrim у такому
-# випадку просто нічого не робить, не шкодить.
+# fstrim.timer — періодичний TRIM для flash-носіїв (та сама мета, що PRAGMA synchronous=NORMAL:
+# менше зношення SD). Частина util-linux, на Raspberry Pi OS майже напевно встановлена — лише
+# enable+start. Безпечно навіть якщо картка не підтримує TRIM: fstrim нічого не робить.
 if systemctl list-unit-files fstrim.timer &>/dev/null; then
   systemctl enable --now fstrim.timer
 else
@@ -299,14 +284,11 @@ if [[ "$MODE" == "install" ]]; then
   echo " спричиняти конфлікти маршрутів (dish/router стають недоступні, якщо"
   echo " домашня мережа отримує вищий пріоритет за замовчуванням)."
   echo ""
-  # Знаходить NetworkManager-профіль, прив'язаний до інтерфейсу. Спершу
-  # перевіряє АКТИВНІ з'єднання (найшвидше) - АЛЕ `DEVICE`-стовпець
-  # `nmcli connection show` порожній для профілів, які існують, АЛЕ
-  # НЕ активні саме зараз (WiFi ще не встиг підключитись одразу після
-  # завантаження Pi, USB-Ethernet щойно вставлений) - реальний випадок,
-  # знайдений на практиці. Fallback: перебирає ВСІ збережені профілі,
-  # звіряючи їхню властивість connection.interface-name (прив'язка
-  # інтерфейсу в самому профілі, незалежна від поточного стану).
+  # Знаходить NetworkManager-профіль інтерфейсу. Спершу АКТИВНІ з'єднання (найшвидше), але стовпець
+  # DEVICE у `nmcli connection show` порожній для профілів, які існують, але зараз неактивні (WiFi
+  # не встиг підключитись після завантаження, USB-Ethernet щойно вставлений). Fallback: усі
+  # збережені профілі за властивістю connection.interface-name (прив'язка в самому профілі,
+  # незалежна від стану).
   find_nm_connection() {
     local iface="$1" conn name bound_iface
     conn="$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v d="$iface" '$2==d{print $1; exit}')"
@@ -323,14 +305,10 @@ if [[ "$MODE" == "install" ]]; then
       fi
     done < <(nmcli -t -f NAME connection show)
 
-    # Третій fallback: профілі, згенеровані через netplan (частий
-    # випадок на сучасних Raspberry Pi OS), часто НЕ мають явної
-    # connection.interface-name властивості - прив'язка йде іншим
-    # механізмом (SSID-match, MAC тощо), тому попередній fallback їх
-    # не знаходить (знайдено на практиці: профіль "netplan-wlan0-
-    # STARLINK" мав ПОРОЖНЮ interface-name). Якщо існує РІВНО ОДИН
-    # профіль потрібного ТИПУ з'єднання - на Pi з одним WiFi-чіпом і
-    # одним USB-Ethernet це надійна, однозначна евристика.
+    # Третій fallback: профілі netplan (часті на сучасному Raspberry Pi OS) нерідко без
+    # connection.interface-name (прив'язка через SSID, MAC тощо) — профіль "netplan-wlan0-STARLINK"
+    # мав ПОРОЖНЮ interface-name. Якщо РІВНО ОДИН профіль потрібного ТИПУ з'єднання — на Pi з одним
+    # WiFi-чіпом і одним USB-Ethernet це надійна евристика.
     local wanted_type ctype matches=()
     case "$iface" in
       wlan*) wanted_type="802-11-wireless" ;;
@@ -381,25 +359,19 @@ if [[ "$MODE" == "install" ]]; then
       nmcli connection modify "$ETH_CONN" \
         ipv4.method manual ipv4.addresses "$ETH_IP" ipv4.gateway "$ETH_GW" \
         ipv4.dns "$ETH_GW,8.8.8.8" ipv4.route-metric 1002
-      # ipv6.method disabled: Starlink роздає публічний IPv6 через SLAAC,
-      # але коли сам Starlink-канал без інтернету (лише локальний зв'язок
-      # з dish/router), система все одно намагається слати DNS/HTTPS-
-      # запити через мертвий IPv6-маршрут замість чистого fallback на
-      # робочий IPv4/eth0 (виявлено на практиці - системний curl зависав
-      # без -4, хоча IPv4-маршрут через eth0 працював ідеально). Проєкт
-      # повністю на IPv4 (dish/router API), публічний IPv6 тут не потрібен.
+      # ipv6.method disabled: Starlink роздає публічний IPv6 через SLAAC, але коли канал без
+      # інтернету, система все одно шле DNS/HTTPS через мертвий IPv6-маршрут замість fallback на
+      # IPv4/eth0 (системний curl зависав без -4, хоча IPv4 через eth0 працював). Проєкт повністю на
+      # IPv4 (API dish/router), публічний IPv6 не потрібен.
       nmcli connection modify "$WLAN_CONN" \
         ipv4.method manual ipv4.addresses "$WLAN_IP" ipv4.gateway "$WLAN_GW" \
         ipv4.dns "1.1.1.1,8.8.8.8" ipv4.route-metric 50 \
         ipv6.method disabled
 
-      # КРИТИЧНО: 192.168.100.0/24 (dish) не має власної підмережі на
-      # wlan0 (це router: 192.168.1.0/24) - трафік до dish іде лише
-      # через ДЕФОЛТНИЙ маршрут. Якщо колись пріоритет дефолтного
-      # маршруту wlan0 знижується (напр. starlink-wan-failover.timer
-      # при відсутньому інтернеті на Starlink), dish стає недосяжним
-      # для Pi, попри те що router (192.168.1.1) лишається доступним.
-      # Явний окремий маршрут - специфічніший за будь-який дефолтний,
+      # КРИТИЧНО: 192.168.100.0/24 (dish) не має власної підмережі на wlan0 (там router:
+      # 192.168.1.0/24) — трафік до dish іде лише через ДЕФОЛТНИЙ маршрут. Якщо пріоритет дефолтного
+      # маршруту wlan0 знижується (starlink-wan-failover.timer без інтернету на Starlink), dish стає
+      # недосяжним, хоча router (192.168.1.1) доступний. Явний маршрут специфічніший за дефолтний і
       # завжди пріоритетніший незалежно від metric.
       nmcli connection modify "$WLAN_CONN" +ipv4.routes "192.168.100.0/24 $WLAN_GW"
 

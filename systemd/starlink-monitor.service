@@ -29,15 +29,11 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/starlink-monitor
 ProtectHome=true
-# CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback,
-# коли WiFi Starlink не має інтернету) - без цього прив'язка сокета
-# до IP-адреси eth0 не форсує реальний вихідний інтерфейс (Linux все
-# одно обирає інтерфейс за таблицею маршрутизації, ігноруючи джерельну
-# IP). Сумісно з NoNewPrivileges=true - ambient capability надається
-# systemd до запуску процесу (частина початкового стану), не через
-# runtime privilege escalation, яку NoNewPrivileges якраз блокує.
-# CapabilityBoundingSet звужує можливі capabilities лише до цієї
-# однієї - принцип найменших привілеїв.
+# CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback, коли WiFi Starlink без
+# інтернету): прив'язка сокета до IP eth0 не форсує вихідний інтерфейс (Linux обирає його за
+# таблицею маршрутизації). Сумісно з NoNewPrivileges=true: ambient capability надається systemd до
+# запуску процесу, а не через runtime escalation, яку NoNewPrivileges блокує. CapabilityBoundingSet
+# звужує можливості до цієї однієї — найменші привілеї.
 AmbientCapabilities=CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_RAW
 

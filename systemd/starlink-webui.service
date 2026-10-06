@@ -23,15 +23,11 @@ StandardError=journal
 ProtectSystem=strict
 ReadWritePaths=/var/lib/starlink-monitor /etc/starlink-monitor
 ProtectHome=true
-# CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback при
-# ручних reboot/shutdown-сповіщеннях, коли WiFi Starlink без інтернету) -
-# див. коментар у starlink-monitor.service для повного пояснення.
-# CapabilityBoundingSet свідомо НЕ звужуємо тут (на відміну від
-# starlink-monitor.service) - цей сервіс викликає sudo systemctl
-# reboot/poweroff, і bounding set успадковується дочірнім процесом
-# навіть через setuid sudo; звуження до CAP_NET_RAW забрало б у
-# systemctl можливості, потрібні для реального reboot/poweroff
-# (CAP_SYS_BOOT тощо).
+# CAP_NET_RAW потрібен для SO_BINDTODEVICE (Telegram eth0-fallback при ручних
+# reboot/shutdown-сповіщеннях без інтернету на WiFi Starlink) — докладніше в
+# starlink-monitor.service. CapabilityBoundingSet тут НЕ звужуємо: сервіс викликає sudo systemctl
+# reboot/poweroff, а bounding set успадковується дочірнім процесом навіть через setuid sudo —
+# звуження забрало б у systemctl CAP_SYS_BOOT тощо.
 AmbientCapabilities=CAP_NET_RAW
 
 [Install]

@@ -299,12 +299,10 @@ def test_target_versions_candidate_without_channel_compares_globally(client):
 
 
 def test_target_versions_matching_current_installed_always_accepted_after_rollback(client):
-    """Точний сценарій із реального повідомлення користувача: target
-    раніше введений як 07-24, ПОТІМ dish РЕАЛЬНО відкотився (SpaceX-
-    side rollback, вже підтверджений раніше) на 07-19 - user хоче
-    узгодити target із ФАКТИЧНОЮ реальністю. Candidate, що ТОЧНО
-    збігається з поточною встановленою версією, завжди приймається,
-    незалежно від старішого попереднього target."""
+    """Сценарій: target раніше введено як 07-24, потім dish РЕАЛЬНО відкотився (SpaceX-side) на 07-19 —
+    користувач узгоджує target із фактичною версією. Кандидат, що ТОЧНО збігається з поточною
+    встановленою версією, приймається завжди, незалежно від старішого target.
+    """
     _insert_dish_version("2026.07.24.mr83021")
     client.post("/api/target-versions", json={"dish_target": "2026.07.24.mr83021"})
 
@@ -521,13 +519,10 @@ def test_restore_applies_known_devices(client):
 
 
 def test_restore_handles_malformed_payload_without_crashing(client):
-    """Реальний edge case: payload з format_version, але з іншими
-    полями зіпсованого типу (напр. known_devices - рядок, не список).
-    Головна гарантія - НЕ падає з 500 (виняток спіймано і повернутий
-    як success=False), а не конкретне значення success для ЦЬОГО
-    прикладу (known_devices="not-a-list" ітерується як символи, кожен
-    ігнорується merge_known_devices() через відсутність dish_id -
-    толерантно, без винятку)."""
+    """Edge case: payload з format_version, але зіпсованими полями (напр. known_devices — рядок, не
+    список). Головна гарантія — НЕ 500 (виняток спіймано, success=False), а не конкретне значення
+    success: "not-a-list" ітерується як символи, merge_known_devices() ігнорує їх без dish_id.
+    """
     resp = client.post(
         "/api/settings-restore",
         data=json.dumps({"format_version": 3, "known_devices": "not-a-list"}),

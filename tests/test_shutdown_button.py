@@ -1,14 +1,7 @@
-"""
-Тести для app/shutdown_button.py.
-
-watch_button() має нескінченний `while True`-цикл (реальний polling
-GPIO) - зупиняється в тестах через SystemExit (НЕ Exception-підклас,
-тому внутрішній `except Exception` циклу, що обробляє помилки читання
-GPIO, його не ловить - на відміну від звичайного власного винятку,
-який був би пійманий цим самим блоком і призвів до реального
-нескінченного циклу в тесті). Реальний прогрес часу для ButtonPress
-Tracker контролюється через mock time.time(), не time.sleep() (яка
-теж mock-ається, але лише щоб не сповільнювати тест).
+"""Тести app/shutdown_button.py. watch_button() має нескінченний `while True` (polling GPIO) — зупиняється
+через SystemExit (не Exception-підклас, тож внутрішній `except Exception` циклу його не ловить; власний
+виняток був би пійманий і дав справжній нескінченний цикл). Час для ButtonPressTracker контролює mock
+time.time(); time.sleep() теж mock-ається, щоб не гальмувати тест.
 """
 import sys
 from unittest.mock import patch

@@ -1,36 +1,22 @@
+"""Спільні людські назви (мультимовні, app/i18n.py) для enum-станів і alert-прапорців Starlink dish/router:
+monitor.py (журнал подій) і telegram_bot.py (відповіді) не дублюють словники. Джерело значень — grpcurl
+describe на живому пристрої (див. докстрінг app/starlink_client.py). Реалізовано ФУНКЦІЯМИ, не
+module-level dict: watchdog живе тижнями, а зміна мови через /settings має діяти з наступного виклику
+(module-level dict закешував би старий переклад при імпорті). Мова читається раз на виклик
+(i18n.translator()).
 """
-Спільні людські назви (з підтримкою мультимовності, app/i18n.py) для
-enum-станів і alert-прапорців Starlink dish/router. Винесено в
-окремий модуль, щоб monitor.py (журнал подій) і telegram_bot.py
-(відповіді на команди) використовували ті самі назви, без
-дублювання словників.
-
-Джерело значень - grpcurl describe на живому dish/router (див. докстрінг
-app/starlink_client.py).
-
-Реалізовано як ФУНКЦІЇ (не module-level dict-літерали) - watchdog-
-процес живе тижнями без перезапуску; якщо мову інтерфейсу змінили
-через /settings, наступний виклик МАЄ побачити нову мову негайно.
-Module-level dict обчислився б ОДИН раз при імпорті модуля й
-закешував старий переклад назавжди (реальна помилка, знайдена й
-виправлена одразу після першої версії цього файлу - перед тим, як
-вона потрапила в тести). Мова читається ОДИН раз на виклик функції
-(i18n.translator()), не на кожен із ~20 рядків словника."""
 
 import re
 from typing import Optional
 
 from app import i18n
 
-# Стани оновлення роутера, які ПОКАЗУЮТЬСЯ як "немає оновлень" (NOT_RUN)
-# усюди, де стан відображається: TFT-дисплей, Telegram /status і
-# /checkupdates, бейдж на дашборді (static/dashboard.js тримає копію -
-# JS не імпортує Python; розбіжність ловить test_router_hidden_states_
-# in_sync_with_dashboard). Обидва - тимчасові хмарні помилки SpaceX,
-# роутер повторює сам. Чи писати такий стан у ЖУРНАЛ подій - окреме
-# рішення: monitor.HIDDEN_ROUTER_UPDATE_STATES (там лише
-# DOWNLOADING_UPDATE_IMAGE_FAILED; GETTING_TARGET_VERSION_FAILED у журнал
-# пишеться, але в Telegram не надсилається - рішення користувача).
+# Стани оновлення роутера, що ПОКАЗУЮТЬСЯ як "немає оновлень" (NOT_RUN) скрізь: дисплей, Telegram
+# /status і /checkupdates, бейдж дашборда (static/dashboard.js тримає копію — JS не імпортує Python;
+# розбіжність ловить test_router_hidden_states_in_sync_with_dashboard). Це тимчасові хмарні помилки
+# SpaceX, роутер повторює сам. Чи писати такий стан у ЖУРНАЛ — окреме рішення:
+# monitor.HIDDEN_ROUTER_UPDATE_STATES (лише DOWNLOADING_UPDATE_IMAGE_FAILED;
+# GETTING_TARGET_VERSION_FAILED пишеться в журнал, але не шле Telegram — рішення користувача).
 def short_error(text: Optional[str], limit: int = 200) -> str:
     """Коротка форма помилки для чату. gRPC-помилка - це багаторядкова
     `<_MultiThreadedRendezvous of RPC ... status = ... details = "..." ...>`

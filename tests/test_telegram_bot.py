@@ -112,11 +112,10 @@ def test_api_call_logs_warning_when_telegram_rejects_message(db_path, caplog):
 
 
 def test_id_command_list_limited_to_max_items(db_path):
-    """Telegram обмежує повідомлення 4096 символами - без явного
-    обмеження довгий список known_devices (десятки записів за час
-    роботи) міг би бути повністю відхилений API. Перевіряє, що
-    список реально обмежується і явно повідомляє про приховані
-    записи, не просто мовчки обрізається без пояснення."""
+    """Telegram обмежує повідомлення 4096 символами: довгий список known_devices міг бути повністю
+    відхилений API. Перевіряє, що список обмежується й явно повідомляє про приховані записи, а не мовчки
+    обрізається.
+    """
     from app import config
     config.TELEGRAM_ID_LIST_MAX_ITEMS = 3
     try:
@@ -479,13 +478,10 @@ def test_cmd_help_lists_all_commands(db_path):
 # ---- Memory leak fix: застарілі pending_reboot_confirm записи ----
 
 def test_reboot_request_cleans_up_expired_pending_from_other_chats(db_path):
-    """Реальний memory leak, знайдений під час аудиту оптимізації:
-    якщо chat_id A робить /reboot і ІГНОРУЄ inline-кнопки (не тисне
-    ні "підтвердити", ні "скасувати") - запис лишався б у пам'яті
-    watchdog-процесу назавжди (лише _handle_callback() видаляв
-    запис, а без callback його ніхто не викликає). Новий /reboot
-    від БУДЬ-ЯКОГО chat_id тепер прибирає застарілі (TTL минув)
-    записи з УСІХ chat_id, не лише поточного."""
+    """Витік пам'яті: якщо chat_id A робить /reboot і ігнорує inline-кнопки, запис лишався б у пам'яті
+    watchdog назавжди (його видаляв лише _handle_callback()). Новий /reboot від БУДЬ-ЯКОГО chat_id тепер
+    прибирає застарілі (TTL минув) записи з УСІХ chat_id.
+    """
     from app import config
     bot = telegram_bot.TelegramBot()
     with patch("app.telegram_bot._api_call"):

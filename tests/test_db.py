@@ -289,12 +289,11 @@ def test_init_db_is_idempotent(db_path):
 
 
 def test_schema_change_in_unmigrated_table_requires_migration(db_path):
-    """system_metrics, known_devices і settings не мають міграції колонок
-    (metrics, router_status, events - мають). Змінили їхню схему - база на
-    Pi (history.db) НЕ отримає нову колонку: CREATE TABLE IF NOT EXISTS не
-    чіпає наявну таблицю, і запис/читання впаде "no such column" одразу
-    після оновлення. Змінюючи ці таблиці: додайте виклик
-    _migrate_table_columns в init_db(), потім оновіть цей список."""
+    """system_metrics, known_devices і settings не мають міграції колонок (metrics, router_status, events —
+    мають). Зміна їхньої схеми не додасть колонку в history.db на Pi (CREATE TABLE IF NOT EXISTS не
+    чіпає наявну таблицю) — "no such column" одразу після оновлення. Змінюючи ці таблиці: додайте
+    _migrate_table_columns в init_db(), потім оновіть цей список.
+    """
     expected = {
         "system_metrics": ["id", "ts", "uptime_s", "cpu_percent", "mem_total_mb", "mem_used_mb", "mem_free_mb",
                            "disk_total_gb", "disk_used_gb", "disk_free_gb", "temp_c"],

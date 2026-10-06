@@ -428,7 +428,7 @@ user-налаштування.
 `check_target_version_reached()`, `check_both_targets_reached()`,
 `upsert_dish_and_notify()`, `upsert_router_and_notify()`,
 `check_updates_now()` — поза класом `Watchdog`, приймають `notify_fn`
-замість `self._notify`. 
+замість `self._notify`.
 
 **`IGNORED_ROUTER_ALERTS`** (`wired_mesh_not_using_wan_iface`, `lan_eth_slow_link_100`) —
 відкидається в джерелі, `starlink_client.get_router_info()`, поруч з
@@ -679,7 +679,7 @@ API — це невалідний JSON, `JSON.parse` у браузері пад�
 **Фронтенд без вбудованого тексту.** Увесь видимий текст — через `t()`;
 `test_frontend_has_no_hardcoded_cyrillic_text` забороняє кирилицю в JS і
 шаблонах поза коментарями, `console.*` і `t()`, включно з атрибутами
-(`placeholder`). 
+(`placeholder`).
 
 **Обрив живлення.** Файли, які перезаписує сам застосунок
 (`/etc/starlink-monitor/env` зі `/settings` і `backup-<epoch>.json`),

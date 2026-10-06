@@ -1,44 +1,20 @@
 #!/usr/bin/env bash
-# ОПЦІЙНИЙ інструмент: оновлює app/vendor/starlink_grpc.py до
-# найновішої версії з upstream community-репозиторію
-# sparky8512/starlink-grpc-tools (https://github.com/sparky8512/starlink-grpc-tools).
-#
-# starlink_grpc.py вже включений у проєкт (app/vendor/) для
-# відтворюваності збірки - install.sh НЕ викликає цей скрипт
-# автоматично. Запускай вручну лише якщо свідомо хочеш оновити до
-# найновішої upstream-версії.
-#
-# ПРИМІТКА: поточна версія starlink_grpc.py (гілка main) сама імпортує
-# на верхньому рівні пакет yagrc (gRPC reflection client) - без нього
-# отримуєте "ModuleNotFoundError: No module named 'yagrc'" при спробі
-# import starlink_grpc. Пакет yagrc встановлюється через requirements.txt
-# (install.sh), окремої генерації protobuf-модулів через grpc_tools.protoc
-# не потрібно - yagrc сам створює потрібні класи на льоту через reflection
-# API dish. reboot_dish() у нашому клієнті все одно викликає grpcurl
-# напряму як subprocess, не залежить від starlink_grpc.
-#
-# Можна запускати вручну, або через systemd-сервіс
-# starlink-grpc-fetch.service (встановлюється, але НЕ enabled/started
-# автоматично — лише `sudo systemctl start starlink-grpc-fetch.service`
-# за бажанням) — див. scripts/install.sh.
-#
+# ОПЦІЙНИЙ інструмент: оновлює app/vendor/starlink_grpc.py до найновішої версії з upstream
+# (https://github.com/sparky8512/starlink-grpc-tools). Файл уже в проєкті (app/vendor/) для
+# відтворюваності збірки, install.sh цей скрипт НЕ викликає — запускай вручну лише якщо свідомо
+# хочеш оновитись.
+# Поточний starlink_grpc.py (гілка main) імпортує пакет yagrc (gRPC reflection client;
+# встановлюється через requirements.txt, генерація protobuf не потрібна); reboot_dish() у нашому
+# клієнті все одно викликає grpcurl як subprocess. Запуск: вручну або `sudo systemctl start
+# starlink-grpc-fetch.service` (встановлюється, але НЕ вмикається автоматично, див. install.sh).
 # Опції:
-#   --wait-for-dish   Чекати доступності dish замість негайного виходу з помилкою
-#                      (з ретраями, для використання при старті системи, коли
-#                      WiFi-з'єднання зі Starlink Mini ще не встановлене).
-#   --restart-services Перезапустити starlink-monitor/starlink-webui після
-#                      успішного завантаження (потребує sudo-прав, налаштованих
-#                      install.sh).
-#   --commit=<sha>     Завантажити конкретну upstream-ревізію (40 hex), а не
-#                      останню. Типово: остання ревізія репозиторію.
-#
-# БЕЗПЕКА оновлення (раніше файл качався прямо поверх робочого: обірване
-# з'єднання лишало обрізаний starlink_grpc.py -> SyntaxError -> монітор не
-# стартував): завантаження у ТИМЧАСОВИЙ файл; перевірки (розмір, синтаксис,
-# наявність ChannelContext і get_status - те, що використовує наш клієнт);
-# лише тоді резервна копія старого як starlink_grpc.py.prev і атомарна заміна.
-# Завантаження - за незмінним URL з SHA коміту (не з рухомої гілки main), а
-# походження (коміт, дата, sha256) записується в app/vendor/PROVENANCE.
+#   --wait-for-dish     чекати dish із ретраями (старт системи, коли WiFi Starlink ще не підключений)
+#   --restart-services  перезапустити starlink-monitor/starlink-webui після успіху (sudo з install.sh)
+#   --commit=<sha>      конкретна upstream-ревізія (40 hex), типово остання
+# БЕЗПЕКА: завантаження у ТИМЧАСОВИЙ файл; перевірки (розмір, синтаксис, наявність ChannelContext і
+# get_status); лише тоді резервна копія як starlink_grpc.py.prev і атомарна заміна (раніше обрив
+# лишав обрізаний файл -> SyntaxError -> монітор не стартував). URL — за незмінним SHA коміту (не
+# рухома main), походження (коміт, дата, sha256) пишеться в app/vendor/PROVENANCE.
 set -euo pipefail
 
 PROJECT_DIR="${STARLINK_PROJECT_DIR:-/opt/starlink-monitor}"
@@ -90,11 +66,10 @@ if [[ "$WAIT_FOR_DISH" -eq 1 ]]; then
 fi
 
 
-# wlan0 (WiFi Starlink) має нижчий route-metric за eth0 (див. install.sh) - тобто
-# дефолтний маршрут завжди йде через wlan0 першим. Якщо супутниковий канал
-# Starlink недоступний (обслуговування, погода, dish щойно ввімкнувся),
-# інтернету через wlan0 немає, попри те що eth0 (домашня мережа) може його
-# мати. Тому спершу явна спроба через eth0, потім дефолтний маршрут.
+# wlan0 (WiFi Starlink) має нижчий route-metric за eth0 (див. install.sh), тож дефолтний маршрут іде
+# через wlan0 першим. Коли супутниковий канал недоступний (обслуговування, погода, dish щойно
+# ввімкнувся), інтернету через wlan0 немає, хоча eth0 його має. Тому спершу явна спроба через eth0,
+# потім дефолтний маршрут.
 fetch_to() {  # $1 = URL, $2 = файл призначення
   if [[ "$SKIP_ETH0" != "1" ]] && ip link show eth0 >/dev/null 2>&1 && ip addr show eth0 | grep -q "inet "; then
     if curl -fsSL --interface eth0 --connect-timeout 10 "$1" -o "$2" 2>/dev/null; then

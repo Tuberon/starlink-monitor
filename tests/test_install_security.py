@@ -1,16 +1,16 @@
-"""Власність root для того, що виконує root (scripts/install.sh, блок root-owned-scripts).
-
-Юніти starlink-monitor-healthcheck і starlink-wan-failover працюють від root і щохвилини/кожні 30 с
-запускають скрипти з /opt/starlink-monitor/scripts, а адміністратор запускає `sudo bash .../update.sh`.
-Раніше `chown -R $RUN_USER` віддавав ці скрипти користувачу, під яким працюють веб-інтерфейс без
-автентифікації, монітор і дисплей: будь-який збій там давав шлях до root (переписати скрипт і
-почекати хвилину). Права на сам файл недостатні - власник батьківського каталогу підміняє каталог цілком.
+"""Власність root для того, що виконує root (scripts/install.sh, блок root-owned-scripts). Юніти
+starlink-monitor-healthcheck і starlink-wan-failover працюють від root і періодично запускають скрипти з
+/opt/starlink-monitor/scripts; адміністратор запускає `sudo bash .../update.sh`. `chown -R $RUN_USER`
+віддавав ці скрипти користувачу веб-інтерфейсу (без автентифікації), монітора й дисплея: будь-який збій
+там давав шлях до root. Прав на файл замало — власник батьківського каталогу підміняє каталог цілком.
 """
 import os
 import pwd
 import re
 import subprocess
 import sys
+import glob
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -74,9 +74,22 @@ def _attempt(code):
     return subprocess.run([sys.executable, "-c", code], preexec_fn=_as_nobody, capture_output=True, timeout=30).returncode == 0
 
 
+_CREATED: list = []
+
+
+@pytest.fixture(autouse=True)
+def _remove_temp_trees():
+    """Тека має бути в /tmp, а не в tmp_path: nobody мусить пройти до неї (tmp_path недоступний — 0700), тому pytest її не
+    прибирає. Раніше кожен прогін лишав 7 тек own-* із файлами nobody."""
+    yield
+    while _CREATED:
+        shutil.rmtree(_CREATED.pop(), ignore_errors=True)
+
+
 def _tree_owned_by_runuser():
     """Стан після `chown -R $RUN_USER:$RUN_USER "$PROJECT_DIR"` (RUN_USER тут = nobody)."""
     base = Path(tempfile.mkdtemp(prefix="own-", dir="/tmp"))
+    _CREATED.append(base)
     base.chmod(0o755)
     project = base / "proj"
     (project / "scripts").mkdir(parents=True)
@@ -124,3 +137,12 @@ def test_block_leaves_what_the_services_need_writable_for_the_user():
     for path in (project, project / "scripts", project / "scripts" / "watchdog_healthcheck.sh"):
         assert os.stat(path).st_uid == 0, path
     assert (os.stat(project).st_mode & 0o022) == 0 and (os.stat(project / "scripts").st_mode & 0o022) == 0
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="потрібен root (chown, setuid)")
+def test_this_file_leaves_no_temp_trees_behind():
+    """Запобіжник: власний прогін файлу не змінює вміст /tmp (не лишає own-*)."""
+    before = set(glob.glob("/tmp/own-*"))
+    subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:randomly", __file__,
+                    "-k", "not leaves_no_temp"], check=True, capture_output=True, timeout=120)
+    assert set(glob.glob("/tmp/own-*")) == before

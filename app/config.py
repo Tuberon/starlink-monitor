@@ -23,15 +23,10 @@ ROUTER_POLL_INTERVAL_SEC = int(os.environ.get("STARLINK_ROUTER_POLL_INTERVAL_SEC
 # довший інтервал - зменшує кількість записів у system_metrics у
 # рази, не зачіпаючи основний Starlink-моніторинг взагалі.
 SYSTEM_METRICS_INTERVAL_SEC = int(os.environ.get("STARLINK_SYSTEM_METRICS_INTERVAL_SEC", "60"))
-# Замість запису КОЖНОГО dish-зчитування (10с) окремою транзакцією -
-# накопичуємо кілька в пам'яті, пишемо разом одним batch-INSERT.
-# Зменшує кількість фізичних write-транзакцій на SD-картку в рази
-# (при 30с - у ~3 рази), БЕЗ втрати жодної точки даних - усі
-# зчитування все одно потрапляють у БД, лише трохи пізніше.
-# Компроміс: при РАПТОВОМУ вимкненні живлення (не при звичайному
-# systemctl restart/update.sh - для цього є graceful shutdown через
-# SIGTERM, який flush-ить буфер негайно) можна втратити останні
-# кілька зчитувань, що ще не потрапили в БД.
+# Замість запису КОЖНОГО dish-зчитування (10 с) окремою транзакцією — кілька в пам'яті й один
+# batch-INSERT: в рази менше write-транзакцій на SD (при 30 с — ~3×) без втрати точок. Компроміс: при
+# РАПТОВОМУ вимкненні живлення (не при systemctl restart/update.sh — SIGTERM скидає буфер негайно) можна
+# втратити кілька останніх зчитувань.
 DISH_METRICS_BATCH_INTERVAL_SEC = int(os.environ.get("STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC", "30"))
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("STARLINK_MAX_FAILURES", "6"))  # 6*10s = 60s недоступності
 MIN_REBOOT_INTERVAL_SEC = int(os.environ.get("STARLINK_MIN_REBOOT_INTERVAL", "180"))  # захист від reboot-loop
@@ -175,28 +170,20 @@ DISPLAY_SPI_CS_PIN = int(os.environ.get("STARLINK_DISPLAY_SPI_CS_PIN", "8"))
 DISPLAY_DC_PIN = int(os.environ.get("STARLINK_DISPLAY_DC_PIN", "25"))
 DISPLAY_RST_PIN = int(os.environ.get("STARLINK_DISPLAY_RST_PIN", "24"))
 DISPLAY_BL_PIN = int(os.environ.get("STARLINK_DISPLAY_BL_PIN", "18"))
-# 170x320 (portrait) - паспортна роздільна здатність моделі MSP1901,
-# підтверджена офіційною документацією виробника (LCDWIKI) і
-# написом на самій платі ("1.9" IPS 170x320(RGB)"). Попередня версія
-# мала дефолти 320x170 (поміняні місцями) - це БУВ ПОМИЛКОВИЙ
-# висновок з емпіричного тесту (реальна причина залишкового шуму на
-# 320x170 - командування контролеру 320 стовпців, тоді як фізична
-# матриця має лише 170; "покращення" було випадковим побічним
-# ефектом, не правильним рішенням) - див. docs/decisions-log.md.
+# 170x320 (portrait) — паспортна роздільна здатність MSP1901 (документація LCDWIKI і напис на платі
+# "1.9" IPS 170x320(RGB)"). Дефолти 320x170 були помилковим висновком з емпіричного тесту: шум на
+# 320x170 — це команда контролеру на 320 стовпців при фізичній матриці 170, а "покращення" було побічним
+# ефектом (див. docs/decisions-log.md).
 DISPLAY_WIDTH = int(os.environ.get("STARLINK_DISPLAY_WIDTH", "170"))
 DISPLAY_HEIGHT = int(os.environ.get("STARLINK_DISPLAY_HEIGHT", "320"))
 # rotation=0/90/180/270 підтримується для будь-якого aspect ratio -
 # обертання застосовується програмно через PIL img.rotate(), не через
 # MADCTL.
 DISPLAY_ROTATION = int(os.environ.get("STARLINK_DISPLAY_ROTATION", "0"))
-# Зміщення видимої області відносно GRAM контролера - типова потреба
-# для дешевих ST7789-клонів (видима область менша за фізичний GRAM
-# контролера, потрібне центрування). Емпірично підтверджено на
-# реальному Pi для цієї моделі (SKU MSP1901): без зміщення (0)
-# частина екрана показувала стабільний кольоровий шум (не апаратний
-# дефект, як спершу помилково припускалось - див. docs/decisions-
-# log.md). Значення 35-50 (принаймні) усувають шум - це діапазон,
-# не одне точне число; 35 обрано як дефолт.
+# Зміщення видимої області відносно GRAM контролера — типове для дешевих ST7789-клонів. Емпірично
+# підтверджено на Pi для SKU MSP1901: без зміщення (0) частина екрана показувала кольоровий шум (не
+# апаратний дефект, як спершу вважалось — див. docs/decisions-log.md). Значення 35-50 усувають шум
+# (діапазон, не одне число); дефолт 35.
 DISPLAY_OFFSET_LEFT = int(os.environ.get("STARLINK_DISPLAY_OFFSET_LEFT", "35"))
 DISPLAY_OFFSET_TOP = int(os.environ.get("STARLINK_DISPLAY_OFFSET_TOP", "0"))
 DISPLAY_REFRESH_SEC = int(os.environ.get("STARLINK_DISPLAY_REFRESH_SEC", "5"))

@@ -1,15 +1,7 @@
-"""
-Тести для app/monitor.py:Watchdog.run_forever() - головний нескінченний
-цикл (poll dish/router/system_metrics + періодичні prune/vacuum/
-integrity-check/backup). Зупиняється в тестах через SystemExit при
-mock time.sleep() (та сама техніка, що tests/test_shutdown_button.py/
-test_display_run_forever.py).
-
-Реальний прогрес часу не потрібно mock-ати окремо: усі `last_X = 0.0`
-таймери в run_forever() ініціалізуються нулем навмисно (щоб перша дія
-відбулась одразу після старту сервісу) - `time.time() - 0 > поріг`
-істинне вже на першій ітерації для будь-якого розумного порогу
-(поточний Unix timestamp завжди значно більший за 86400/3600 тощо).
+"""Тести app/monitor.py:Watchdog.run_forever() — нескінченний цикл (poll dish/router/system_metrics +
+періодичні prune/vacuum/integrity-check/backup). Зупиняється через SystemExit при mock time.sleep() (як
+у test_shutdown_button.py). Час не треба mock-ати: усі таймери `last_X = 0.0` навмисно стартують з нуля,
+тож `time.time() - 0 > поріг` істинне вже на першій ітерації.
 """
 import contextlib
 import time
@@ -217,11 +209,10 @@ def test_run_forever_sleeps_sanely_and_warns_with_invalid_interval(db_path, monk
 
 @contextlib.contextmanager
 def _running_loop(wd, poll_once=None, sleep_effect=None, now=None, router_effect=None):
-    """Один прохід run_forever(); патчі лишаються активними ВСЕРЕДИНІ
-    with-блоку тесту (тож mock зупинки бота бачить виклик обробника).
-    Обробник - той самий, що реєструє справжній код (а не його копія в
-    тесті - так було в старому тесті, що нічого не гарантував).
-    Повертає (обробники сигналів, mock зупинки бота, mock LED)."""
+    """Один прохід run_forever(); патчі лишаються активними ВСЕРЕДИНІ with-блоку тесту (mock зупинки бота
+    бачить виклик обробника). Обробник — той самий, що реєструє справжній код, не його копія в тесті.
+    Повертає (обробники сигналів, mock зупинки бота, mock LED).
+    """
     import signal
     handlers = {}
     led = MagicMock()
