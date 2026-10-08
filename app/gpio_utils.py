@@ -62,6 +62,12 @@ def _init_line_v1(
     return get_value, release
 
 
+def _gpiod_is_v2(gpiod: Any) -> bool:
+    """gpiod v2.x видалив Chip.get_line() (звідси hasattr-перевірка) на користь request_lines() - API повністю
+    несумісний зі старим v1.x. Raspberry Pi OS Bookworm+ ставить v2 через apt python3-libgpiod."""
+    return not hasattr(gpiod.Chip, "get_line")
+
+
 def open_input_line(pin: int, consumer: str) -> tuple[Callable[[], int], Callable[[], None]]:
     """Відкриває GPIO-пін як цифровий вхід з pull-up (сумісно з gpiod
     v1 і v2). Повертає (get_value, release) або кидає виняток, якщо
@@ -70,11 +76,7 @@ def open_input_line(pin: int, consumer: str) -> tuple[Callable[[], int], Callabl
     import gpiod
 
     chip_path = find_gpio_chip()
-    # gpiod v2.x видалив Chip.get_line() (звідси hasattr-перевірка) на
-    # користь request_lines() - API повністю несумісний зі старим v1.x.
-    # Raspberry Pi OS Bookworm+ ставить v2 через apt python3-libgpiod.
-    is_v2 = not hasattr(gpiod.Chip, "get_line")
-    if is_v2:
+    if _gpiod_is_v2(gpiod):
         return _init_line_v2(gpiod, chip_path, pin, consumer)
     return _init_line_v1(gpiod, chip_path, pin, consumer)
 
@@ -127,8 +129,7 @@ def open_output_line(pin: int, consumer: str) -> tuple[Callable[[int], None], Ca
     import gpiod
 
     chip_path = find_gpio_chip()
-    is_v2 = not hasattr(gpiod.Chip, "get_line")
-    if is_v2:
+    if _gpiod_is_v2(gpiod):
         return _init_output_line_v2(gpiod, chip_path, pin, consumer)
     return _init_output_line_v1(gpiod, chip_path, pin, consumer)
 

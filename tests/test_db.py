@@ -41,11 +41,9 @@ def test_prune_old_removes_expired_raw_metrics_keeps_recent(db_path):
 
 
 def test_prune_old_days_zero_is_not_silently_replaced_by_default(db_path):
-    """Реальний баг: `days = days or config.HISTORY_RETENTION_DAYS`
-    робив явно передане 0 (falsy в Python) нерозрізненим від
-    "аргумент не переданий" - prune_old(days=0) мовчки підмінявся
-    дефолтним config.HISTORY_RETENTION_DAYS замість реального
-    видалення всієї історії."""
+    """Баг: `days = days or config.HISTORY_RETENTION_DAYS` робив явне 0 (falsy) нерозрізненим від "не
+    передано": prune_old(days=0) мовчки підміняв дефолт замість видалення всієї історії.
+    """
     config.HISTORY_RETENTION_DAYS = 30
     db.insert_event("test", "щойно вставлена подія", success=True)
 
@@ -99,11 +97,10 @@ def test_check_integrity_healthy_db_returns_ok(db_path):
 
 
 def test_check_integrity_detects_fully_invalid_file(db_path):
-    """Реальний edge case, знайдений живим тестом під час реалізації:
-    файл, що ВЗАГАЛІ не є SQLite (не просто пошкоджені дані всередині),
-    змушує PRAGMA quick_check кинути sqlite3.DatabaseError замість
-    повернення результату - check_integrity() МАЄ це ловити і
-    повертати (False, message), не поширювати виняток."""
+    """Файл, що взагалі не SQLite (а не пошкоджені дані всередині), змушує PRAGMA quick_check кинути
+    sqlite3.DatabaseError: check_integrity() МАЄ це ловити й повертати (False, message), а не поширювати
+    виняток.
+    """
     with open(db_path, "wb") as f:
         f.write(b"not a valid sqlite file" * 50)
     ok, message = db.check_integrity()
@@ -451,3 +448,43 @@ def test_latest_system_metric_ignores_rows_from_the_future(db_path):
     db.insert_system_metric({"timestamp": now + 7200, "cpu_percent": 99.0})
     db.insert_system_metric({"timestamp": now - 5, "cpu_percent": 5.0})
     assert db.get_latest_system_metric()["cpu_percent"] == 5.0
+
+
+# ---- ворожий текст на межі БД ----
+
+def test_event_with_a_lone_surrogate_is_stored_with_a_replacement_character(db_path):
+    """Одинокий сурогат (валідний JSON `\\ud800`) не кодується в UTF-8: insert_event кидав UnicodeEncodeError."""
+    db.insert_event("test", "помилка \ud800 кінець")
+    assert db.get_recent_events(5)[0]["message"] == "помилка \ufffd кінець"
+
+
+def test_event_message_and_kind_are_length_limited(db_path):
+    """Подія на 5 МБ записувалась цілком, а /api/events віддавав 10 МБ при кожному оновленні журналу."""
+    db.insert_event("k" * 500, "я" * 5_000_000)
+    row = db.get_recent_events(5)[0]
+    assert len(row["message"]) == db.EVENT_MESSAGE_MAX_CHARS and row["message"].endswith("…")
+    assert len(row["kind"]) == db.EVENT_KIND_MAX_CHARS
+
+
+def test_short_event_text_is_not_changed(db_path):
+    db.insert_event("kind", "Звичайне повідомлення 🙂")
+    assert db.get_recent_events(5)[0]["message"] == "Звичайне повідомлення 🙂"
+
+
+def test_router_status_with_a_surrogate_in_a_client_name_is_stored(db_path):
+    """Виняток тут ковтав _Periodic: панель роутера й перевірки його оновлень зупинялись, поки клієнт підключений."""
+    import json
+    db.set_router_status({"timestamp": 1.0, "online": True, "software_version": "v\ud800", "hardware_version": "h", "error": "",
+                          "update_state": "IDLE", "update_progress_pct": 0, "update_install_pending": False,
+                          "active_alerts": "", "clients": json.dumps([{"name": "phone-\ud800"}], ensure_ascii=False)})
+    row = db.get_router_status()
+    assert row is not None and row["software_version"] == "v\ufffd"
+    assert "\ud800" not in json.dumps(row, ensure_ascii=False) and "phone-\ufffd" in json.dumps(row, ensure_ascii=False)
+
+
+def test_settings_and_known_devices_scrub_surrogates_too(db_path):
+    db.set_setting("k\ud800", "v\ud800")
+    assert db.get_setting("k\ufffd") == "v\ufffd"
+    assert db.claim_setting("flag", "a\udc80") is True and db.claim_setting("flag", "a\ufffd") is False
+    db.upsert_known_device_dish("id-\ud800", "hw\ud800", "sw\ud800")
+    assert db.get_all_known_devices()[0]["dish_id"] == "id-\ufffd"

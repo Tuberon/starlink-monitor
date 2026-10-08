@@ -1,7 +1,5 @@
-// 1.5с - dish реально опитується кожні POLL_INTERVAL_SEC (10с за
-// замовчуванням), тому частіший polling лише додає HTTP/DB-
-// навантаження без реальнішої "свіжості" даних, але 1.5с зберігає
-// відчуття "живого" дашборду ближче до попереднього 1с.
+// 1.5 с: dish реально опитується кожні POLL_INTERVAL_SEC (10 с), тож частіший polling лише додає
+// HTTP/DB-навантаження без свіжіших даних, а 1.5 с зберігає відчуття "живого" дашборду.
 const REFRESH_MS = 1500;
 
 const el = (id) => document.getElementById(id);
@@ -86,10 +84,9 @@ function ROUTER_UPDATE_STATE_LABELS_get(code) {
     'FLASHING': t('rus_flashing'),
     'NO_UPDATE_REQUIRED': t('rus_no_update_required'),
     'REBOOT_PENDING': t('rus_reboot_pending'),
-    // GETTING_TARGET_VERSION_FAILED і DOWNLOADING_UPDATE_IMAGE_FAILED
-    // свідомо відсутні - обидва замінюються на 'NOT_RUN' перед цим
-    // lookup'ом (HIDDEN_ROUTER_STATES нижче), тому запис тут ніколи б
-    // не використовувався напряму.
+    // GETTING_TARGET_VERSION_FAILED і DOWNLOADING_UPDATE_IMAGE_FAILED свідомо відсутні: обидва
+    // замінюються на 'NOT_RUN' перед цим lookup'ом (HIDDEN_ROUTER_STATES нижче), тож запис тут не
+    // використовувався б.
     'GETTING_TARGET_VERSION_EXHAUSTED': t('rus_getting_target_version_exhausted'),
     'NO_VALID_ARTIFACT': t('rus_no_valid_artifact'),
     'ILLEGAL_ARTIFACT': t('rus_illegal_artifact'),
@@ -99,11 +96,9 @@ function ROUTER_UPDATE_STATE_LABELS_get(code) {
   return _ROUTER_UPDATE_STATE_LABELS[code];
 }
 
-// Стани, повністю приховані з дашборду (не лише текст мітки, а й сам
-// стан замінюється на 'NOT_RUN') - "тимчасова хмарна помилка
-// перевірки/завантаження оновлення на боці SpaceX", не проблема
-// моніторингу. Той самий паттерн, що HIDDEN_ROUTER_STATES у
-// app/display.py.
+// Стани, повністю приховані з дашборду (стан замінюється на 'NOT_RUN', а не лише мітка): тимчасова
+// хмарна помилка перевірки/завантаження оновлення на боці SpaceX, не проблема моніторингу. Той
+// самий патерн, що HIDDEN_ROUTER_STATES у app/display.py.
 const HIDDEN_ROUTER_STATES = ['DOWNLOADING_UPDATE_IMAGE_FAILED', 'GETTING_TARGET_VERSION_FAILED'];
 
 let _ROUTER_ALERT_LABELS = null;
@@ -136,9 +131,8 @@ function ROUTER_ALERT_LABELS_get(code) {
 
 const OFFLINE_CACHE_KEY = 'starlink_last_status_v1';
 
-// Зберігаємо лише latest - невеликий JSON-об'єкт (кілька полів метрик),
-// localStorage простіший і достатній тут (синхронний API, немає
-// потреби у транзакціях/великому обсязі, які виправдовували б IndexedDB).
+// Зберігаємо лише latest (невеликий JSON): localStorage простіший і достатній (синхронний API, без
+// транзакцій і великих обсягів, які виправдовували б IndexedDB).
 function _cacheLastStatus(latest) {
   try {
     localStorage.setItem(OFFLINE_CACHE_KEY, JSON.stringify({ latest, cachedAt: Date.now() / 1000 }));
@@ -374,9 +368,8 @@ function renderRouterClients(clients) {
 function renderRouterUpdateStatus(latest) {
   const badge = el('routerUpdateStateBadge');
   const state = latest.update_state || 'NOT_RUN';
-  // Не показуємо текст про цю конкретну помилку користувачу - роутер
-  // регулярно проходить через цей стан як частину нормального циклу
-  // перевірки, показ як "помилка" щоразу лише вводить в оману.
+  // Не показуємо цю помилку: роутер регулярно проходить через цей стан у нормальному циклі
+  // перевірки, показ як "помилка" лише вводить в оману.
   const displayState = HIDDEN_ROUTER_STATES.includes(state) ? 'NOT_RUN' : state;
   badge.textContent = ROUTER_UPDATE_STATE_LABELS_get(displayState) || displayState;
 
@@ -587,11 +580,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadConfigFlags();
   tick();
 
-  // Вкладка згорнута/неактивна - опитування раз на 30с замість
-  // щосекунди (dish/Pi нікуди не дінеться за цей час, а зайві
-  // запити з фонової вкладки лише навантажують слабкий WiFi-канал
-  // і сам Pi Zero 2 W без жодної практичної користі, поки користувач
-  // не дивиться на дашборд).
+  // Вкладка згорнута/неактивна: опитування раз на 30 с замість щосекунди (фонові запити лише
+  // навантажують слабкий WiFi-канал і Pi Zero 2 W, поки користувач не дивиться).
   const HIDDEN_REFRESH_MS = 30000;
   let refreshTimer = setInterval(tick, REFRESH_MS);
 

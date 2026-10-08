@@ -64,17 +64,17 @@ def test_validate_strips_whitespace():
 def test_save_creates_file_with_valid_value(env_file):
     ok, msg = config_editor.save_values({"STARLINK_POLL_INTERVAL": "20"})
     assert ok is True
-    assert "STARLINK_POLL_INTERVAL=20" in env_file.read_text()
+    assert "STARLINK_POLL_INTERVAL=20" in env_file.read_text(encoding="utf-8")
 
 
 def test_save_updates_existing_value_without_duplicating(env_file):
     """Повторне збереження МАЄ замінити рядок, не додати другий -
     інакше файл ріс би з кожним збереженням, а який рядок виграє
     залежало б від порядку читання."""
-    env_file.write_text("STARLINK_POLL_INTERVAL=10\n")
+    env_file.write_text("STARLINK_POLL_INTERVAL=10\n", encoding="utf-8")
     config_editor.save_values({"STARLINK_POLL_INTERVAL": "99"})
 
-    content = env_file.read_text()
+    content = env_file.read_text(encoding="utf-8")
     assert content.count("STARLINK_POLL_INTERVAL") == 1
     assert "STARLINK_POLL_INTERVAL=99" in content
 
@@ -87,10 +87,10 @@ def test_save_preserves_comments_and_unknown_variables(env_file):
         "# мій коментар\n"
         "MY_CUSTOM_VAR=значення\n"
         "STARLINK_POLL_INTERVAL=10\n"
-    )
+    , encoding="utf-8")
     config_editor.save_values({"STARLINK_POLL_INTERVAL": "20"})
 
-    content = env_file.read_text()
+    content = env_file.read_text(encoding="utf-8")
     assert "# мій коментар" in content
     assert "MY_CUSTOM_VAR=значення" in content
     assert "STARLINK_POLL_INTERVAL=20" in content
@@ -99,10 +99,10 @@ def test_save_preserves_comments_and_unknown_variables(env_file):
 def test_save_empty_value_removes_line_from_file(env_file):
     """Порожнє значення реально ВИДАЛЯЄ рядок (повертає default із
     config.py), не записує порожнє `KEY=`."""
-    env_file.write_text("STARLINK_POLL_INTERVAL=99\nSTARLINK_WEBUI_PORT=8080\n")
+    env_file.write_text("STARLINK_POLL_INTERVAL=99\nSTARLINK_WEBUI_PORT=8080\n", encoding="utf-8")
     config_editor.save_values({"STARLINK_POLL_INTERVAL": ""})
 
-    content = env_file.read_text()
+    content = env_file.read_text(encoding="utf-8")
     assert "STARLINK_POLL_INTERVAL" not in content
     assert "STARLINK_WEBUI_PORT=8080" in content  # інші не зачеплені
 
@@ -112,7 +112,7 @@ def test_save_ignores_unknown_keys(env_file):
     запису в системний env-файл через API."""
     ok, _ = config_editor.save_values({"НЕВІДОМИЙ_КЛЮЧ": "значення"})
     assert ok is True
-    assert not env_file.exists() or "НЕВІДОМИЙ_КЛЮЧ" not in env_file.read_text()
+    assert not env_file.exists() or "НЕВІДОМИЙ_КЛЮЧ" not in env_file.read_text(encoding="utf-8")
 
 
 # ---- Атомарність: помилка валідації НЕ має писати нічого ----
@@ -122,8 +122,8 @@ def test_save_validation_error_writes_nothing(env_file, db_path):
     змінюється взагалі - інакше частина значень записалась би,
     а частина ні, лишивши конфігурацію в незрозумілому
     напів-застосованому стані."""
-    env_file.write_text("STARLINK_POLL_INTERVAL=10\n")
-    original = env_file.read_text()
+    env_file.write_text("STARLINK_POLL_INTERVAL=10\n", encoding="utf-8")
+    original = env_file.read_text(encoding="utf-8")
 
     ok, msg = config_editor.save_values({
         "STARLINK_POLL_INTERVAL": "20",        # валідний
@@ -132,7 +132,7 @@ def test_save_validation_error_writes_nothing(env_file, db_path):
 
     assert ok is False
     assert "Порт веб-інтерфейсу" in msg  # label невалідного параметра
-    assert env_file.read_text() == original, "файл НЕ мав змінитись при помилці валідації"
+    assert env_file.read_text(encoding="utf-8") == original, "файл НЕ мав змінитись при помилці валідації"
 
 
 def test_save_reports_all_validation_errors_at_once(env_file, db_path):
@@ -148,7 +148,7 @@ def test_save_reports_all_validation_errors_at_once(env_file, db_path):
 # ---- Читання поточних значень ----
 
 def test_read_current_values_marks_overridden(env_file):
-    env_file.write_text("STARLINK_POLL_INTERVAL=99\n")
+    env_file.write_text("STARLINK_POLL_INTERVAL=99\n", encoding="utf-8")
     values = config_editor.read_current_values()
 
     poll = next(v for v in values if v["key"] == "STARLINK_POLL_INTERVAL")
@@ -176,7 +176,7 @@ def test_read_current_values_ignores_malformed_lines(env_file):
         "\n"
         "рядок_без_знаку_рівності\n"
         "STARLINK_POLL_INTERVAL=42\n"
-    )
+    , encoding="utf-8")
     values = config_editor.read_current_values()
     poll = next(v for v in values if v["key"] == "STARLINK_POLL_INTERVAL")
     assert poll["current"] == "42"
@@ -212,7 +212,7 @@ def test_no_orphan_env_keys_in_config():
         "STARLINK_AUTO_BACKUP_DIR",  # обчислюваний дефолт (поруч з DB_PATH) - не вписується в простий {"default": "..."} UI-формат
     }
     config_src = Path(os.path.dirname(config_editor.__file__), "config.py").read_text(encoding="utf-8")
-    config_keys = set(re.findall(r'os\.environ\.get\("(STARLINK_[A-Z0-9_]+)"', config_src))
+    config_keys = set(re.findall(r'_env_(?:int|float|bool|text)\("(STARLINK_[A-Z0-9_]+)"', config_src))
     ui_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
     orphans = config_keys - ui_keys - NOT_IN_UI
     assert orphans == set(), f"параметри config.py, відсутні в UI-редакторі: {orphans}"
@@ -246,9 +246,9 @@ def test_all_config_env_vars_are_in_settings_except_documented_exceptions():
     """
     import re
     config_source = Path("app/config.py").read_text(encoding="utf-8")
-    env_vars_read = set(re.findall(r'os\.environ\.get\("(STARLINK_[A-Z_]+)"', config_source))
+    env_vars_read = set(re.findall(r'_env_(?:int|float|bool|text)\("(STARLINK_[A-Z0-9_]+)"', config_source))
 
-    INTENTIONALLY_EXCLUDED = {"STARLINK_DB_PATH", "STARLINK_WEBUI_HOST"}
+    INTENTIONALLY_EXCLUDED = {"STARLINK_DB_PATH", "STARLINK_WEBUI_HOST", "STARLINK_AUTO_BACKUP_DIR"}   # AUTO_BACKUP_DIR: обчислюваний дефолт
     editable_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
 
     missing = env_vars_read - editable_keys - INTENTIONALLY_EXCLUDED
@@ -261,8 +261,8 @@ def test_intentionally_excluded_settings_are_still_read_by_config():
     далі реально читаються config.py, лише недоступні для UI-
     редагування."""
     config_source = Path("app/config.py").read_text(encoding="utf-8")
-    assert 'os.environ.get("STARLINK_DB_PATH"' in config_source
-    assert 'os.environ.get("STARLINK_WEBUI_HOST"' in config_source
+    assert '_env_text("STARLINK_DB_PATH"' in config_source
+    assert '_env_text("STARLINK_WEBUI_HOST"' in config_source
     editable_keys = {p["key"] for p in config_editor.EDITABLE_PARAMS}
     assert "STARLINK_DB_PATH" not in editable_keys
     assert "STARLINK_WEBUI_HOST" not in editable_keys
@@ -277,12 +277,12 @@ def test_intentionally_excluded_settings_are_still_read_by_config():
     "a\tb",
 ])
 def test_control_characters_rejected_and_file_untouched(env_file, db_path, value):
-    env_file.write_text("STARLINK_POLL_INTERVAL=10\n")
-    original = env_file.read_text()
+    env_file.write_text("STARLINK_POLL_INTERVAL=10\n", encoding="utf-8")
+    original = env_file.read_text(encoding="utf-8")
     ok, msg = config_editor.save_values({"STARLINK_DISH_ADDR": value})
     assert ok is False
     assert "керуючі символи" in msg
-    assert env_file.read_text() == original
+    assert env_file.read_text(encoding="utf-8") == original
 
 
 def test_trailing_newline_from_paste_still_accepted(env_file, db_path):
@@ -290,7 +290,7 @@ def test_trailing_newline_from_paste_still_accepted(env_file, db_path):
     не вважається помилкою."""
     ok, _ = config_editor.save_values({"STARLINK_DISH_ADDR": "192.168.100.1:9200\n"})
     assert ok is True
-    assert "STARLINK_DISH_ADDR=192.168.100.1:9200\n" in env_file.read_text()
+    assert "STARLINK_DISH_ADDR=192.168.100.1:9200\n" in env_file.read_text(encoding="utf-8")
 
 
 def test_no_exec_or_eval_in_app_code():
@@ -322,7 +322,7 @@ def test_ruff_check_clean():
         pytest.skip("ruff не встановлено (pip install -r requirements-dev.txt)")
     root = os.path.join(os.path.dirname(__file__), "..")
     r = subprocess.run([ruff, "check", ".", "--no-cache", "--output-format", "concise"],
-                       cwd=root, capture_output=True, text=True, timeout=60)
+                       cwd=root, capture_output=True, encoding="utf-8", errors="replace", timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
 
 
@@ -428,11 +428,11 @@ def test_zero_still_allowed_where_it_means_disabled():
 
 
 def test_out_of_range_saves_nothing_and_explains_in_both_languages(env_file, db_path):
-    env_file.write_text("STARLINK_POLL_INTERVAL=10\n")
-    original = env_file.read_text()
+    env_file.write_text("STARLINK_POLL_INTERVAL=10\n", encoding="utf-8")
+    original = env_file.read_text(encoding="utf-8")
     ok, msg = config_editor.save_values({"STARLINK_HISTORY_DAYS": "0", "STARLINK_POLL_INTERVAL": "20"})
     assert ok is False and "від 1 до 3650" in msg
-    assert env_file.read_text() == original              # валідний сусід теж не записаний
+    assert env_file.read_text(encoding="utf-8") == original              # валідний сусід теж не записаний
     db.set_setting("ui_language", "en")
     ok, msg = config_editor.save_values({"STARLINK_DISPLAY_ROTATION": "45"})
     assert ok is False and "allowed values: 0, 90, 180, 270" in msg
@@ -562,3 +562,72 @@ def test_str_validator_checks_only_address_parameters(db_path):
 def test_validate_value_reports_type_error_for_non_numbers(db_path):
     ok, message = config_editor._validate_value({"type": "int", "key": "STARLINK_HISTORY_DAYS"}, "abc")
     assert ok is False and message
+
+
+# ---- стійкість config.py до зіпсованого env ----
+
+_MALFORMED = ["", "abc", "nan", "1e999", "5 6", "0x10", "5,5"]
+
+
+def _config_snapshot(extra_env):
+    """Числові/булеві атрибути config у чистому підпроцесі (імпорт читає env один раз)."""
+    import json
+    import os
+    import subprocess
+    import sys
+    code = ("import json, sys; sys.path.insert(0, '.'); import app.config as c; "
+            "print(json.dumps({k: v for k, v in vars(c).items() if k.isupper() and type(v) in (int, float, bool)}))")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("STARLINK_")}
+    env.update(extra_env, PYTHONDONTWRITEBYTECODE="1")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, encoding="utf-8", errors="replace", env=env, timeout=60, cwd=str(Path(config_editor.__file__).parent.parent))
+    assert done.returncode == 0, done.stderr[-400:]
+    return json.loads(done.stdout)
+
+
+@pytest.mark.parametrize("bad", _MALFORMED)
+def test_malformed_env_values_never_break_config_import_and_fall_back_to_defaults(bad):
+    """45 із 56 змінних при зіпсованому значенні (`STARLINK_X=`, `abc`...) валили ІМПОРТ config.py: падали всі процеси,
+    зокрема /settings, яким це можна було б виправити (лишався лише SSH). Тепер - типове значення й попередження."""
+    import re
+    src = Path(config_editor.__file__).with_name("config.py").read_text(encoding="utf-8")
+    names = set(re.findall(r'_env_(?:int|float|bool)\("(STARLINK_[A-Z0-9_]+)"', src))
+    assert len(names) >= 40
+    baseline = _config_snapshot({})
+    assert _config_snapshot({name: bad for name in names}) == baseline
+
+
+@pytest.mark.parametrize("word,expected", [("1", True), ("true", True), ("TRUE", True), (" Yes ", True), ("on", True),
+                                           ("0", False), ("false", False), ("No", False), ("off", False)])
+def test_bool_env_accepts_common_spellings(monkeypatch, word, expected):
+    """Раніше перевірялось лише == "1": ручне `true` мовчки вимикало функцію."""
+    from app import config
+    monkeypatch.setenv("STARLINK_TEST_FLAG", word)
+    assert config._env_bool("STARLINK_TEST_FLAG", "0" if expected else "1") is expected
+
+
+def test_bool_env_garbage_and_empty_use_the_default_and_report(monkeypatch, caplog):
+    from app import config
+    for raw in ("", "maybe", "2"):
+        monkeypatch.setenv("STARLINK_TEST_FLAG", raw)
+        assert config._env_bool("STARLINK_TEST_FLAG", "1") is True
+        assert config._env_bool("STARLINK_TEST_FLAG", "0") is False
+    assert "STARLINK_TEST_FLAG" in caplog.text
+
+
+def test_float_env_rejects_non_finite_values(monkeypatch):
+    from app import config
+    for raw in ("nan", "inf", "-inf", "1e999", "abc", ""):
+        monkeypatch.setenv("STARLINK_TEST_NUM", raw)
+        assert config._env_float("STARLINK_TEST_NUM", "5") == 5.0
+    monkeypatch.setenv("STARLINK_TEST_NUM", " 2.5 ")
+    assert config._env_float("STARLINK_TEST_NUM", "5") == 2.5
+
+
+def test_empty_text_env_falls_back_instead_of_an_empty_path(monkeypatch):
+    """Порожній DB_PATH означав би для sqlite3 тимчасову БД - тиху втрату всіх даних."""
+    from app import config
+    for raw in ("", "   "):
+        monkeypatch.setenv("STARLINK_TEST_PATH", raw)
+        assert config._env_text("STARLINK_TEST_PATH", "/var/lib/x/history.db") == "/var/lib/x/history.db"
+    monkeypatch.setenv("STARLINK_TEST_PATH", " /data/h.db ")
+    assert config._env_text("STARLINK_TEST_PATH", "/var/lib/x/history.db") == "/data/h.db"

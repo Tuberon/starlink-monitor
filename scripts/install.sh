@@ -56,10 +56,9 @@ if [[ "$MAJOR_CHANGE" -eq 1 ]]; then
   echo "==> Попередню інсталяцію видалено — продовжую як повне встановлення"
 fi
 
-# Залежності змінились, якщо різняться requirements.txt АБО constraints.txt
-# (закріплені транзитивні версії). Відсутній constraints.txt у вже
-# встановленій копії (перше оновлення після його появи) теж = змінились:
-# diff -q на відсутньому файлі завершується помилкою.
+# Залежності змінились, якщо різняться requirements.txt АБО constraints.txt (закріплені транзитивні
+# версії). Відсутній constraints.txt у встановленій копії (перше оновлення після його появи) теж =
+# змінились: diff -q на відсутньому файлі завершується помилкою.
 REQ_CHANGED=1
 if [[ "$MODE" == "update" && -f "$PROJECT_DIR/requirements.txt" ]]; then
   if diff -q "$SRC_DIR/requirements.txt" "$PROJECT_DIR/requirements.txt" >/dev/null 2>&1 \
@@ -92,10 +91,9 @@ if [[ "$MODE" == "install" ]]; then
         *) echo "!! Невідома архітектура $ARCH, пропускаю авто-встановлення grpcurl"; GRPCURL_ARCH="" ;;
       esac
       if [[ -n "$GRPCURL_ARCH" ]]; then
-        # GitHub asset-файли завжди містять номер версії в імені
-        # (напр. grpcurl_1.9.3_linux_arm64.tar.gz), тому спершу резолвимо
-        # реальний тег останнього релізу через redirect
-        # "releases/latest" -> ".../tag/vX.Y.Z", і лише потім будуємо URL.
+        # Asset-файли GitHub містять номер версії в імені (grpcurl_1.9.3_linux_arm64.tar.gz), тож
+        # спершу резолвимо тег останнього релізу через redirect "releases/latest" →
+        # ".../tag/vX.Y.Z", потім будуємо URL.
         LATEST_TAG="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
           "https://github.com/fullstorydev/grpcurl/releases/latest" | sed -n 's#.*/tag/v##p')"
         if [[ -z "$LATEST_TAG" ]]; then
@@ -241,10 +239,9 @@ systemctl enable --now starlink-display.service
 systemctl enable --now starlink-wan-failover.timer
 systemctl enable --now starlink-monitor-healthcheck.timer
 
-# Обмеження розміру журналу systemd - за замовчуванням journald може
-# з часом накопичити значний обсяг логів (роками роботи Pi), поки не
-# з'їсть помітну частку SD-картки. Ідемпотентно - додається лише якщо
-# ще не налаштовано (не перезаписує вже наявне значення користувача).
+# Обмеження розміру журналу systemd: за замовчуванням journald за роки роботи Pi може з'їсти помітну
+# частку SD. Ідемпотентно: додається лише якщо ще не налаштовано (значення користувача не
+# перезаписується).
 if ! grep -q "^SystemMaxUse=" /etc/systemd/journald.conf 2>/dev/null; then
   echo "==> Обмежую розмір журналу systemd (SystemMaxUse=200M)"
   echo "SystemMaxUse=200M" >> /etc/systemd/journald.conf
@@ -352,9 +349,8 @@ if [[ "$MODE" == "install" ]]; then
       read -r -p "   Gateway для $WLAN_IFACE (Starlink router) [192.168.1.1]: " WLAN_GW
       WLAN_GW="${WLAN_GW:-192.168.1.1}"
 
-      # wlan0 з нижчим metric (вищий пріоритет) - трафік до dish/router
-      # Starlink (окрема підмережа 192.168.100.0/24, недосяжна інакше, ніж
-      # через дефолтний маршрут) завжди повинен йти через WiFi, не через
+      # wlan0 з нижчим metric (вищий пріоритет): трафік до dish/router Starlink (підмережа
+      # 192.168.100.0/24, досяжна лише через дефолтний маршрут) має йти через WiFi, а не через
       # домашню мережу.
       nmcli connection modify "$ETH_CONN" \
         ipv4.method manual ipv4.addresses "$ETH_IP" ipv4.gateway "$ETH_GW" \
@@ -393,17 +389,14 @@ if [[ "$MODE" == "install" ]]; then
 
       echo ""
       echo " ==> Готово. Перевірка:"
-      # Активна перевірка (не лише візуальний вивід) - без цього
-      # неуспішне застосування (профіль лишився на DHCP/іншій адресі)
-      # виглядало б як "усе гаразд" у виводі скрипта, і виявлялось би
-      # лише значно пізніше через симптоми (dish/Telegram недосяжні).
+      # Активна перевірка, а не лише вивід: інакше невдале застосування (профіль лишився на
+      # DHCP/іншій адресі) виглядало б як "усе гаразд" і виявлялось би пізно, за симптомами
+      # (dish/Telegram недосяжні).
       ETH_ACTUAL="$(ip -4 addr show "$ETH_IFACE" | grep -oP 'inet \K[\d.]+/\d+' || true)"
       WLAN_ACTUAL="$(ip -4 addr show "$WLAN_IFACE" | grep -oP 'inet \K[\d.]+/\d+' || true)"
-      # Інтерфейс може мати КІЛЬКА IPv4-адрес (напр. залишкова DHCP-
-      # адреса поруч зі статичною) - тому перевіряється ВХОДЖЕННЯ
-      # очікуваної адреси в список (grep -qxF), не точна рівність
-      # усього виводу (інакше коректна статична адреса + будь-яка
-      # друга давали б хибне "УВАГА").
+      # Інтерфейс може мати КІЛЬКА IPv4-адрес (напр. залишкова DHCP поруч зі статичною), тому
+      # перевіряється ВХОДЖЕННЯ очікуваної адреси (grep -qxF), а не рівність усього виводу: інакше
+      # коректна статична адреса + будь-яка друга давали б хибне "УВАГА".
       echo "   $ETH_IFACE: $(echo ${ETH_ACTUAL:-'(немає адреси!)'})"
       echo "   $WLAN_IFACE: $(echo ${WLAN_ACTUAL:-'(немає адреси!)'})"
       if ! grep -qxF "$ETH_IP" <<< "$ETH_ACTUAL"; then

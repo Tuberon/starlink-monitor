@@ -19,7 +19,7 @@ THERMAL_ZONE_PATH = "/sys/class/thermal/thermal_zone0/temp"
 
 def _read_temp_c() -> Optional[float]:
     try:
-        with open(THERMAL_ZONE_PATH) as f:
+        with open(THERMAL_ZONE_PATH, encoding="ascii") as f:
             raw = f.read().strip()
         return round(int(raw) / 1000.0, 1)
     except Exception as e:

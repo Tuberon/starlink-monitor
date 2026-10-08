@@ -96,10 +96,10 @@ def test_get_system_metrics_disk_error_defaults_to_zero():
 
 
 def test_get_system_metrics_never_raises_when_everything_fails():
-    """Реальна мета всього модуля: навіть якщо ВСІ psutil-виклики
-    провалюються одночасно - функція МАЄ повернути dict з дефолтними
-    значеннями, не кинути виняток (watchdog-цикл не має падати через
-    недоступність системних метрик)."""
+    """Мета модуля: навіть якщо ВСІ psutil-виклики провалюються одночасно, функція МАЄ повернути dict із
+    дефолтними значеннями, а не кинути виняток (watchdog-цикл не має падати через недоступні системні
+    метрики).
+    """
     with patch("psutil.boot_time", side_effect=RuntimeError()), \
          patch("psutil.cpu_percent", side_effect=RuntimeError()), \
          patch("psutil.virtual_memory", side_effect=RuntimeError()), \

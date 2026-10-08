@@ -19,12 +19,10 @@ log_redact.install()   # токен бота ніколи не потрапля�
 
 
 class _QuietSuccessfulGets(logging.Filter):
-    """Werkzeug пише рядок у журнал на КОЖЕН запит, а дашборд опитує сервер
-    ~3500 разів на годину на відкриту вкладку (~83 000 рядків / ~8 МБ на
-    добу - усе це на SD-картку й через Python-логування). Відкидаємо лише
-    успішні GET (опитування, статика); лишаємо все інше: POST-дії
-    (перезавантаження, зміна налаштувань - з IP джерела: єдиний слід дій
-    при відсутності автентифікації) і будь-які помилки (4xx/5xx)."""
+    """Werkzeug пише рядок на КОЖЕН запит, а дашборд опитує сервер ~3500 разів/год на вкладку (~83 000
+    рядків ≈ 8 МБ/добу на SD). Відкидаємо лише успішні GET (опитування, статика); POST-дії (з IP
+    джерела: єдиний слід дій без автентифікації) і помилки 4xx/5xx лишаються.
+    """
     _SUCCESSFUL_GET = re.compile(r'"GET [^"]*" [23]\d\d ')
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -50,12 +48,10 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
 
 def _static_v(filename: str) -> str:
-    """URL статичного файлу з query-параметром версії (mtime файлу) -
-    cache-busting: щойно файл змінюється (нова версія коду встановлена
-    через update.sh), URL міняється разом з ним, і браузер завантажує
-    свіжу версію негайно, ігноруючи старий закешований файл (замість
-    очікування спливання SEND_FILE_MAX_AGE_DEFAULT=3600с чи покладання
-    на ручний hard refresh користувача)."""
+    """URL статичного файлу з ?v=<mtime> (cache-busting): після update.sh файл змінюється, URL змінюється
+    разом із ним, і браузер одразу бере свіжу версію, а не чекає SEND_FILE_MAX_AGE_DEFAULT=3600 с чи
+    ручного hard refresh.
+    """
     path = os.path.join(_STATIC_DIR, filename)
     try:
         v = int(os.path.getmtime(path))
@@ -67,12 +63,9 @@ def _static_v(filename: str) -> str:
 app.jinja_env.globals["static_v"] = _static_v
 
 
-# window.I18N вбудовується в КОЖНУ HTML-сторінку - раніше всі 366
-# ключів (~58К з ~66К сторінки, виміряно), хоча JS використовує
-# лише ~121. Набір визначається один раз при старті скануванням
-# t('...')-викликів у static/*.js (усі виклики - з літералами;
-# тест test_js_i18n_calls_are_static_literals це гарантує, інакше
-# динамічний ключ тихо випав би з набору).
+# window.I18N вбудовується в КОЖНУ сторінку: раніше всі 366 ключів (~58 КБ із ~66 КБ сторінки), хоча JS
+# використовує ~121. Набір визначається при старті скануванням t('...') у static/*.js (виклики лише з
+# літералами: гарантує test_js_i18n_calls_are_static_literals, інакше динамічний ключ тихо випав би).
 _JS_T_CALL_RE = re.compile(r"(?<![\w.])t\(\s*['\"](\w+)['\"]")
 
 
@@ -159,7 +152,19 @@ def _json_body() -> dict[str, Any]:
     брали get_json() і далі payload.get(...) - на не-об'єктному JSON це
     давало 500 з трейсбеком (знайдено фазингом ендпоінтів)."""
     data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
+    return _scrub(data) if isinstance(data, dict) else {}
+
+
+def _scrub(value: Any) -> Any:
+    """Рядки з тіла JSON очищуються від одиноких сурогатів (`"\\ud800"` валідний JSON, але не кодується в UTF-8: sqlite3
+    кидав UnicodeEncodeError, обробник віддавав 500 замість 4xx)."""
+    if isinstance(value, str):
+        return db._clean_text(value)
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    if isinstance(value, dict):
+        return {db._clean_text(k) if isinstance(k, str) else k: _scrub(v) for k, v in value.items()}
+    return value
 
 
 def _bad_request(field: str) -> ResponseReturnValue:
@@ -552,13 +557,11 @@ def api_settings_backup() -> ResponseReturnValue:
 
 @app.route("/api/send-backup-telegram", methods=["POST"])
 def api_send_backup_telegram() -> ResponseReturnValue:
-    """Ручна кнопка на /settings - надсилає ОСТАННІЙ вже створений
-    auto-backup файл у Telegram негайно, незалежно від STARLINK_
-    TELEGRAM_BACKUP_ENABLED/_INTERVAL_HOURS (ті стосуються лише
-    періодичного, автоматичного надсилання). Не створює новий backup
-    - лише надсилає вже наявний найновіший; якщо жодного ще немає
-    (STARLINK_AUTO_BACKUP_ENABLED=0 чи щойно встановлено), повертає
-    зрозуміле повідомлення про це, не 500."""
+    """Ручна кнопка на /settings: негайно надсилає ОСТАННІЙ наявний auto-backup у Telegram, незалежно від
+    TELEGRAM_BACKUP_ENABLED/_INTERVAL_HOURS (вони стосуються лише періодичного надсилання). Новий backup
+    не створює; якщо жодного ще немає (AUTO_BACKUP_ENABLED=0 чи щойно встановлено) — повертає зрозуміле
+    повідомлення, не 500.
+    """
     ok, msg = services.send_latest_backup_to_telegram()
     return jsonify({"success": ok, "message": msg})
 

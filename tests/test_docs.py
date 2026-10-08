@@ -70,10 +70,10 @@ def _app_symbols():
 
 @pytest.mark.parametrize("rel", CODE_DOCS)
 def test_module_function_references_exist_in_code(rel):
-    """`services.check_updates_now()`, `pi_power.shutdown_from_button()`: якщо
-    функцію перенесли чи перейменували, документація не лишається з привидом.
-    Перевіряється лише форма `модуль_app.ім'я` (стороння/стандартна бібліотека
-    і файлові назви - поза перевіркою)."""
+    """`services.check_updates_now()`, `pi_power.shutdown_from_button()`: перенесена чи перейменована
+    функція не лишає в документації привида. Перевіряється лише форма `модуль_app.ім'я` (сторонні
+    бібліотеки й файлові назви — поза перевіркою).
+    """
     defined = _app_symbols()
     stale = []
     flat = re.sub(r"\s*\n\s*", " ", _read(rel))
@@ -121,7 +121,7 @@ def _actual_test_counts():
     import sys
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:randomly", "-p", "no:cacheprovider", str(ROOT / "tests")],
-        capture_output=True, text=True, timeout=120, cwd=ROOT,
+        capture_output=True, encoding="utf-8", errors="replace", timeout=120, cwd=ROOT,
     )
     collected = re.search(r"(\d+) tests? collected", result.stdout)
     assert collected, result.stdout[-300:]
@@ -252,9 +252,10 @@ def _structure(section):
 
 
 def test_readme_languages_have_the_same_structure_in_every_section():
-    """Блоки коду, рядки таблиць і пункти списків збігаються по розділах. Перепаковка абзацу з двома суміжними
-    пунктами списку склеювала їх у один (маркер наступного пункту лишався в кінці речення) - числа в паритет-тесті
-    це не показували."""
+    """Блоки коду, рядки таблиць і пункти списків збігаються по розділах. Перепаковка абзацу з двома
+    суміжними пунктами склеювала їх (маркер наступного лишався в кінці речення), а числа в паритет-тесті
+    цього не показували.
+    """
     uk, en = list(_readme_sections("README.md").values()), list(_readme_sections("README.en.md").values())
     assert len(uk) == len(en)
     different = [(a.split("\n", 1)[0][:40], _structure(a), _structure(b)) for a, b in zip(uk, en, strict=True) if _structure(a) != _structure(b)]
@@ -305,3 +306,22 @@ def test_readme_project_tree_lists_every_top_level_entry(rel):
     docs_line = next(line for line in tree.splitlines() if "├── docs/" in line)
     for doc in (p.name for p in (ROOT / "docs").glob("*.md")):
         assert doc in docs_line, (rel, doc)
+
+
+def test_every_page_template_extends_the_shared_base():
+    """<head>, шрифти, тема без FOUC і скрипти жили в трьох копіях (по ~35 рядків); тепер - лише в base.html."""
+    pages = [p for p in (ROOT / "templates").glob("*.html") if p.name != "base.html"]
+    assert pages
+    for page in pages:
+        assert page.read_text(encoding="utf-8").lstrip().startswith('{% extends "base.html" %}'), page.name
+    base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+    assert base.count("<head>") == 1 and "{% block content %}" in base and "{% block page_script %}" in base
+
+
+def test_every_css_variable_in_use_is_defined():
+    """var(--font-main) стояла в CSS, але змінної ніде не було: браузер мовчки брав успадкований шрифт."""
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+    defined = set(re.findall(r"(--[\w-]+)\s*:", css))
+    js = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "static").glob("*.js"))
+    used = {m.group(1) for m in re.finditer(r"var\((--[\w-]+)\s*\)", css)}          # без fallback-значення
+    assert used <= defined | set(re.findall(r"setProperty\(['\"](--[\w-]+)", js)), sorted(used - defined)

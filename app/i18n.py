@@ -351,72 +351,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "stats_subtitle": {"uk": "Dish Watch · журнал подій", "en": "Dish Watch · event log"},
 
     # ---- labels.py: UPDATE_STATE_LABELS (детальніші за dashboard.js - для журналу подій/Telegram) ----
-    "lbl_us_unknown": {"uk": "невідомо", "en": "unknown"},
-    "lbl_us_idle": {"uk": "немає оновлень", "en": "no updates"},
     "lbl_us_fetching": {"uk": "завантаження оновлення", "en": "downloading update"},
-    "lbl_us_pre_check": {"uk": "перевірка перед встановленням", "en": "pre-install check"},
     "lbl_us_writing": {"uk": "встановлення оновлення", "en": "installing update"},
-    "lbl_us_post_check": {"uk": "перевірка після встановлення", "en": "post-install check"},
     "lbl_us_reboot_required": {"uk": "оновлення готове, очікує перезавантаження", "en": "update ready, reboot pending"},
     "lbl_us_disabled": {"uk": "оновлення вимкнено", "en": "updates disabled"},
-    "lbl_us_faulted": {"uk": "помилка оновлення", "en": "update failed"},
 
     # ---- labels.py: ALERT_LABELS (dish) ----
-    "lbl_alert_motors_stuck": {"uk": "двигуни заклинило", "en": "motors stuck"},
-    "lbl_alert_thermal_shutdown": {"uk": "аварійне вимкнення через перегрів", "en": "thermal shutdown"},
-    "lbl_alert_thermal_throttle": {"uk": "обмеження через перегрів", "en": "thermal throttling"},
-    "lbl_alert_unexpected_location": {"uk": "неочікуване розташування", "en": "unexpected location"},
-    "lbl_alert_mast_not_near_vertical": {"uk": "мачта не вертикальна", "en": "mast not vertical"},
-    "lbl_alert_slow_ethernet_speeds": {"uk": "низька швидкість Ethernet", "en": "slow Ethernet speed"},
-    "lbl_alert_roaming": {"uk": "роумінг", "en": "roaming"},
     "lbl_alert_install_pending": {"uk": "оновлення очікує встановлення", "en": "update install pending"},
-    "lbl_alert_is_heating": {"uk": "обігрів увімкнено", "en": "heater on"},
-    "lbl_alert_power_supply_thermal_throttle": {"uk": "обмеження блока живлення через перегрів", "en": "power supply thermal throttling"},
-    "lbl_alert_is_power_save_idle": {"uk": "режим енергозбереження", "en": "power-save idle"},
-    "lbl_alert_dbf_telem_stale": {"uk": "застарілі дані телеметрії", "en": "stale telemetry data"},
-    "lbl_alert_low_motor_current": {"uk": "низький струм двигунів", "en": "low motor current"},
-    "lbl_alert_lower_signal_than_predicted": {"uk": "сигнал слабший за прогнозований", "en": "signal weaker than predicted"},
-    "lbl_alert_slow_ethernet_speeds_100": {"uk": "швидкість Ethernet нижче 100 Мбіт/с", "en": "Ethernet speed below 100 Mbps"},
-    "lbl_alert_obstruction_map_reset": {"uk": "карта перешкод скинута", "en": "obstruction map reset"},
-    "lbl_alert_dish_water_detected": {"uk": "виявлено воду на dish", "en": "water detected on dish"},
-    "lbl_alert_router_water_detected": {"uk": "виявлено воду на роутері", "en": "water detected on router"},
-    "lbl_alert_upsu_router_port_slow": {"uk": "повільний порт роутера UPSU", "en": "slow UPSU router port"},
-    "lbl_alert_no_ethernet_link": {"uk": "немає з'єднання Ethernet", "en": "no Ethernet link"},
 
     # ---- labels.py: ROUTER_UPDATE_STATE_LABELS ----
-    "lbl_rus_not_run": {"uk": "немає оновлень", "en": "no updates"},
-    "lbl_rus_getting_target_version": {"uk": "перевірка наявності оновлення", "en": "checking for update"},
-    "lbl_rus_downloading_update_image": {"uk": "завантаження оновлення", "en": "downloading update"},
-    "lbl_rus_flashing": {"uk": "встановлення оновлення", "en": "installing update"},
-    "lbl_rus_no_update_required": {"uk": "оновлення не потрібне", "en": "update not required"},
     "lbl_rus_reboot_pending": {"uk": "оновлення готове, очікує перезавантаження", "en": "update ready, reboot pending"},
     "lbl_rus_getting_target_version_failed": {"uk": "помилка перевірки оновлення", "en": "update check failed"},
-    "lbl_rus_getting_target_version_exhausted": {"uk": "не вдалося перевірити оновлення", "en": "failed to check for update"},
-    "lbl_rus_no_valid_artifact": {"uk": "відсутній коректний файл оновлення", "en": "no valid update file"},
-    "lbl_rus_illegal_artifact": {"uk": "некоректний файл оновлення", "en": "invalid update file"},
     "lbl_rus_downloading_update_image_failed": {"uk": "помилка завантаження оновлення", "en": "update download failed"},
-    "lbl_rus_downloading_update_image_exhausted": {"uk": "не вдалося завантажити оновлення", "en": "failed to download update"},
-    "lbl_rus_flashing_failed": {"uk": "помилка встановлення оновлення", "en": "update installation failed"},
 
     # ---- labels.py: ROUTER_ALERT_LABELS ----
     "lbl_ralert_freshly_fused": {"uk": "щойно активовано (freshly fused)", "en": "freshly activated (freshly fused)"},
     "lbl_ralert_lan_eth_slow_link_10": {"uk": "повільне LAN Ethernet з'єднання (10 Мбіт/с)", "en": "slow LAN Ethernet connection (10 Mbps)"},
     "lbl_ralert_lan_eth_slow_link_100": {"uk": "повільне LAN Ethernet з'єднання (100 Мбіт/с)", "en": "slow LAN Ethernet connection (100 Mbps)"},
-    "lbl_ralert_wan_eth_poor_connection": {"uk": "погане WAN Ethernet з'єднання", "en": "poor WAN Ethernet connection"},
     "lbl_ralert_mesh_topology_changing_often": {"uk": "топологія mesh-мережі часто змінюється", "en": "mesh network topology changing often"},
-    "lbl_ralert_mesh_unreliable_backhaul": {"uk": "ненадійний mesh-канал", "en": "unreliable mesh backhaul"},
-    "lbl_ralert_radius_missing_process": {"uk": "відсутній процес RADIUS", "en": "RADIUS process missing"},
-    "lbl_ralert_eth_switch_error": {"uk": "помилка Ethernet-комутатора", "en": "Ethernet switch error"},
-    "lbl_ralert_poe_on_dish_unreachable": {"uk": "PoE на dish недоступне", "en": "PoE on dish unreachable"},
-    "lbl_ralert_poe_fuse_blown": {"uk": "перегорів запобіжник PoE", "en": "PoE fuse blown"},
-    "lbl_ralert_poe_router_overcurrent": {"uk": "перевищення струму PoE роутера", "en": "PoE router overcurrent"},
-    "lbl_ralert_poe_off_current_nominal": {"uk": "PoE вимкнено (номінальний струм)", "en": "PoE off (nominal current)"},
-    "lbl_ralert_poe_vin_overvoltage": {"uk": "перевищення напруги живлення PoE", "en": "PoE input overvoltage"},
-    "lbl_ralert_poe_vin_undervoltage": {"uk": "занижена напруга живлення PoE", "en": "PoE input undervoltage"},
-    "lbl_ralert_high_cable_ping_drop_rate": {"uk": "високі втрати пакетів на кабелі", "en": "high cable ping drop rate"},
-    "lbl_ralert_sandbox_disabled": {"uk": "sandbox вимкнено", "en": "sandbox disabled"},
-    "lbl_ralert_only_overflight_blocked": {"uk": "заблоковано лише прольотний режим", "en": "overflight mode only blocked"},
-    "lbl_ralert_offline_networks_disabled": {"uk": "офлайн-мережі вимкнено", "en": "offline networks disabled"},
     "lbl_ralert_wired_mesh_not_using_wan_iface": {"uk": "дротовий mesh не використовує WAN-інтерфейс", "en": "wired mesh not using WAN interface"},
 
     # ---- telegram_bot.py: повідомлення бота ----
@@ -543,12 +495,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
 
 def get_language() -> str:
-    """Поточна мова інтерфейсу - з БД, дефолт uk. НІКОЛИ не кидає
-    виняток: невідоме значення або недоступна/пошкоджена БД -> дефолт.
-    Мову читають і критичні шляхи - сторінки дашборду, Telegram-бот,
-    тексти сповіщень про вимкнення Pi фізичною кнопкою; виняток тут
-    обрушив би їх разом зі зламаною БД (раніше так і було: no such
-    table -> OperationalError)."""
+    """Поточна мова інтерфейсу з БД (дефолт uk). НІКОЛИ не кидає виняток: невідоме значення чи
+    недоступна/пошкоджена БД → дефолт. Мову читають і критичні шляхи (дашборд, Telegram-бот, сповіщення
+    про вимкнення кнопкою), які виняток обрушив би разом зі зламаною БД.
+    """
     try:
         lang = db.get_setting("ui_language") or DEFAULT_LANG
     except Exception:
@@ -561,12 +511,10 @@ class SafeHtml(str):
     у повідомленнях tg_* він не екранується, на відміну від решти аргументів."""
 
 
-# Повідомлення Telegram ідуть з parse_mode="HTML": будь-які `<`, `>`, `&` у
-# ДИНАМІЧНОМУ тексті мають бути екрановані, інакше Telegram відхиляє ВСЕ
-# повідомлення ("can't parse entities"). Реальний випадок: при недоступній
-# тарілці grpc дає помилку `<_MultiThreadedRendezvous of RPC...>` - `/status`
-# мовчав саме тоді, коли потрібен найбільше. Так само ехо введеного в чаті
-# `/id <що завгодно>`. Ключі tg_* використовуються ЛИШЕ в Telegram.
+# Telegram ідуть з parse_mode="HTML": `<`, `>`, `&` у ДИНАМІЧНОМУ тексті мають бути екрановані, інакше
+# Telegram відхиляє ВСЕ повідомлення ("can't parse entities"). Реальний випадок: помилка grpc
+# `<_MultiThreadedRendezvous of RPC...>` при недоступній тарілці мовчала `/status` саме тоді, коли він
+# потрібен; те саме — ехо введеного в чаті `/id <що завгодно>`. Ключі tg_* — лише для Telegram.
 _TELEGRAM_KEY_PREFIX = "tg_"
 
 

@@ -21,10 +21,9 @@ SyslogLevel=notice
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-# RuntimeDirectoryPreserve=yes - без цього systemd видаляє директорію
-# одразу після кожного завершення oneshot-сервісу, а timer запускає
-# цей сервіс заново кожні ~30с - файл стану (потрібен для гістерезису
-# між запусками) був би втрачений щоразу без цього прапорця.
+# RuntimeDirectoryPreserve=yes: без цього systemd видаляє директорію після кожного завершення
+# oneshot-сервісу, а timer запускає його кожні ~30 с — файл стану (потрібен для гістерезису)
+# втрачався б щоразу.
 RuntimeDirectory=starlink-wan-failover
 RuntimeDirectoryPreserve=yes
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW

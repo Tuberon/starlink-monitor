@@ -259,11 +259,10 @@ def test_channel_closed_even_on_exception():
 
 
 def test_channel_close_failure_is_logged_not_swallowed_silently(caplog):
-    """Якщо саме close() провалюється (рідкісний edge-case) - НЕ має
-    перекривати основний результат (online лишається залежним ЛИШЕ
-    від успіху get_status()), АЛЕ й не має бути повністю тихим -
-    debug-слід потрібен для діагностики, якщо це колись реально
-    станеться на практиці."""
+    """Якщо провалюється саме close() (рідкісний edge case), це НЕ має перекривати результат (online
+    залежить лише від успіху get_status()), але й не бути зовсім тихим: потрібен debug-слід для
+    діагностики.
+    """
     fake_context = SimpleNamespace(close=lambda: (_ for _ in ()).throw(RuntimeError("канал уже закритий")))
     fake_grpc = SimpleNamespace(
         ChannelContext=lambda target: fake_context,
@@ -739,10 +738,10 @@ def test_broken_vendor_file_does_not_stop_the_monitor_from_starting(tmp_path, co
     import sys
     root = Path(__file__).resolve().parent.parent
     shutil.copytree(root / "app", tmp_path / "app", ignore=shutil.ignore_patterns("__pycache__"))
-    (tmp_path / "app" / "vendor" / "starlink_grpc.py").write_text(content)
+    (tmp_path / "app" / "vendor" / "starlink_grpc.py").write_text(content, encoding="utf-8")
     code = ("from app import starlink_client as c; s = c.StarlinkClient().get_status(); "
             "print(s.local_fault, s.online, s.error)")
-    out = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    out = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, encoding="utf-8", errors="replace", timeout=60)
     assert out.returncode == 0, (label, out.stderr[-300:])
     assert out.stdout.startswith("True False starlink_grpc module missing"), out.stdout
 
@@ -752,8 +751,10 @@ def test_broken_vendor_file_does_not_stop_the_monitor_from_starting(tmp_path, co
 def _run_python(code, cwd=None):
     import subprocess
     import sys
+    import os
     return subprocess.run([sys.executable, "-c", code], cwd=cwd or Path(__file__).resolve().parent.parent,
-                          capture_output=True, text=True, timeout=90)
+                          capture_output=True, encoding="utf-8", errors="replace", timeout=90,
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8"})      # дочірній процес пише кирилицю незалежно від локалі
 
 
 @pytest.mark.parametrize("module", ["app.starlink_client", "app.webapp", "app.services", "app.telegram_bot", "app.monitor"])
@@ -780,7 +781,7 @@ def test_concurrent_first_calls_with_a_broken_module_log_the_error_once(tmp_path
     import shutil
     root = Path(__file__).resolve().parent.parent
     shutil.copytree(root / "app", tmp_path / "app", ignore=shutil.ignore_patterns("__pycache__"))
-    (tmp_path / "app" / "vendor" / "starlink_grpc.py").write_text("raise RuntimeError('boom at import')\n")
+    (tmp_path / "app" / "vendor" / "starlink_grpc.py").write_text("raise RuntimeError('boom at import')\n", encoding="utf-8")
     code = (
         "import logging, sys, threading\n"
         "logging.basicConfig(stream=sys.stderr, level=logging.ERROR, format='%(message)s')\n"
@@ -796,3 +797,20 @@ def test_concurrent_first_calls_with_a_broken_module_log_the_error_once(tmp_path
     assert out.returncode == 0, out.stderr[-300:]
     assert out.stdout.strip() == "True 8"
     assert out.stderr.count("starlink_grpc недоступний") == 1, out.stderr
+
+
+def test_grpcurl_output_is_decoded_explicitly_as_utf8_with_replacement():
+    """text=True декодував за локаллю (C/ASCII - UnicodeDecodeError, а некоректний UTF-8 робив роутер \"недоступним\")."""
+    import json
+    seen = []
+
+    def fake_run(*args, **kwargs):
+        seen.append(kwargs)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(make_router_payload()), stderr="")
+
+    with patch("shutil.which", return_value="/usr/bin/grpcurl"), patch("subprocess.run", side_effect=fake_run):
+        StarlinkClient().get_router_info()
+        StarlinkClient().reboot_dish()
+    assert len(seen) >= 2
+    for kwargs in seen:
+        assert kwargs.get("encoding") == "utf-8" and kwargs.get("errors") == "replace" and "text" not in kwargs

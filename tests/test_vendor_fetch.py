@@ -86,7 +86,7 @@ class Fetcher:
         env = {**os.environ, "STARLINK_PROJECT_DIR": str(self.project), "STARLINK_GRPC_RAW_BASE": f"http://127.0.0.1:{self.port}",
                "STARLINK_GRPC_FEED_URL": f"http://127.0.0.1:{self.port}/feed.atom", "STARLINK_FETCH_SKIP_ETH0": "1",
                "STARLINK_DISH_ADDR": "127.0.0.1:1", "TMPDIR": str(self.tmp)}
-        return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60)
+        return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, encoding="utf-8", errors="replace", env=env, timeout=60)
 
     @property
     def working_sha(self):

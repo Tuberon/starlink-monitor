@@ -1,9 +1,5 @@
-"""
-Тести для app/activity_led.py - чиста логіка (init/blink/close) через
-mock app.gpio_utils.open_output_line(). Реальний gpiod-виклик
-всередині gpio_utils.py тестується окремо (tests/test_gpio_utils.py,
-через fake sys.modules['gpiod']) - тут лише поведінка ActivityLed
-навколо вже абстрагованого open_output_line().
+"""Тести app/activity_led.py: чиста логіка (init/blink/close) через mock app.gpio_utils.open_output_line().
+Реальний gpiod-виклик тестується окремо (tests/test_gpio_utils.py, fake sys.modules['gpiod']).
 """
 import time
 from unittest.mock import patch

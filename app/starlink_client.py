@@ -1,14 +1,8 @@
-"""
-gRPC-клієнт для Starlink dish (192.168.100.1:9200) та router
-(192.168.1.1:9000) - два окремі логічні пристрої в одному корпусі
-Mini, кожен зі своєю прошивкою.
-
-get_status(): starlink_grpc.get_status() (starlink-grpc-tools),
-повертає сирий protobuf DishGetStatusResponse.
-get_router_info(): grpcurl subprocess, payload {"get_status":{}} на
-адресу router (не dish - інша схема, WifiGetStatusResponse).
-reboot_dish(): grpcurl subprocess на dish_addr - dish і router фізично
-один пристрій, reboot dish перезавантажує обидва.
+"""gRPC-клієнт Starlink dish (192.168.100.1:9200) і router (192.168.1.1:9000) — два логічні пристрої в
+одному корпусі Mini, кожен зі своєю прошивкою. get_status(): starlink_grpc.get_status()
+(starlink-grpc-tools), сирий protobuf DishGetStatusResponse. get_router_info(): grpcurl subprocess,
+payload {"get_status":{}} на адресу router (інша схема, WifiGetStatusResponse). reboot_dish(): grpcurl
+на dish_addr — dish і router фізично один пристрій, тож перезавантажуються обидва.
 """
 import json
 import logging
@@ -39,12 +33,10 @@ def _snake_to_camel(name: str) -> str:
 # IGNORED_ROUTER_ALERTS). obstruction_map_reset — Starlink скидає карту перешкод сам; на станції
 # оновлень (3-12 тарілок на день) це шум на кожному підключенні (рішення користувача).
 IGNORED_DISH_ALERTS = frozenset({"obstruction_map_reset"})
-# Те саме для роутера: wired_mesh_not_using_wan_iface - шумне для цієї
-# конфігурації мережі, без практичної цінності. Раніше фільтр стояв у
-# monitor.py на двох шляхах запису, і третій шлях його оминав: спершу
-# check_updates_now() (виправлено точково), потім Telegram /status
-# ("⚠️ Попереджень: 1" при порожньому списку на дашборді). У джерелі -
-# одна точка, через яку проходять УСІ читання стану роутера.
+# Те саме для роутера: wired_mesh_not_using_wan_iface — шум для цієї конфігурації мережі. Фільтр тут, а
+# не в monitor.py: там він двічі пропускав шляхи (check_updates_now(); Telegram /status показував "⚠️
+# Попереджень: 1" при порожньому списку на дашборді); у джерелі єдина точка для УСІХ читань стану
+# роутера.
 IGNORED_ROUTER_ALERTS = frozenset({"wired_mesh_not_using_wan_iface", "lan_eth_slow_link_100"})
 # lan_eth_slow_link_100 (\"повільне LAN Ethernet з'єднання (100 Мбіт/с)\") - рішення користувача: не
 # виводити, не надсилати в Telegram і не записувати (БД, журнал, дашборд, дисплей). Лише варіант на
@@ -379,7 +371,8 @@ class StarlinkClient:
                     "SpaceX.API.Device.Device/Handle",
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout,
             )
             if result.returncode != 0:
@@ -398,7 +391,7 @@ class StarlinkClient:
             sw_stats = wifi_status.get("softwareUpdateStats", {})
             if sw_stats:
                 raw_state = sw_stats.get("state")
-                if isinstance(raw_state, str) and raw_state.isdigit():
+                if isinstance(raw_state, str) and raw_state.isascii() and raw_state.isdigit():
                     raw_state = int(raw_state)
                 if isinstance(raw_state, int):
                     update_state = ROUTER_UPDATE_STATE_NAMES.get(raw_state, str(raw_state))
@@ -475,7 +468,8 @@ class StarlinkClient:
                     "SpaceX.API.Device.Device/Handle",
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout + 5,
             )
             if result.returncode != 0:

@@ -73,9 +73,7 @@ fi
 
 echo "==> $TARGET_LABEL (metric=$TARGET_METRIC)"
 nmcli connection modify "$CONN_NAME" ipv4.route-metric "$TARGET_METRIC"
-# reapply застосовує зміну без повного перепідключення (уникає
-# короткого розриву WiFi, який спричинив би `connection up`); якщо
-# reapply недоступний (старіша версія NetworkManager) - fallback на
-# повне перепідключення.
+# reapply застосовує зміну без повного перепідключення (без короткого розриву WiFi, який дав би
+# `connection up`); якщо недоступний (старий NetworkManager) — fallback на повне перепідключення.
 nmcli device reapply "$WLAN_IFACE" 2>/dev/null || nmcli connection up "$CONN_NAME" 2>/dev/null || true
 rm -f "$STATE_FILE"

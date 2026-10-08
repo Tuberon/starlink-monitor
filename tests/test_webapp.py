@@ -141,10 +141,9 @@ def test_target_versions_multiple_candidates_one_older_rejects_whole_list(client
 
 
 def test_target_versions_empty_string_clears_field(client):
-    """Порожній рядок, явно надісланий - команда ОЧИСТИТИ поле, не
-    'нічого не робити' (реальна прогалина: раніше порожній рядок
-    просто мовчки ігнорувався, старе значення лишалось назавжди без
-    жодного способу його скасувати)."""
+    """Порожній рядок, явно надісланий, — команда ОЧИСТИТИ поле, а не "нічого не робити" (раніше він мовчки
+    ігнорувався, і старе значення неможливо було скасувати).
+    """
     client.post("/api/target-versions", json={"dish_target": "2026.03.03"})
     resp = client.post("/api/target-versions", json={"dish_target": ""})
     data = resp.get_json()
@@ -265,10 +264,9 @@ def test_version_channel_extracts_letter_prefix():
 
 
 def test_target_versions_different_build_channels_not_compared(client):
-    """Точний сценарій, знайдений користувачем на практиці: 'mr' і 'cr'
-    build-канали можуть відповідати РІЗНИМ апаратним ревізіям з
-    незалежними датами випуску одночасно - порівнювати дату напряму
-    між каналами дає хибне відхилення "старіша версія"."""
+    """Канали 'mr' і 'cr' можуть відповідати РІЗНИМ апаратним ревізіям з незалежними датами випуску: пряме
+    порівняння дат між каналами хибно відхиляє "старішу версію".
+    """
     _insert_dish_version("2026.07.19.mr82648")
     resp = client.post("/api/target-versions", json={"dish_target": "2026.07.06.cr81950.49600"})
     data = resp.get_json()
@@ -287,11 +285,9 @@ def test_target_versions_same_channel_still_rejects_older(client):
 
 
 def test_target_versions_candidate_without_channel_compares_globally(client):
-    """Edge case, знайдений власним тестом одразу після першої
-    реалізації channel-aware логіки: candidate БЕЗ явного каналу
-    (проста дата, без mr/cr-суфікса) - це НЕ "свій окремий канал",
-    порівнюється з УСІМА baseline звичайно (fallback), а не хибно
-    приймається як "непорівнюваний з рештою"."""
+    """Кандидат БЕЗ явного каналу (проста дата, без mr/cr) — не "свій окремий канал": порівнюється з УСІМА
+    baseline (fallback), а не хибно приймається як непорівнянний.
+    """
     _insert_dish_version("2026.07.19.mr82648")
     resp = client.post("/api/target-versions", json={"dish_target": "2020.01.01"})
     data = resp.get_json()
@@ -696,7 +692,7 @@ def test_static_v_existing_file_uses_real_mtime():
 def test_send_backup_telegram_success(client, tmp_path):
     config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
     os.makedirs(config.AUTO_BACKUP_DIR)
-    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1000.json"), "w") as f:
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1000.json"), "w", encoding="utf-8") as f:
         f.write("{}")
 
     with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")):
@@ -724,14 +720,13 @@ def test_send_backup_telegram_empty_directory_returns_clear_message(client, tmp_
 
 
 def test_send_backup_telegram_works_regardless_of_periodic_config(client, tmp_path):
-    """Реальна мета кнопки: ручна відправка МАЄ працювати незалежно
-    від STARLINK_TELEGRAM_BACKUP_ENABLED (той параметр стосується
-    лише автоматичного, періодичного надсилання) - користувач явно
-    натиснув кнопку, очікує негайну дію."""
+    """Ручна відправка МАЄ працювати незалежно від TELEGRAM_BACKUP_ENABLED (він стосується лише
+    періодичного надсилання): користувач явно натиснув кнопку й очікує негайної дії.
+    """
     config.TELEGRAM_BACKUP_ENABLED = False
     config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
     os.makedirs(config.AUTO_BACKUP_DIR)
-    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w", encoding="utf-8") as f:
         f.write("{}")
 
     with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")) as mock_send:
@@ -744,7 +739,7 @@ def test_send_backup_telegram_works_regardless_of_periodic_config(client, tmp_pa
 def test_send_backup_telegram_logs_event(client, tmp_path):
     config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
     os.makedirs(config.AUTO_BACKUP_DIR)
-    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w", encoding="utf-8") as f:
         f.write("{}")
 
     with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")):
@@ -903,10 +898,10 @@ def test_env_config_endpoint_rejects_out_of_range_values(client, key, value):
 
 @pytest.mark.parametrize("path", ["/", "/settings", "/stats"])
 def test_pages_have_no_render_blocking_external_stylesheet(client, path):
-    """Звичайний <link rel=stylesheet> на зовнішній хост у head блокує перший
-    рендер, доки не завантажиться або не відмовить: дашборд відкривають саме
-    коли зв'язок поганий (телефон у WiFi Starlink без інтернету) - сторінка
-    висіла б секунди порожньою. Зовнішні стилі - лише асинхронно."""
+    """Звичайний <link rel=stylesheet> на зовнішній хост у head блокує перший рендер: дашборд відкривають
+    саме при поганому зв'язку (телефон у WiFi Starlink без інтернету), і сторінка висіла б порожньою
+    секунди. Зовнішні стилі — лише асинхронно.
+    """
     from html.parser import HTMLParser
 
     class Links(HTMLParser):
@@ -1188,3 +1183,29 @@ def test_same_origin_and_non_browser_posts_are_not_blocked(client, db_path, head
 
 def test_get_requests_are_not_affected_by_the_cross_site_guard(client):
     assert client.get("/api/status", headers={"Origin": "http://evil.example", "Sec-Fetch-Site": "cross-site"}).status_code == 200
+
+
+_SURROGATE_BODY = ('{"token": "\\ud800", "chat_ids": "\\ud800", "values": {"STARLINK_POLL_INTERVAL": "\\ud800", "STARLINK_DISH_ADDR": "\\ud800:1", "k\\ud800": "v"}, '
+                   '"dish_target": "\\ud800", "router_target": "\\ud800", "language": "\\ud800", "enabled": "\\ud800"}')
+
+
+@pytest.mark.parametrize("rule", ["/api/auto-reboot", "/api/telegram-config", "/api/target-versions",
+                                  "/api/settings-restore", "/api/env-config", "/api/set-language"])
+def test_lone_surrogates_in_a_json_body_never_give_500(client, rule):
+    """`"\\ud800"` - валідний JSON, але не кодується в UTF-8: sqlite3 кидав UnicodeEncodeError, обробник віддавав 500."""
+    r = client.post(rule, data=_SURROGATE_BODY, content_type="application/json")
+    assert r.status_code < 500, r.get_data(as_text=True)[:200]
+
+
+def test_events_response_stays_small_after_a_huge_event(client, db_path):
+    from app import db
+    db.insert_event("test", "я" * 5_000_000)
+    assert len(client.get("/api/events?limit=5").data) < 20_000
+
+
+def test_json_body_strings_are_scrubbed_of_lone_surrogates_at_any_depth():
+    """Єдина точка входу тіл JSON: рядки (і ключі) очищаються рекурсивно ще до будь-якого обробника."""
+    from app import webapp
+    body = '{"a": ["\\ud800", {"k\\udc80": "v\\ud800", "n": 5}], "ok": "Привіт 🙂"}'
+    with webapp.app.test_request_context("/x", method="POST", data=body, content_type="application/json"):
+        assert webapp._json_body() == {"a": ["\ufffd", {"k\ufffd": "v\ufffd", "n": 5}], "ok": "Привіт 🙂"}

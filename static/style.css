@@ -245,7 +245,7 @@
   .log{font-family:var(--font-mono); font-size:0.78rem;}
   .log-date-header{
     padding:14px 0 6px; margin-top:4px;
-    font-family:var(--font-main); font-size:0.72rem; font-weight:600;
+    font-family:var(--font-mono); font-size:0.72rem; font-weight:600;
     color:var(--text-low); text-transform:uppercase; letter-spacing:0.05em;
     border-bottom:1px solid var(--sky-800);
   }
@@ -287,7 +287,7 @@
 
   /* ---- controls ---- */
   .controls{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
-  button.reboot-btn{
+  button.reboot-btn, button.check-btn{
     font-family:var(--font-mono);
     background: var(--sky-800);
     color: var(--text-hi);
@@ -304,18 +304,6 @@
   button.reboot-btn:disabled{opacity:0.5; cursor:not-allowed;}
   .hint{font-family:var(--font-mono); font-size:0.68rem; color:var(--text-low);}
 
-  button.check-btn{
-    font-family:var(--font-mono);
-    background: var(--sky-800);
-    color: var(--text-hi);
-    border:1px solid var(--line);
-    padding:11px 18px;
-    border-radius:9px;
-    font-size:0.78rem;
-    letter-spacing:0.02em;
-    cursor:pointer;
-    transition: border-color 0.15s, background 0.15s;
-  }
   button.check-btn:hover{border-color:var(--signal); background:var(--btn-signal-hover-bg);}
   button.check-btn:active{border-color:var(--signal); background:var(--btn-signal-active-bg);}
   button.check-btn:disabled{opacity:0.5; cursor:not-allowed;}

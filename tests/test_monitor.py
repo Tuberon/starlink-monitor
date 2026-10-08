@@ -377,10 +377,9 @@ def test_log_alerts_change_resolved_alert_logs_event(watchdog):
 
 
 def test_log_alerts_change_obstruction_map_reset_resolved_not_logged(watchdog):
-    """Реальна мета: Starlink періодично скидає карту перешкод сам по
-    собі як частину нормальної роботи (не аварійна подія) - зникнення
-    цього конкретного alert'а НЕ має створювати запис у журналі,
-    на відміну від решти resolved-алертів."""
+    """Starlink сам періодично скидає карту перешкод (нормальна робота, не аварія): зникнення цього alert'а
+    НЕ має створювати запис у журналі, на відміну від решти resolved-алертів.
+    """
     from app.starlink_client import DishStatus
     watchdog.prev_alerts = {"obstruction_map_reset"}
     status = DishStatus(timestamp=time.time(), online=True, active_alerts=[])
@@ -664,10 +663,10 @@ def test_maybe_send_backup_sends_newest_file(watchdog, tmp_path):
 
     old_path = os.path.join(config.AUTO_BACKUP_DIR, "backup-1000.json")
     new_path = os.path.join(config.AUTO_BACKUP_DIR, "backup-2000.json")
-    with open(old_path, "w") as f:
+    with open(old_path, "w", encoding="utf-8") as f:
         f.write("{}")
     os.utime(old_path, (1000, 1000))
-    with open(new_path, "w") as f:
+    with open(new_path, "w", encoding="utf-8") as f:
         f.write("{}")
     os.utime(new_path, (2000, 2000))
 
@@ -683,7 +682,7 @@ def test_maybe_send_backup_logs_event_on_success(watchdog, tmp_path):
     config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
     os.makedirs(config.AUTO_BACKUP_DIR)
     watchdog.last_telegram_backup_sent_ts = 0
-    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w", encoding="utf-8") as f:
         f.write("{}")
 
     with patch("app.telegram_notify.send_document", return_value=(True, "надіслано")):
@@ -701,7 +700,7 @@ def test_maybe_send_backup_updates_timer_even_on_failure(watchdog, tmp_path):
     config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
     os.makedirs(config.AUTO_BACKUP_DIR)
     watchdog.last_telegram_backup_sent_ts = 0
-    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w") as f:
+    with open(os.path.join(config.AUTO_BACKUP_DIR, "backup-1.json"), "w", encoding="utf-8") as f:
         f.write("{}")
 
     before = watchdog.last_telegram_backup_sent_ts
@@ -1090,10 +1089,10 @@ def test_sender_job_exception_does_not_kill_worker(db_path):
 
 
 def test_send_now_quiet_for_unconfigured_telegram_in_any_language(db_path, caplog):
-    """Раніше монітор порівнював УКРАЇНСЬКІ тексти ("Telegram сповіщення
-    вимкнені"...), щоб не логувати очікувану ситуацію; з перекладом в
-    англійському інтерфейсі це порівняння перестало б спрацьовувати -
-    лог засмічувався б хибними попередженнями. Тепер - код стану."""
+    """Раніше монітор порівнював УКРАЇНСЬКІ тексти ("Telegram сповіщення вимкнені"...), щоб не логувати
+    очікуване; з англійським інтерфейсом порівняння перестало б спрацьовувати, і лог засмічували б хибні
+    попередження. Тепер — код стану.
+    """
     from app.monitor import Watchdog
     from app import telegram_notify
     db.set_setting("ui_language", "en")

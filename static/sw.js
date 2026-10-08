@@ -1,7 +1,5 @@
-// Мінімальний service worker для installability дашборду (PWA) - кешує
-// лише статичні файли (CSS/JS/іконки), НЕ API-відповіді (динамічні дані
-// Starlink завжди мають бути свіжими, кешування статусу було б небезпечним
-// і оманливим при втраті мережі).
+// Мінімальний service worker для installability (PWA): кешує лише статику (CSS/JS/іконки), НЕ API
+// (динамічні дані Starlink мають бути свіжими; кеш статусу був би оманливим при втраті мережі).
 const CACHE_NAME = "dish-watch-static-v1";
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -35,10 +33,8 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  // Кешуємо лише статику (/static/*) з стратегією "мережа спочатку,
-  // кеш як fallback" - завжди намагаємось отримати свіжу версію файлу,
-  // кеш рятує лише коли мережа справді недоступна (напр. дашборд
-  // відкрито, поки Pi перезавантажується).
+  // Кешуємо лише статику (/static/*), стратегія "мережа спочатку, кеш як fallback": завжди пробуємо
+  // свіжу версію, кеш рятує лише без мережі (напр. дашборд відкрито, поки Pi перезавантажується).
   if (url.pathname.startsWith("/static/")) {
     event.respondWith(
       fetch(event.request)
@@ -50,7 +46,6 @@ self.addEventListener("fetch", (event) => {
         .catch(() => caches.match(event.request))
     );
   }
-  // Усі інші запити (/, /settings, /api/*) - завжди напряму через мережу,
-  // без кешування чи offline-fallback: показувати застарілі метрики
-  // Starlink чи стан дашборду офлайн було б оманливим для користувача.
+  // Усі інші запити (/, /settings, /api/*) — напряму через мережу, без кешу й offline-fallback:
+  // застарілі метрики чи стан дашборду офлайн вводили б в оману.
 });

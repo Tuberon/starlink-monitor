@@ -1,41 +1,6 @@
-<!DOCTYPE html>
-<html lang="{{ ui_lang }}">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>{{ t('page_title_index') }}</title>
-<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/static/icon-192.png">
-<meta name="theme-color" content="#0b1220">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-{# Шрифти НЕ блокують відображення: звичайний <link rel="stylesheet"> у head
-   блокує перший рендер, доки не завантажиться або не відмовить, а дашборд
-   відкривають саме коли зв'язок поганий (телефон у WiFi Starlink без
-   інтернету: DNS/TCP до Google висять секунди). media="print" + onload -
-   стилі підключаються асинхронно; без мережі лишаються запасні шрифти
-   (system-ui/monospace у style.css). #}
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-<noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"></noscript>
-<script>
-// Застосовує збережену тему СИНХРОННО, ДО завантаження style.css -
-// без цього був би помітний "спалах" неправильної теми при кожному
-// завантаженні сторінки (FOUC). Розташовано ПІСЛЯ <meta theme-color>
-// (потрібен у DOM для querySelector) і ПЕРЕД <link rel="stylesheet">
-// (щоб усе ще запобігати FOUC для CSS). try/catch - localStorage може
-// бути недоступний (приватний режим деяких браузерів).
-try {
-  if (localStorage.getItem('theme') === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#eef2f8');
-  }
-} catch (e) {}
-</script>
-<link rel="stylesheet" href="{{ static_v('style.css') }}">
-<script>window.LANG = "{{ ui_lang }}"; window.I18N = {{ i18n_json | tojson }};</script>
-</head>
-<body>
-<div class="wrap">
+{% extends "base.html" %}
+{% block title %}{{ t('page_title_index') }}{% endblock %}
+{% block content %}
 
   <div class="offline-banner" id="offlineBanner" style="display:none;">
     {{ t('offline_banner') }}
@@ -192,11 +157,5 @@ try {
     DISH ADDR 192.168.100.1:9200 · Raspberry Pi Zero 2 W<br>
     {{ t('footer_license') }}
   </footer>
-</div>
-
-<script src="{{ static_v('common.js') }}"></script>
-<script src="{{ static_v('dashboard.js') }}"></script>
-<script src="{{ static_v('theme.js') }}"></script>
-<script src="{{ static_v('pwa.js') }}"></script>
-</body>
-</html>
+{% endblock %}
+{% block page_script %}<script src="{{ static_v('dashboard.js') }}"></script>{% endblock %}

@@ -149,13 +149,10 @@ def upsert_router_and_notify(info: RouterInfo, dish_id: Optional[str], notify_fn
 
 
 def build_backup_dict() -> dict[str, Any]:
-    """Формує повний backup-словник (Telegram config, auto-reboot,
-    перевизначені параметри, історія відомих пристроїв) -
-    спільна для webapp.py api_settings_backup() (ручний, через веб-
-    кнопку) і perform_auto_backup() нижче (автоматичний, періодичний,
-    з watchdog-циклу) - уникає дублювання тієї самої логіки в двох
-    місцях. Bot token включається у відкритому вигляді - файл backup
-    потрібно берегти як secret."""
+    """Повний backup-словник (Telegram config, auto-reboot, перевизначені параметри, історія відомих
+    пристроїв) для webapp.api_settings_backup() (ручний) і perform_auto_backup() (періодичний). Bot
+    token — у відкритому вигляді: файл берегти як secret.
+    """
     token, chat_ids, enabled = telegram_notify.get_telegram_config()
     env_params = {
         p["key"]: p["current"]
@@ -204,10 +201,9 @@ def perform_auto_backup() -> None:
     # користувачами на тому самому Pi (0644 - типовий umask-дефолт).
     os.chmod(path, 0o600)
 
-    # Щойно записаний файл НІКОЛИ не видаляється, а сортування - числове за epoch в імені:
-    # (1) після зсуву годинника НАЗАД новий backup мав би найменше ім'я й видалявся б тим самим
-    # викликом, що його створив (автобекап мовчки нічого не зберігав би, поки годинник не
-    # "наздожене"); (2) рядкове сортування ставило б backup-9999 пізніше за backup-1790000000.
+    # Щойно записаний файл НІКОЛИ не видаляється, сортування числове за epoch в імені: (1) після зсуву
+    # годинника НАЗАД новий backup мав найменше ім'я й видалявся б одразу; (2) рядкове сортування
+    # ставило б backup-9999 після backup-1790000000.
     just_written = os.path.basename(path)
     older = sorted(
         (f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.startswith("backup-") and f.endswith(".json") and f != just_written),
@@ -222,13 +218,11 @@ def perform_auto_backup() -> None:
 
 
 def send_latest_backup_to_telegram() -> tuple[bool, str]:
-    """Знаходить ОСТАННІЙ (найновіший за mtime) backup-файл із
-    AUTO_BACKUP_DIR і надсилає його в Telegram як документ. Спільна
-    логіка для двох викликачів: Watchdog._maybe_send_backup_to_
-    telegram() (періодичний, з перевіркою інтервалу) і webapp.py
-    /api/send-backup-telegram (ручна кнопка на /settings, без
-    перевірки інтервалу - користувач явно натиснув, робити негайно).
-    Записує подію в журнал незалежно від результату."""
+    """Знаходить ОСТАННІЙ (за mtime) backup-файл в AUTO_BACKUP_DIR і надсилає його в Telegram як документ.
+    Спільна для Watchdog._maybe_send_backup_to_telegram() (періодичний, з перевіркою інтервалу) і
+    /api/send-backup-telegram (ручна кнопка, без перевірки інтервалу). Пише подію в журнал незалежно від
+    результату.
+    """
     if not os.path.isdir(config.AUTO_BACKUP_DIR):
         return False, i18n.t("api_backup_no_dir")
     backups = [f for f in os.listdir(config.AUTO_BACKUP_DIR) if f.endswith(".json")]

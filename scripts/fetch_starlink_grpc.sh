@@ -178,10 +178,9 @@ fi
 
 if [[ "$RESTART_SERVICES" -eq 1 ]]; then
   echo "==> Перезапускаю сервіси, щоб підхопити зміни"
-  # Окремі виклики, а не один з двома аргументами: sudoers NOPASSWD-правила
-  # (див. install.sh) прописані по одному сервісу на рядок і мають збігатися
-  # з командою ТОЧНО, тому "systemctl restart a.service b.service" одним
-  # викликом не підійде під жодне з двох окремих правил.
+  # Окремі виклики, а не один із двома аргументами: sudoers NOPASSWD-правила (install.sh) задано по
+  # одному сервісу на рядок і мають збігатися з командою ТОЧНО, тож `systemctl restart a b` не
+  # підійшов би під жодне.
   sudo systemctl restart starlink-monitor.service
   sudo systemctl restart starlink-webui.service
   echo "==> Сервіси перезапущено"

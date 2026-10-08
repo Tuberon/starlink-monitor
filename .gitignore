@@ -8,3 +8,7 @@ __pycache__/
 *.db-shm
 venv/
 .venv/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/

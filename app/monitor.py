@@ -192,22 +192,14 @@ class Watchdog:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
         self.last_reboot_ts = 0.0
-        # SD-card-wear reduction: dish-зчитування накопичуються тут
-        # замість негайного окремого запису (кожні 10с) - flush
-        # (insert_metrics_batch) одним batch-INSERT відбувається раз
-        # на DISH_METRICS_BATCH_INTERVAL_SEC у run_forever(), і
-        # додатково при отриманні SIGTERM/SIGINT (graceful shutdown) -
-        # щоб звичайний systemctl restart/update.sh НЕ втрачав дані,
-        # лише справжнє раптове вимкнення живлення.
+        # Зменшення зносу SD: dish-зчитування накопичуються тут, а flush (insert_metrics_batch) одним
+        # batch-INSERT іде раз на DISH_METRICS_BATCH_INTERVAL_SEC у run_forever() і при SIGTERM/SIGINT —
+        # тож systemctl restart/update.sh не губить дані, лише справжнє раптове вимкнення живлення.
         self.metrics_buffer: list[dict[str, Any]] = []
         self.last_batch_flush_ts = time.time()
-        # На відміну від last_reboot_ts (0.0 - "дозволити reboot
-        # одразу", свідомо для auto-reboot-при-невдачах), тут
-        # ІНІЦІАЛІЗУЄМО поточним часом - інакше "now - 0.0" завжди
-        # величезне число, спричиняючи НЕГАЙНЕ надсилання backup-
-        # файлу в Telegram при КОЖНОМУ старті сервісу (небажано -
-        # таймер має "стартувати" з моменту запуску, не миттєво
-        # спрацьовувати).
+        # На відміну від last_reboot_ts (0.0 = дозволити reboot одразу), тут ініціалізуємо поточним
+        # часом: інакше now - 0.0 — величезне число, і backup надсилався б у Telegram при КОЖНОМУ старті
+        # сервісу; таймер має рахуватись від запуску.
         self.last_telegram_backup_sent_ts = time.time()
         # Час першої невдалої спроби в поточному безперервному ланцюжку
         # відмов - None, поки dish online. Використовується, щоб приглушити
@@ -545,12 +537,10 @@ class Watchdog:
         self.prev_alerts = current
 
     def _notify_first_dish_connection(self, status: DishStatus) -> None:
-        """Надсилає в Telegram ID тарілки один раз - лише при першому
-        підключенні кожної конкретної тарілки (за dish_id) до Pi. Усі
-        колись бачені ID зберігаються в settings (JSON-список), тож
-        переживають рестарт сервісу; при підключенні НОВОЇ тарілки
-        (ID, якого ще не було в списку) сповіщення прийде знову, навіть
-        якщо до цього вже підключались дві чи більше різних тарілок."""
+        """Надсилає в Telegram ID тарілки один раз — при першому підключенні кожної тарілки (за dish_id) до
+        Pi. Усі бачені ID зберігаються в settings (JSON-список), тож переживають рестарт; НОВА тарілка
+        (ID, якого не було) сповіщається знову.
+        """
         if not status.dish_id:
             return
 
@@ -654,11 +644,11 @@ class Watchdog:
         self.prev_router_alerts = current
 
     def _clamp_future_timestamps(self, now: float) -> None:
-        """Мітки "останньої події" з МАЙБУТНЬОГО (годинник стрибнув назад) скидаємо
-        на зараз: інакше `now - last < MIN_REBOOT_INTERVAL_SEC` блокувало б авто-reboot
-        зависшої тарілки на весь розмір зсуву (вимір: на 2 год), а відправку бекапу в
-        Telegram - так само. Захист від reboot-loop зберігається: вікно рахується від
-        моменту зсуву."""
+        """Мітки "останньої події" з МАЙБУТНЬОГО (годинник стрибнув назад) скидаємо на зараз: інакше `now -
+        last < MIN_REBOOT_INTERVAL_SEC` блокувало б авто-reboot зависшої тарілки на весь зсув (вимір: 2
+        год), а бекап у Telegram — так само. Захист від reboot-loop лишається: вікно рахується від
+        моменту зсуву.
+        """
         if self.last_reboot_ts > now:
             self.last_reboot_ts = now
         if self.last_telegram_backup_sent_ts > now:
@@ -868,13 +858,10 @@ class Watchdog:
         if led.init():
             db.set_activity_callback(led.blink)
 
-        # Створюється тут (ДО реєстрації signal handler нижче, не
-        # пізніше поруч із .start()) - _handle_shutdown_signal()
-        # посилається на telegram_bot, тому SIGTERM/SIGINT, що прийшов
-        # би МІЖ реєстрацією й пізнішим створенням, спричинив би
-        # NameError. __init__() безпечний для раннього виклику - лише
-        # створює StarlinkClient()/ThreadPoolExecutor/порожні
-        # структури даних, без мережевих запитів.
+        # Створюється ДО реєстрації signal handler: _handle_shutdown_signal() посилається на
+        # telegram_bot, і SIGTERM між реєстрацією та пізнішим створенням дав би NameError. __init__()
+        # безпечний для раннього виклику (лише StarlinkClient/ThreadPoolExecutor/порожні структури, без
+        # мережі).
         telegram_bot = TelegramBot()
 
         # Graceful shutdown: flush буфера dish-метрик ПЕРЕД завершенням

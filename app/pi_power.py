@@ -28,7 +28,7 @@ def run_system_command(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
     версію. Публічна (без `_`) - реально використовується з іншого
     модуля, не лише внутрішньо."""
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "unknown error").strip()
             return False, err[:500]

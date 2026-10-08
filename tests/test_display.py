@@ -1,9 +1,6 @@
-"""
-Тести для app/display.py - чисті функції (update_state/auto-off) і
-реальний PIL-рендеринг (_redraw, _draw_power_action_message,
-_load_font, _truncate_to_width) через fake display-об'єкт. Головний
-цикл run_forever() (реальна SPI/GPIO-ініціалізація через fake
-CircuitPython-модулі) - окремо в tests/test_display_run_forever.py.
+"""Тести app/display.py: чисті функції (update_state/auto-off) і реальний PIL-рендеринг (_redraw,
+_draw_power_action_message, _load_font, _truncate_to_width) через fake display. Цикл run_forever()
+(SPI/GPIO через fake CircuitPython) — у tests/test_display_run_forever.py.
 """
 from unittest.mock import patch
 
@@ -407,7 +404,7 @@ def test_display_and_button_processes_do_not_load_http_stack():
     import subprocess
     import sys
     code = "import sys, app.display, app.shutdown_button; print('requests' in sys.modules)"
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, encoding="utf-8", errors="replace",
                          cwd=os.path.join(os.path.dirname(__file__), ".."))
     assert out.stdout.strip() == "False", out.stdout + out.stderr
 

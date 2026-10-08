@@ -7,3 +7,4 @@ pytest-randomly>=3.15
 pip-audit>=2.7
 types-requests>=2.32
 types-psutil>=7.0
+hypothesis>=6.100

@@ -324,7 +324,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-1054 tests (`pytest-randomly` — resilient to execution order), 26
+1108 tests (`pytest-randomly` — resilient to execution order), 27
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -364,13 +364,13 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 1054 tests (26 files), pytest-randomly
+├── tests/          # 1108 tests (27 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md, plan.md
 ├── requirements.txt      # production dependencies (direct, exact pins)
 ├── constraints.txt       # pinned TRANSITIVE versions (pip install -c)
-├── requirements-dev.txt  # mypy/pytest/ruff/pip-audit
+├── requirements-dev.txt  # mypy/pytest/ruff/pip-audit/hypothesis
 ├── mypy.ini              # mypy: strict mode for app/*
 ├── pytest.ini            # pytest settings
 ├── ruff.toml             # ruff: rules F, B, E9, PLE, S
@@ -438,7 +438,7 @@ numeric parameter: it rejects `nan`/`inf`, negative values and `0` for timers
 (there `0` would mean "on every iteration", not "disabled"); zero stays
 allowed only where it really means "disabled" (pins, backlight auto-off).
 The addresses `STARLINK_DISH_ADDR`/`STARLINK_ROUTER_ADDR` are accepted only as
-`host:port` (port 1–65535). Manual editing of the `env` file is not checked.
+`host:port` (port 1–65535). Manual editing of the `env` file is not range-checked, but it does not break the services either: an invalid value (empty, `abc`) is replaced by the default with a warning in the log; booleans accept `1/true/yes/on` and `0/false/no/off`.
 
 Most important for initial setup:
 

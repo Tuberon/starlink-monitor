@@ -180,15 +180,21 @@ class TelegramBot:
             time.sleep(_POLL_ERROR_PAUSE_SEC)
             return
 
-        for update in data.get("result", []):
-            self._last_update_id = max(self._last_update_id, update.get("update_id", 0))
+        # Лише об'єкти: елемент result, що не є словником (чи result не список), раніше кидав виняток ДО просування
+        # _last_update_id - той самий "отруєний" update перечитувався б нескінченно.
+        result = data.get("result")
+        updates = [u for u in result if isinstance(u, dict)] if isinstance(result, list) else []
+        for update in updates:
+            update_id = update.get("update_id", 0)
+            if isinstance(update_id, int) and not isinstance(update_id, bool):
+                self._last_update_id = max(self._last_update_id, update_id)
 
         # Групуємо за chat_id: updates одного чату обробляються послідовно в одному потоці (порядок,
         # напр., /reboot і клік підтвердження того самого користувача: без цього клік міг обробитись
         # РАНІШЕ за встановлення pending-стану). Різні чати — паралельно: повільна команда одного не
         # блокує інших.
         groups: dict[str, list[dict[str, Any]]] = {}
-        for update in data.get("result", []):
+        for update in updates:
             chat_id = self._extract_chat_id(update)
             groups.setdefault(chat_id, []).append(update)
 
@@ -211,7 +217,7 @@ class TelegramBot:
 
     def _handle_update(self, token: str, allowed_chat_ids: set[str], update: dict[str, Any]) -> None:
         if "callback_query" in update:
-            self._handle_callback(token, allowed_chat_ids, update["callback_query"])
+            self._handle_callback(token, allowed_chat_ids, _obj(update["callback_query"]))
             return
 
         message = _obj(update.get("message") or update.get("edited_message"))
@@ -305,13 +311,9 @@ class TelegramBot:
         self._send(token, chat_id, "\n".join(lines))
 
     def _cmd_reboot_request(self, token: str, chat_id: str) -> None:
-        # Прибираємо застарілі pending-записи (TTL уже минув) з УСІХ
-        # chat_id, не лише поточного - без цього словник рахував би
-        # ЛИШЕ через _handle_callback() (реальне натискання inline-
-        # кнопки); якщо користувач просто ігнорує повідомлення (не
-        # тисне ні "підтвердити", ні "скасувати"), запис лишався б
-        # у пам'яті процесу назавжди - повільний, але реальний leak
-        # у довготривалому (місяці без рестарту) watchdog-процесі.
+        # Прибираємо застарілі (TTL минув) pending-записи з УСІХ chat_id: їх видаляє лише
+        # _handle_callback() при натисканні кнопки, тож якщо користувач ігнорує повідомлення, запис
+        # лишався б у пам'яті процесу назавжди (повільний витік у watchdog без рестарту місяцями).
         now = time.time()
         expired = [cid for cid, ts in self._pending_reboot_confirm.items()
                    if now - ts > config.TELEGRAM_CONFIRM_TTL_SEC]

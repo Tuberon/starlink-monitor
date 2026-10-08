@@ -94,10 +94,9 @@ def test_target_version_multiple_candidates_none_matching_is_silent(sink):
 
 
 def test_target_version_different_dish_id_gets_fresh_notification(sink):
-    """Найважливіший сценарій: якщо ФІЗИЧНО ІНШИЙ Starlink (інший
-    dish_id, напр. після заміни обладнання) збігається з тим самим
-    target-значенням, що вже notified для ПОПЕРЕДНЬОГО dish - НЕ
-    вважається дублікатом, отримує своє власне, свіже сповіщення."""
+    """Якщо ФІЗИЧНО ІНШИЙ Starlink (інший dish_id, напр. після заміни) збігається з тим самим target, що
+    вже notified для ПОПЕРЕДНЬОГО dish, це НЕ дублікат: він отримує власне свіже сповіщення.
+    """
     db.set_setting("dish_target_version", "2026.03.03")
     services.check_target_version_reached(
                 "dish", "2026.03.03", "dish_target_version", "dish_target_notified", "dish-OLD",
@@ -241,10 +240,9 @@ def test_firmware_forward_change_says_updated(db_path):
 
 
 def test_firmware_backward_change_does_not_notify(db_path):
-    """Запит користувача: не сповіщати про відкат прошивки взагалі -
-    реальний сценарій, знайдений раніше на практиці (SpaceX інколи
-    відкочує прошивку), тепер НЕ генерує жодного Telegram-сповіщення,
-    лише мовчки оновлює known_devices реальною поточною версією."""
+    """Запит користувача: не сповіщати про відкат прошивки взагалі (SpaceX інколи відкочує): жодного
+    Telegram-сповіщення, лише мовчазне оновлення known_devices реальною версією.
+    """
     from app.starlink_client import DishStatus
     sent = []
     db.upsert_known_device_dish("dish1", "rev3", "2026.07.16.mr82459.1")
@@ -307,17 +305,16 @@ def test_perform_auto_backup_writes_valid_json(sink, tmp_path):
 
     files = os.listdir(config.AUTO_BACKUP_DIR)
     assert len(files) == 1
-    with open(os.path.join(config.AUTO_BACKUP_DIR, files[0])) as f:
+    with open(os.path.join(config.AUTO_BACKUP_DIR, files[0]), encoding="utf-8") as f:
         content = json.load(f)
     assert content["format_version"] == db.BACKUP_FORMAT_VERSION
 
 
 def test_perform_auto_backup_restricts_file_permissions(sink, tmp_path):
-    """Security fix: backup-файл містить Telegram bot token у
-    відкритому вигляді - той самий secret, що вже захищений chmod 600
-    для /etc/starlink-monitor/env в install.sh. Без явного chmod тут
-    файл покладався б лише на системний umask (типово 0644 -
-    читабельний іншими локальними користувачами на тому самому Pi)."""
+    """Security: backup-файл містить Telegram bot token у відкритому вигляді — той самий secret, що вже під
+    chmod 600 для /etc/starlink-monitor/env в install.sh. Без явного chmod файл залежав би від umask
+    (типово 0644 — читабельний іншим локальним користувачам Pi).
+    """
     import stat
     config.AUTO_BACKUP_DIR = str(tmp_path / "backups")
     services.perform_auto_backup()

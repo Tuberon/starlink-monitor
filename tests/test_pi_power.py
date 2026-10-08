@@ -108,10 +108,10 @@ def test_failure_sends_failure_text_with_reason(db_path):
 
 
 def test_failure_clears_pending_signal(db_path):
-    """Реальна мета: якщо команда провалилась (Pi НЕ вимикається/не
-    перезавантажується), сигнал для дисплея МАЄ бути прибраний -
-    інакше він лишиться "завислим" і покаже застаріле повідомлення
-    при наступному запуску display.py."""
+    """Якщо команда провалилась (Pi не вимикається/не перезавантажується), сигнал для дисплея МАЄ бути
+    прибраний: інакше він лишиться завислим і покаже застаріле повідомлення при наступному запуску
+    display.py.
+    """
     config.DISPLAY_ENABLED = False
     with patch("subprocess.run", side_effect=_fake_run_failure):
         pi_power.execute_pi_power_action(
@@ -212,10 +212,9 @@ def test_pending_signal_write_failure_does_not_block_real_action(db_path):
 
 
 def test_pending_signal_cleanup_failure_after_failed_action_does_not_raise(db_path):
-    """Реальний edge case: команда провалилась (потрібно прибрати
-    pending-сигнал), АЛЕ й саме прибирання сигналу теж провалюється -
-    не має поширювати виняток назовні (вже й так неуспішний випадок,
-    не варто робити його ще гіршим crash'ем)."""
+    """Команда провалилась (pending-сигнал треба прибрати), АЛЕ й саме прибирання теж провалюється: виняток
+    не має поширюватись назовні (випадок і так неуспішний, crash зробив би його гіршим).
+    """
     config.DISPLAY_ENABLED = False
     call_count = {"n": 0}
 
@@ -265,3 +264,11 @@ def test_shutdown_from_button_db_init_failure_does_not_block_poweroff():
          patch("app.pi_power.execute_pi_power_action", side_effect=lambda *a, **kw: calls.append(a)):
         pi_power.shutdown_from_button(27)
     assert len(calls) == 1
+
+
+def test_system_command_output_is_decoded_explicitly_as_utf8():
+    from types import SimpleNamespace
+    seen = []
+    with patch("subprocess.run", side_effect=lambda *a, **kw: seen.append(kw) or SimpleNamespace(returncode=0, stdout="", stderr="")):
+        pi_power.run_system_command(["true"], 5)
+    assert seen and seen[0].get("encoding") == "utf-8" and seen[0].get("errors") == "replace" and "text" not in seen[0]

@@ -98,11 +98,10 @@ def test_checkupdates_command_dispatches_correctly(db_path):
 # ---- Реальний баг, знайдений на запиті користувача: /id "не відповідає" ----
 
 def test_api_call_logs_warning_when_telegram_rejects_message(db_path, caplog):
-    """Реальна причина бага: раніше _api_call() перевіряла ЛИШЕ
-    requests.RequestException (мережеві помилки) - якщо Telegram API
-    відхиляв запит (напр. "message is too long", HTTP 400 з валідним
-    JSON {"ok": false, ...}), це проходило непоміченим, виглядаючи як
-    "команда взагалі не відповідає". Тепер ok=False явно логується."""
+    """Раніше _api_call() перевіряла лише requests.RequestException: відхилений запит ("message is too
+    long", HTTP 400 з валідним JSON {"ok": false}) проходив непомітно й виглядав як "команда не
+    відповідає". Тепер ok=False явно логується.
+    """
     with patch("app.telegram_notify._request_with_eth0_fallback") as mock_req:
         mock_response = type("R", (), {"json": lambda self: {"ok": False, "description": "message is too long"}})()
         mock_req.return_value = mock_response
@@ -798,10 +797,10 @@ def test_command_replies_do_not_use_poll_session(db_path):
 
 
 def test_cmd_status_does_not_count_ignored_router_alert(db_path):
-    """Було: "⚠️ Попереджень: 1" для попередження, прихованого на дашборді,
-    у журналі й сповіщеннях - /status читає роутер напряму, в обхід
-    монітора, де раніше стояв фільтр. Стан роутера тут - через СПРАВЖНІЙ
-    розбір відповіді (не мок RouterInfo, що оминав би джерело)."""
+    """Було: "⚠️ Попереджень: 1" для попередження, прихованого на дашборді, у журналі й сповіщеннях:
+    /status читає роутер напряму, в обхід монітора з фільтром. Стан роутера тут — через СПРАВЖНІЙ розбір
+    відповіді (не мок RouterInfo, що оминав би джерело).
+    """
     import json
     from unittest.mock import patch
     from app.starlink_client import DishStatus

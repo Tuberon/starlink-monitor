@@ -50,13 +50,9 @@ ROUTER_UPDATE_STATE_LABELS = {
     "FLASHING": "встановлення",
     "NO_UPDATE_REQUIRED": "непотрібне",
     "REBOOT_PENDING": "рестарт",
-    # DOWNLOADING_UPDATE_IMAGE_FAILED свідомо відсутній - той самий
-    # стан приховується і на веб-дашборді (static/dashboard.js) як
-    # частина нормального циклу перевірки, не справжня помилка.
-    # GETTING_TARGET_VERSION_FAILED теж свідомо відсутній з тієї
-    # самої причини (та сама група "тимчасова хмарна помилка перевірки
-    # оновлення на боці SpaceX, не проблема моніторингу") - той самий
-    # підхід поширено на аналогічний стан.
+    # DOWNLOADING_UPDATE_IMAGE_FAILED і GETTING_TARGET_VERSION_FAILED свідомо відсутні: це тимчасові
+    # хмарні помилки перевірки оновлення на боці SpaceX, а не проблема моніторингу; ті самі стани
+    # приховано й на веб-дашборді (static/dashboard.js).
     "GETTING_TARGET_VERSION_EXHAUSTED": "помилка",
     "NO_VALID_ARTIFACT": "помилка",
     "ILLEGAL_ARTIFACT": "помилка",
@@ -183,13 +179,10 @@ def _set_backlight(bl_pin: Any, value: bool) -> None:
 
 
 def _create_canvas(display: Any, Image: Any, ImageDraw: Any) -> tuple[tuple[int, int], Any, Any]:
-    """Створює чорне PIL-полотно правильного розміру для поточного
-    DISPLAY_ROTATION - бібліотека Adafruit застосовує rotation через
-    img.rotate() ПІСЛЯ малювання, тому для 90/270 полотно МАЄ бути
-    транспонованим (height x width), інакше після повороту не
-    впишеться в display.width/height (самі не змінюються параметром
-    rotation). Спільно для _redraw()/_draw_power_action_message() -
-    раніше продубльовано в обох."""
+    """Чорне PIL-полотно під поточний DISPLAY_ROTATION: бібліотека Adafruit застосовує rotation через
+    img.rotate() ПІСЛЯ малювання, тож для 90/270 полотно МАЄ бути транспонованим (height x width),
+    інакше не впишеться в display.width/height. Спільне для _redraw() і _draw_power_action_message().
+    """
     if config.DISPLAY_ROTATION in (90, 270):
         canvas_size = (display.height, display.width)
     else:

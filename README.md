@@ -328,7 +328,7 @@ ruff check .
 
 ## ✅ Тести
 
-1054 тести (`pytest-randomly` — стійкість до порядку виконання), 26
+1108 тестів (`pytest-randomly` — стійкість до порядку виконання), 27
 файли у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -366,13 +366,13 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 1054 тести (26 файлів), pytest-randomly
+├── tests/          # 1108 тестів (27 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md, plan.md
 ├── requirements.txt      # production-залежності (прямі, точні піни)
 ├── constraints.txt       # закріплені ТРАНЗИТИВНІ версії (pip install -c)
-├── requirements-dev.txt  # mypy/pytest/ruff/pip-audit
+├── requirements-dev.txt  # mypy/pytest/ruff/pip-audit/hypothesis
 ├── mypy.ini              # mypy: суворий режим для app/*
 ├── pytest.ini            # налаштування pytest
 ├── ruff.toml             # ruff: правила F, B, E9, PLE, S
@@ -438,7 +438,7 @@ Telegram/GPIO) або вручну в `/etc/starlink-monitor/env`. Повний
 параметра: відхиляє `nan`/`inf`, від'ємні значення та `0` для таймерів (там `0`
 означав би «на кожній ітерації», а не «вимкнено»); нуль лишено лише там, де він
 справді означає «вимкнено» (піни, автовимкнення підсвітки). Адреси `STARLINK_DISH_ADDR`/`STARLINK_ROUTER_ADDR` приймаються лише як
-`host:порт` (порт 1–65535). Ручне редагування `env`-файлу не перевіряється.
+`host:порт` (порт 1–65535). Ручне редагування `env`-файлу межі не перевіряє, але й не валить сервіси: некоректне значення (порожнє, `abc`) замінюється типовим із попередженням у журналі; булеві приймають `1/true/yes/on` і `0/false/no/off`.
 
 Найважливіші для першого налаштування:
 

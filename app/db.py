@@ -10,6 +10,24 @@ from typing import Any, Callable, Iterator, Optional
 
 from app import config
 
+# Одинокі сурогати (\ud800-\udfff) не кодуються в UTF-8: sqlite3 кидає UnicodeEncodeError, а JSON з ensure_ascii=False
+# не віддається клієнту (500). Приходять із зовнішнього JSON (`\ud800`) і з тіл запитів.
+_SURROGATES = re.compile("[\ud800-\udfff]")
+EVENT_MESSAGE_MAX_CHARS = 2000      # без межі подія на 5 МБ роздувала БД і відповідь /api/events (10 МБ щоразу)
+EVENT_KIND_MAX_CHARS = 64
+
+
+def _clean_text(value: str, limit: int = 0) -> str:
+    """Безпечний для БД/JSON текст: сурогати -> U+FFFD, довжина обмежена (з \"…\")."""
+    value = _SURROGATES.sub("\ufffd", value)
+    if limit and len(value) > limit:
+        value = value[:limit - 1] + "…"
+    return value
+
+
+def _clean_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: (_clean_text(v) if isinstance(v, str) else v) for k, v in row.items()}
+
 # Формат backup-файлу (ручний через веб-кнопку і автоматичний
 # періодичний, обидва в services.build_backup_dict()) - тут, не в
 # webapp.py, щоб бути доступною з monitor.py без циклічного імпорту
@@ -319,6 +337,8 @@ def insert_event(kind: str, message: str, success: bool = True) -> None:
     оновлюється (лишається NULL) - аудит показав, що ця колонка
     ніколи не читалась ніде, і навіть якби читалась, дублювала б ts
     (обидві завжди отримували те саме значення now в одному UPDATE)."""
+    kind = _clean_text(kind, EVENT_KIND_MAX_CHARS)
+    message = _clean_text(message, EVENT_MESSAGE_MAX_CHARS)
     now = time.time()
     with get_conn() as conn:
         last = conn.execute(
@@ -364,6 +384,7 @@ def set_router_status(r: dict[str, Any]) -> None:
     starlink_client теж прибрано. Схема без DROP COLUMN — менший ризик для наявних БД на пристроях, ніж
     її зміна.
     """
+    r = _clean_row(r)
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO router_status
@@ -406,11 +427,10 @@ def get_router_status() -> Optional[dict[str, Any]]:
         return d
 
 
-# "Останній" запис вибирається за ts (настінний час), тож рядок з МАЙБУТНЬОГО (годинник
-# стрибнув назад: ручна зміна, RTC, збій NTP, Pi без RTC після аварійного вимкнення)
-# лишався б "останнім" і дашборд показував би застарілий стан, поки годинник не
-# "наздожене" його (вимір: тарілка вже offline, а дашборд - online на 2 год). Рядки
-# з ts пізніше "зараз + допуск" ігноруються.
+# "Останній" рядок вибирається за ts (настінний час): рядок із МАЙБУТНЬОГО (годинник стрибнув назад:
+# ручна зміна, RTC, збій NTP) лишався б "останнім", і дашборд показував би застарілий стан, поки
+# годинник не наздожене (вимір: тарілка offline, а дашборд online 2 год). Рядки з ts пізніше "зараз +
+# допуск" ігноруються.
 _FUTURE_TOLERANCE_SEC = 600
 
 
@@ -498,12 +518,9 @@ def check_integrity() -> tuple[bool, str]:
     try:
         rows = conn.execute("PRAGMA quick_check").fetchall()
     except sqlite3.DatabaseError as e:
-        # Файл ВЗАГАЛІ не є SQLite-базою (не просто пошкоджені дані
-        # всередині) - PRAGMA quick_check сам кидає виняток замість
-        # повернення результату в цьому крайньому випадку. Знайдено
-        # живим тестом одразу після першої реалізації - без цього
-        # DatabaseError поширювався б назовні, замість повернення
-        # (False, message), яке викликаючий код очікує.
+        # Файл взагалі не SQLite-база (а не просто пошкоджені дані): PRAGMA quick_check тоді сам кидає
+        # виняток. Без цього DatabaseError вийшов би назовні замість (False, message), якого чекає
+        # викликач (знайдено живим тестом).
         return False, f"{NOT_A_DATABASE}: {e}"
     finally:
         conn.close()
@@ -514,29 +531,27 @@ def check_integrity() -> tuple[bool, str]:
 
 
 def _upsert_known_device(dish_id: str, component: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
-    """Спільна логіка для upsert_known_device_dish()/_router() -
-    обидві були продубльовані майже ідентично, відрізняючись лише
-    column-префіксом (dish_/router_). SQLite не дозволяє параметризувати
-    НАЗВИ колонок через `?`-placeholder (лише значення), тому вони
-    підставляються через f-string - `component` МАЄ бути internal
-    literal ("dish"/"router"), НЕ user input; явний `assert` тут -
-    останній захист навіть для internal-виклику."""
+    """Спільна логіка upsert_known_device_dish()/_router(): відрізняються лише column-префіксом
+    (dish_/router_). SQLite не параметризує НАЗВИ колонок через `?`, тому вони підставляються f-рядком —
+    `component` МАЄ бути внутрішньою константою ("dish"/"router"), не user input; явна перевірка нижче —
+    останній захист.
+    """
     # if/raise, не assert: `python -O` прибирає assert повністю, а від цієї
     # перевірки залежить безпека f-рядка з назвами колонок у SQL нижче.
     if component not in ("dish", "router"):
         raise ValueError(f"невідомий компонент: {component!r}")
     if not dish_id:
         return False, None
+    dish_id, hardware_version, software_version = _clean_text(dish_id), _clean_text(hardware_version), _clean_text(software_version)
     now = time.time()
     hw_col = f"{component}_hardware_version"
     sw_col = f"{component}_software_version"
     ts_col = f"{component}_software_updated_ts"
     with get_conn(durable=True) as conn:
-        # BEGIN IMMEDIATE ДО читання: інакше (sqlite3 починає транзакцію лише
-        # перед записом) два одночасних виклики - монітор і веб-кнопка, або два
-        # потоки Telegram-бота - обидва прочитали б СТАРУ версію й обидва
-        # порахували б це "реальною зміною": дубльовані сповіщення про одне
-        # оновлення прошивки (виміряно: 8 потоків -> 8 сповіщень).
+        # BEGIN IMMEDIATE ДО читання: sqlite3 починає транзакцію лише перед записом, тож два одночасні
+        # виклики (монітор і веб-кнопка, два потоки бота) обидва прочитали б СТАРУ версію й обидва
+        # вважали б це зміною: дубльовані сповіщення про одне оновлення (виміряно: 8 потоків → 8
+        # сповіщень).
         conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute(
             f"SELECT {sw_col} FROM known_devices WHERE dish_id = ?", (dish_id,)  # noqa: S608 - колонки лише з "dish"/"router" (перевірка вище)
@@ -571,13 +586,10 @@ def upsert_known_device_dish(dish_id: str, hardware_version: str, software_versi
 
 
 def upsert_known_device_router(dish_id: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
-    """Аналогічно до upsert_known_device_dish, але для роутерної частини
-    того самого фізичного Mini. Прив'язується до того ж dish_id - dish і
-    router опитуються в різних циклах, тому оновлюються окремо; якщо
-    запису для dish_id ще немає (router опитався раніше за dish), рядок
-    створюється з порожніми dish-полями.
-
-    Повертає (real_change, old_version) - див. upsert_known_device_dish."""
+    """Те саме, що upsert_known_device_dish, для роутерної частини Mini з тим самим dish_id. Dish і router
+    опитуються в різних циклах: якщо запису для dish_id ще немає (router опитався раніше), рядок
+    створюється з порожніми dish-полями. Повертає (real_change, old_version).
+    """
     return _upsert_known_device(dish_id, "router", hardware_version, software_version)
 
 
@@ -624,12 +636,10 @@ def merge_known_devices(devices: list[dict[str, Any]]) -> int:
 
 
 def parse_version_list(raw: Optional[str]) -> list[str]:
-    """Розбирає comma-separated список версій прошивки (той самий
-    формат, що telegram_chat_ids) - корисно, коли SpaceX випускає
-    РІЗНІ номери версій для різних апаратних ревізій під однією
-    умовною версією. Спільний helper для monitor.py (перевірка
-    досягнення) і webapp.py (валідація "лише новіші" для КОЖНОГО
-    кандидата окремо) - уникає дублювання парсингу в обох місцях."""
+    """Розбирає comma-separated список версій (формат як telegram_chat_ids): SpaceX інколи видає РІЗНІ
+    номери для різних апаратних ревізій. Спільний helper для monitor.py (досягнення) і webapp.py
+    (валідація "лише новіші" для КОЖНОГО кандидата).
+    """
     if not raw:
         return []
     return [v.strip() for v in raw.split(",") if v.strip()]
@@ -660,9 +670,11 @@ def version_key(v: str) -> tuple[tuple[int, int, int], tuple[Any, ...]]:
     потрібен і валідації target-версій (webapp.py), і розрізненню "🔄 оновлено"/"⏪ відкочено"
     (monitor.py).
     """
-    m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})", v)
+    m = re.match(r"^([0-9]{4})\.([0-9]{2})\.([0-9]{2})", v)
     date_part = (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
-    segments = tuple((0, int(seg)) if seg.isdigit() else (1, seg) for seg in v.split("."))
+    # isdigit() істинне й для "²", "①" (а int() їх не розбирає - ValueError, 500 на /api/target-versions) і для
+    # арабсько-індійських цифр: числами вважаємо лише ASCII-цифри.
+    segments = tuple((0, int(seg)) if seg.isascii() and seg.isdigit() else (1, seg) for seg in v.split("."))
     return date_part, segments
 
 
@@ -677,12 +689,11 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def claim_setting(key: str, value: str) -> bool:
-    """Атомарно: якщо settings[key] != value - записує value й повертає True
-    (виклик "захопив" значення); якщо вже дорівнює - False. Одна транзакція
-    (BEGIN IMMEDIATE): дедублікаційні прапорці виду "про це вже сповіщено"
-    не можна робити як get_setting -> сповістити -> set_setting - два
-    одночасні виклики обидва бачили б "ще не сповіщено" (8 потоків -> 8
-    однакових сповіщень)."""
+    """Атомарно: якщо settings[key] != value — записує value і повертає True ("захопив"); якщо вже дорівнює
+    — False. Одна транзакція (BEGIN IMMEDIATE): прапорці "про це вже сповіщено" не можна робити як get
+    -> сповістити -> set — два одночасні виклики обидва бачили б "ще ні" (8 потоків → 8 сповіщень).
+    """
+    key, value = _clean_text(key), _clean_text(value)
     with get_conn(durable=True) as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
@@ -697,6 +708,7 @@ def claim_setting(key: str, value: str) -> bool:
 
 
 def set_setting(key: str, value: str) -> None:
+    key, value = _clean_text(key), _clean_text(value)
     with get_conn(durable=True) as conn:
         conn.execute(
             """INSERT INTO settings (key, value) VALUES (?, ?)

@@ -138,10 +138,10 @@ def test_run_forever_spi_init_failure_returns(caplog):
 
 
 def test_run_forever_pending_shutdown_signal_draws_message_and_returns(fake_hardware, db_path):
-    """Реальна мета: pi_power.py записує DB-сигнал ПЕРЕД реальним
-    systemctl reboot/poweroff - цикл МАЄ виявити його майже одразу
-    (не чекаючи звичайний DISPLAY_REFRESH_SEC), намалювати повідомлення
-    і завершитись (не через stop_event - через власний return)."""
+    """pi_power.py пише DB-сигнал ПЕРЕД systemctl reboot/poweroff: цикл МАЄ виявити його майже одразу (не
+    чекаючи DISPLAY_REFRESH_SEC), намалювати повідомлення й завершитись власним return (не через
+    stop_event).
+    """
     from app import pi_power
     config.DISPLAY_ENABLED = True
     config.SHUTDOWN_BUTTON_GPIO_PIN = 0

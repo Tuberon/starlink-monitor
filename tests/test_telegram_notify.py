@@ -1,8 +1,5 @@
-"""
-Тести для app/telegram_notify.py - перевірка, що config.TELEGRAM_
-NOTIFY_TIMEOUT_SEC (раніше hardcoded module-level константа, винесено
-в config.py для консистентності з рештою "усе через env" паттерну
-проєкту) реально впливає на HTTP-запит, не лише існує як параметр.
+"""Тести app/telegram_notify.py: config.TELEGRAM_NOTIFY_TIMEOUT_SEC (раніше hardcoded константа, винесена в
+config для консистентності з рештою) реально впливає на HTTP-запит, а не лише існує як параметр.
 """
 from unittest.mock import MagicMock, patch
 
@@ -132,7 +129,7 @@ def test_retries_respect_configured_count(db_path):
 def test_send_document_success(db_path, tmp_path):
     _setup_telegram()
     test_file = tmp_path / "backup-1000.json"
-    test_file.write_text('{"test": true}')
+    test_file.write_text('{"test": true}', encoding="utf-8")
 
     from unittest.mock import MagicMock
     captured = {}
@@ -165,7 +162,7 @@ def test_send_document_missing_file_returns_false(db_path):
 def test_send_document_disabled_does_not_attempt_request(db_path, tmp_path):
     db.set_setting("telegram_enabled", "0")
     test_file = tmp_path / "backup.json"
-    test_file.write_text("{}")
+    test_file.write_text("{}", encoding="utf-8")
     with patch("app.telegram_notify._request_with_eth0_fallback") as mock_req:
         ok, msg = telegram_notify.send_document(str(test_file))
     assert ok is False
@@ -178,7 +175,7 @@ def test_send_document_reopens_file_for_each_chat_id(db_path, tmp_path):
     інакше другий отримувач отримав би порожній документ."""
     _setup_telegram(chat_id="111,222")
     test_file = tmp_path / "backup.json"
-    test_file.write_text('{"data": "test"}')
+    test_file.write_text('{"data": "test"}', encoding="utf-8")
 
     from unittest.mock import MagicMock
     file_sizes_seen = []

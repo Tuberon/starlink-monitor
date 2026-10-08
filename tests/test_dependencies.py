@@ -71,11 +71,11 @@ def _run_req_changed(tmp_path, src_files, installed_files, mode="update"):
     src, installed = tmp_path / "src", tmp_path / "installed"
     src.mkdir(), installed.mkdir()
     for name, text in src_files.items():
-        (src / name).write_text(text)
+        (src / name).write_text(text, encoding="utf-8")
     for name, text in installed_files.items():
-        (installed / name).write_text(text)
+        (installed / name).write_text(text, encoding="utf-8")
     code = f'set -euo pipefail\nSRC_DIR="{src}"\nPROJECT_DIR="{installed}"\nMODE="{mode}"\n{_req_changed_fragment()}\necho "$REQ_CHANGED"'
-    out = subprocess.run(["bash", "-c", code], capture_output=True, text=True, timeout=20)
+    out = subprocess.run(["bash", "-c", code], capture_output=True, encoding="utf-8", errors="replace", timeout=20)
     assert out.returncode == 0, out.stderr
     return out.stdout.strip()
 
