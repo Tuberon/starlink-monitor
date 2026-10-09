@@ -1209,3 +1209,11 @@ def test_json_body_strings_are_scrubbed_of_lone_surrogates_at_any_depth():
     body = '{"a": ["\\ud800", {"k\\udc80": "v\\ud800", "n": 5}], "ok": "Привіт 🙂"}'
     with webapp.app.test_request_context("/x", method="POST", data=body, content_type="application/json"):
         assert webapp._json_body() == {"a": ["\ufffd", {"k\ufffd": "v\ufffd", "n": 5}], "ok": "Привіт 🙂"}
+
+
+def test_extremely_nested_json_body_is_rejected_not_500(client):
+    # json.loads і _scrub рекурсивні: глибоке вкладення раніше давало RecursionError -> 500
+    hdr = {"Content-Type": "application/json"}
+    for body in ("[" * 100000 + "]" * 100000, '{"a":' * 5000 + "1" + "}" * 5000):
+        r = client.post("/api/auto-reboot", data=body, headers=hdr)
+        assert r.status_code < 500

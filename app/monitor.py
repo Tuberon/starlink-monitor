@@ -6,7 +6,6 @@ update-ready dish, update-ready router) - див. docs/architecture.md.
 Логує зміни стану/попереджень в events, дублює ключові події в
 Telegram (не блокує цикл при помилках відправки).
 """
-import json
 import logging
 import queue
 import signal
@@ -192,6 +191,7 @@ class Watchdog:
         self.client = StarlinkClient()
         self.consecutive_failures = 0
         self.last_reboot_ts = 0.0
+        self._obstruction_warned = False        # подія obstruction_warning лише на переході через поріг
         # Зменшення зносу SD: dish-зчитування накопичуються тут, а flush (insert_metrics_batch) одним
         # batch-INSERT іде раз на DISH_METRICS_BATCH_INTERVAL_SEC у run_forever() і при SIGTERM/SIGINT —
         # тож systemctl restart/update.sh не губить дані, лише справжнє раптове вимкнення живлення.
@@ -450,13 +450,15 @@ class Watchdog:
             )
             self._maybe_reboot()
 
-        if status.online and status.obstruction_fraction > config.OBSTRUCTION_WARN_FRACTION:
+        over = status.online and status.obstruction_fraction > config.OBSTRUCTION_WARN_FRACTION
+        if over and not self._obstruction_warned:
             db.insert_event(
                 "obstruction_warning",
                 f"Фракція обструкції {status.obstruction_fraction:.2%} перевищує поріг "
                 f"{config.OBSTRUCTION_WARN_FRACTION:.2%}",
                 success=True,
             )
+        self._obstruction_warned = over
 
         return status
 
@@ -538,23 +540,15 @@ class Watchdog:
 
     def _notify_first_dish_connection(self, status: DishStatus) -> None:
         """Надсилає в Telegram ID тарілки один раз — при першому підключенні кожної тарілки (за dish_id) до
-        Pi. Усі бачені ID зберігаються в settings (JSON-список), тож переживають рестарт; НОВА тарілка
+        Pi. Відомі ID - це таблиця known_devices (вона є й у backup), тож переживають рестарт і відновлення; НОВА тарілка
         (ID, якого не було) сповіщається знову.
         """
         if not status.dish_id:
             return
 
-        raw = db.get_setting("known_dish_ids", "[]") or "[]"
-        try:
-            known_ids = json.loads(raw)
-        except (TypeError, json.JSONDecodeError):
-            known_ids = []
-
-        if status.dish_id in known_ids:
+        if db.get_known_device(status.dish_id) is not None:       # вибірка йде ДО upsert_dish_and_notify у poll_once
             return
 
-        known_ids.append(status.dish_id)
-        db.set_setting("known_dish_ids", json.dumps(known_ids, ensure_ascii=False))
         db.insert_event("dish_connected", f"Підключено Starlink Mini, ID: {status.dish_id}", success=True)
         self._notify(i18n.t("tg_dish_connected", dish_id=status.dish_id))
 

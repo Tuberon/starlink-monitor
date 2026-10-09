@@ -616,6 +616,26 @@ def test_poll_once_obstruction_warning_logs_event(watchdog):
     assert any(e["kind"] == "obstruction_warning" for e in events)
 
 
+def test_obstruction_warning_is_logged_once_per_crossing(watchdog):
+    from app.starlink_client import DishStatus
+    config.OBSTRUCTION_WARN_FRACTION = 0.05
+
+    def poll(fraction):
+        status = DishStatus(timestamp=time.time(), online=True, uptime_s=100, obstruction_fraction=fraction)
+        with patch.object(watchdog.client, "get_status", return_value=status):
+            watchdog.poll_once()
+
+    def count():
+        return sum(e["kind"] == "obstruction_warning" for e in db.get_recent_events(50))
+
+    for f in (0.5, 0.4, 0.6):       # над порогом, значення міняється - все одно одна подія
+        poll(f)
+    assert count() == 1
+    poll(0.01)                      # нижче порогу скидає прапорець
+    poll(0.7)                       # новий перехід - нова подія (інше значення: однакові підряд склеює insert_event)
+    assert count() == 2
+
+
 # ---- _maybe_send_backup_to_telegram() ----
 
 def test_maybe_send_backup_disabled_does_nothing(watchdog, tmp_path):
@@ -1276,3 +1296,15 @@ def test_clamp_future_timestamps_only_touches_future_marks():
     wd.last_reboot_ts, wd.last_telegram_backup_sent_ts = 5000.0, 900.0
     wd._clamp_future_timestamps(1000.0)
     assert wd.last_reboot_ts == 1000.0 and wd.last_telegram_backup_sent_ts == 900.0     # минулі мітки не чіпаємо
+
+
+def test_first_connection_of_a_dish_is_notified_once_via_known_devices(watchdog):
+    from app.starlink_client import DishStatus
+    sent = []
+    watchdog._notify = sent.append
+    status = DishStatus(timestamp=time.time(), online=True, dish_id="ut-new", software_version="v1")
+    watchdog._notify_first_dish_connection(status)
+    assert len(sent) == 1 and "ut-new" in sent[0]
+    db.upsert_known_device_dish("ut-new", "hw", "v1")           # як це робить poll_once одразу після
+    watchdog._notify_first_dish_connection(status)
+    assert len(sent) == 1                                       # відома тарілка (навіть після відновлення з backup) - тиша

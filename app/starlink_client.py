@@ -155,6 +155,9 @@ def _grpc_module() -> Optional[types.ModuleType]:
                     )
                     starlink_grpc = None
                 else:
+                    # Таймаут запитів gRPC у vendored-модулі жорстко 10 с: без цього налаштування
+                    # STARLINK_DISH_TIMEOUT діяло б лише на grpcurl (роутер, reboot), а не на опитування dish.
+                    module.REQUEST_TIMEOUT = config.DISH_HTTP_TIMEOUT  # type: ignore[assignment]   # у vendored int, тут float
                     starlink_grpc = module
     return starlink_grpc  # type: ignore[no-any-return]
 

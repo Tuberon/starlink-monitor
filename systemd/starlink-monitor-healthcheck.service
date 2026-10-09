@@ -4,7 +4,8 @@ After=starlink-monitor.service starlink-webui.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=-/etc/starlink-monitor/env
+# Змінні з env-файлу тут не підвантажуємо: його пише RUN_USER (веб-інтерфейс), а юніт - root, тож
+# BASH_ENV/LD_PRELOAD з нього дали б root. Порт скрипт читає сам.
 ExecStart=/opt/starlink-monitor/scripts/watchdog_healthcheck.sh
 StandardOutput=journal
 StandardError=journal

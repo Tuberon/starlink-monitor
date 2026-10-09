@@ -213,7 +213,7 @@ WAL journal_mode — паралельне читання (webui) і запис (
   під'єднаних WiFi-клієнтів (`clients`: ім'я/MAC, IP, діапазон, сигнал,
   час у мережі)
 - `settings` — runtime key-value (auto_reboot_enabled, telegram config,
-  known_dish_ids, dish_target_version/router_target_version + їхні
+  dish_target_version/router_target_version + їхні
   `*_notified` пари — див. нижче)
 
 **Write-only колонки, залишені в схемі без запису** (аудит показав, що

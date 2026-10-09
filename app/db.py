@@ -530,6 +530,11 @@ def check_integrity() -> tuple[bool, str]:
     return False, "; ".join(messages)
 
 
+# last_seen_ts оновлюється не частіше (інакше повний fsync на SD на КОЖНЕ опитування: ~11 000/добу);
+# "востаннє в мережі" у /id може відставати до цієї кількості секунд.
+KNOWN_DEVICE_TOUCH_SEC = 300
+
+
 def _upsert_known_device(dish_id: str, component: str, hardware_version: str, software_version: str) -> tuple[bool, Optional[str]]:
     """Спільна логіка upsert_known_device_dish()/_router(): відрізняються лише column-префіксом
     (dish_/router_). SQLite не параметризує НАЗВИ колонок через `?`, тому вони підставляються f-рядком —
@@ -554,9 +559,12 @@ def _upsert_known_device(dish_id: str, component: str, hardware_version: str, so
         # сповіщень).
         conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute(
-            f"SELECT {sw_col} FROM known_devices WHERE dish_id = ?", (dish_id,)  # noqa: S608 - колонки лише з "dish"/"router" (перевірка вище)
+            f"SELECT {sw_col}, {hw_col}, last_seen_ts FROM known_devices WHERE dish_id = ?", (dish_id,)  # noqa: S608 - колонки лише з "dish"/"router" (перевірка вище)
         ).fetchone()
         old_version = existing[sw_col] if existing else None
+        if (existing is not None and old_version == software_version and existing[hw_col] == hardware_version
+                and existing["last_seen_ts"] is not None and now - existing["last_seen_ts"] < KNOWN_DEVICE_TOUCH_SEC):
+            return False, old_version       # нічого не змінилось: запис (fsync на SD) раз на опитування не потрібен
         version_changed = existing is None or old_version != software_version
         real_change = old_version is not None and old_version != software_version
 

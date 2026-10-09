@@ -488,3 +488,23 @@ def test_settings_and_known_devices_scrub_surrogates_too(db_path):
     assert db.claim_setting("flag", "a\udc80") is True and db.claim_setting("flag", "a\ufffd") is False
     db.upsert_known_device_dish("id-\ud800", "hw\ud800", "sw\ud800")
     assert db.get_all_known_devices()[0]["dish_id"] == "id-\ufffd"
+
+
+def test_known_device_upsert_skips_the_write_while_nothing_changed(db_path, monkeypatch):
+    """Без зміни версії/hardware last_seen_ts оновлюється не частіше KNOWN_DEVICE_TOUCH_SEC: кожне опитування
+    інакше давало б повний fsync на SD (durable-з'єднання)."""
+    clock = {"t": 1_000_000.0}
+    monkeypatch.setattr(db.time, "time", lambda: clock["t"])
+    db.upsert_known_device_dish("dTOUCH", "rev4", "v1")
+    clock["t"] += db.KNOWN_DEVICE_TOUCH_SEC - 1
+    assert db.upsert_known_device_dish("dTOUCH", "rev4", "v1") == (False, "v1")
+    assert db.get_known_device("dTOUCH")["last_seen_ts"] == 1_000_000.0          # запису не було
+    clock["t"] += 2
+    db.upsert_known_device_dish("dTOUCH", "rev4", "v1")
+    assert db.get_known_device("dTOUCH")["last_seen_ts"] == clock["t"]           # минув інтервал - оновлено
+    clock["t"] += 1
+    assert db.upsert_known_device_dish("dTOUCH", "rev4", "v2") == (True, "v1")   # зміна версії пишеться одразу
+    assert db.get_known_device("dTOUCH")["dish_software_version"] == "v2"
+    clock["t"] += 1
+    db.upsert_known_device_dish("dTOUCH", "rev5", "v2")                          # зміна hardware теж
+    assert db.get_known_device("dTOUCH")["dish_hardware_version"] == "rev5"

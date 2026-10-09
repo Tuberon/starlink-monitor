@@ -151,8 +151,11 @@ def _json_body() -> dict[str, Any]:
     JSON, що НЕ є об'єктом ([1,2], "str", 123) -> {}. Раніше обробники
     брали get_json() і далі payload.get(...) - на не-об'єктному JSON це
     давало 500 з трейсбеком (знайдено фазингом ендпоінтів)."""
-    data = request.get_json(silent=True)
-    return _scrub(data) if isinstance(data, dict) else {}
+    try:
+        data = request.get_json(silent=True)
+        return _scrub(data) if isinstance(data, dict) else {}
+    except RecursionError:      # json.loads / _scrub на вкладеності в тисячі рівнів: інакше 500 із трейсбеком
+        return {}
 
 
 def _scrub(value: Any) -> Any:

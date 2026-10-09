@@ -146,3 +146,18 @@ def test_this_file_leaves_no_temp_trees_behind():
     subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:randomly", __file__,
                     "-k", "not leaves_no_temp"], check=True, capture_output=True, timeout=120)
     assert set(glob.glob("/tmp/own-*")) == before
+
+
+def test_root_units_do_not_load_the_user_writable_env_file():
+    """/etc/starlink-monitor/env пише RUN_USER (веб-інтерфейс без автентифікації). EnvironmentFile у root-юніті
+    дав би йому BASH_ENV/LD_PRELOAD -> root; скрипти root-юнітів не мають і source-ити цей файл."""
+    for name in _root_units():
+        assert "EnvironmentFile" not in (ROOT / "systemd" / name).read_text(encoding="utf-8"), name
+    for script in ("watchdog_healthcheck.sh", "wan_failover_check.sh"):
+        text = (ROOT / "scripts" / script).read_text(encoding="utf-8")
+        assert not re.search(r"^\s*(source|\.)\s+\S*starlink-monitor/env", text, re.M), script
+
+
+def test_healthcheck_restarts_monitor_only_on_503():
+    text = (ROOT / "scripts" / "watchdog_healthcheck.sh").read_text(encoding="utf-8")
+    assert '== "503"' in text and '!= "200"' not in text

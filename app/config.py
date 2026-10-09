@@ -64,7 +64,7 @@ def _env_text(name: str, default: str) -> str:
     return raw.strip()
 
 DISH_ADDR = _env_text("STARLINK_DISH_ADDR", "192.168.100.1:9200")
-DISH_HTTP_TIMEOUT = _env_float("STARLINK_DISH_TIMEOUT", "5")
+DISH_HTTP_TIMEOUT = _env_float("STARLINK_DISH_TIMEOUT", "10")   # ще й REQUEST_TIMEOUT gRPC-опитування dish, див. _grpc_module()
 ROUTER_ADDR = _env_text("STARLINK_ROUTER_ADDR", "192.168.1.1:9000")
 
 POLL_INTERVAL_SEC = _env_int("STARLINK_POLL_INTERVAL", "10")
@@ -82,7 +82,7 @@ SYSTEM_METRICS_INTERVAL_SEC = _env_int("STARLINK_SYSTEM_METRICS_INTERVAL_SEC", "
 # РАПТОВОМУ вимкненні живлення (не при systemctl restart/update.sh — SIGTERM скидає буфер негайно) можна
 # втратити кілька останніх зчитувань.
 DISH_METRICS_BATCH_INTERVAL_SEC = _env_int("STARLINK_DISH_METRICS_BATCH_INTERVAL_SEC", "30")
-MAX_CONSECUTIVE_FAILURES = _env_int("STARLINK_MAX_FAILURES", "6")  # 6*10s = 60s недоступності
+MAX_CONSECUTIVE_FAILURES = _env_int("STARLINK_MAX_FAILURES", "6")  # кожна невдача триває до DISH_TIMEOUT + POLL_INTERVAL (типово 10+10 с)
 MIN_REBOOT_INTERVAL_SEC = _env_int("STARLINK_MIN_REBOOT_INTERVAL", "180")  # захист від reboot-loop
 OBSTRUCTION_WARN_FRACTION = _env_float("STARLINK_OBSTRUCTION_WARN", "0.05")
 

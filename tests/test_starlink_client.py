@@ -825,3 +825,15 @@ def test_response_helpers_tolerate_missing_parts():
     assert sc._router_alerts({}) == ([], False)
     assert sc._router_clients({"clients": None}) == []
     assert sc._router_update_fields({"state": "3", "softwareDownloadProgress": 0.5})[1] == 50.0
+
+
+def test_dish_timeout_setting_reaches_the_vendored_grpc_module(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "DISH_HTTP_TIMEOUT", 3.5)
+    monkeypatch.setattr(starlink_client, "starlink_grpc", starlink_client._UNLOADED)
+    module = starlink_client._grpc_module()
+    try:
+        assert module is not None and module.REQUEST_TIMEOUT == 3.5
+    finally:
+        if module is not None:
+            module.REQUEST_TIMEOUT = 10        # vendored-модуль спільний для всього процесу тестів
