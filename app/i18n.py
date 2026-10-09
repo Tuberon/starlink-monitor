@@ -419,7 +419,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tg_both_targets": {"uk": "🎉 Процедуру оновлення завершено: тарілка {dish}, роутер {router}", "en": "🎉 Update procedure complete: dish {dish}, router {router}"},
     "tg_backup_caption": {"uk": "📦 Backup Starlink Monitor: {name}", "en": "📦 Starlink Monitor backup: {name}"},
     "tg_db_corrupt": {"uk": "🔴 Виявлено пошкодження БД: {message}. Спроба аварійного backup...", "en": "🔴 Database corruption detected: {message}. Attempting emergency backup..."},
-    "tg_emergency_backup_ok": {"uk": "✅ Аварійний backup виконано, перевір /var/lib/starlink-monitor/backups/", "en": "✅ Emergency backup done, check /var/lib/starlink-monitor/backups/"},
+    "tg_emergency_backup_ok": {"uk": "✅ Аварійний backup виконано, перевірте /var/lib/starlink-monitor/backups/", "en": "✅ Emergency backup done, check /var/lib/starlink-monitor/backups/"},
     "tg_emergency_backup_failed": {"uk": "🔴 Аварійний backup ТЕЖ провалився: {error}", "en": "🔴 Emergency backup ALSO failed: {error}"},
     "tg_reboot_spam_over": {"uk": "✅ Часті авто-reboot припинились (усього {total} згруповано)", "en": "✅ Frequent auto-reboots have stopped ({total} grouped in total)"},
     "tg_dish_connected": {"uk": "📡 Підключено Starlink Mini (тарілка), ID: {dish_id}", "en": "📡 Starlink Mini connected (dish), ID: {dish_id}"},

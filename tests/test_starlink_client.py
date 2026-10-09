@@ -814,3 +814,14 @@ def test_grpcurl_output_is_decoded_explicitly_as_utf8_with_replacement():
     assert len(seen) >= 2
     for kwargs in seen:
         assert kwargs.get("encoding") == "utf-8" and kwargs.get("errors") == "replace" and "text" not in kwargs
+
+
+def test_response_helpers_tolerate_missing_parts():
+    from app import starlink_client as sc
+    assert sc._dish_identity(None) == ("", "", "")
+    assert sc._dish_update_fields(None) == ("", 0.0, False)
+    assert sc._dish_alerts(None) == ([], False)
+    assert sc._router_update_fields({}) == ("", 0.0)
+    assert sc._router_alerts({}) == ([], False)
+    assert sc._router_clients({"clients": None}) == []
+    assert sc._router_update_fields({"state": "3", "softwareDownloadProgress": 0.5})[1] == 50.0

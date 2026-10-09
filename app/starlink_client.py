@@ -159,6 +159,87 @@ def _grpc_module() -> Optional[types.ModuleType]:
     return starlink_grpc  # type: ignore[no-any-return]
 
 
+def _dish_identity(device_info: Any) -> tuple[str, str, str]:
+    """(software_version, hardware_version, id) з message DeviceInfo; None -> порожні рядки."""
+    if device_info is None:
+        return "", "", ""
+    return (
+        str(getattr(device_info, "software_version", "") or ""),
+        str(getattr(device_info, "hardware_version", "") or ""),
+        str(getattr(device_info, "id", "") or ""),
+    )
+
+
+def _state_name(raw_state: Any, names: dict[int, str]) -> str:
+    """protobuf enum може прийти як int - мапимо через точну таблицю з grpcurl describe;
+    якщо вже рядок - лишаємо як є."""
+    if isinstance(raw_state, int):
+        return names.get(raw_state, str(raw_state))
+    return str(raw_state) if raw_state else ""
+
+
+def _dish_update_fields(sw_update_stats: Any) -> tuple[str, float, bool]:
+    """message SoftwareUpdateStats { software_update_state, software_update_progress,
+    update_requires_reboot, ... } -> (стан, прогрес %, потрібен reboot)."""
+    if sw_update_stats is None:
+        return "", 0.0, False
+    progress_raw = getattr(sw_update_stats, "software_update_progress", 0.0) or 0.0
+    return (
+        _state_name(getattr(sw_update_stats, "software_update_state", None), SOFTWARE_UPDATE_STATE_NAMES),
+        round(progress_raw * 100, 1),
+        bool(getattr(sw_update_stats, "update_requires_reboot", False)),
+    )
+
+
+def _dish_alerts(alerts_obj: Any) -> tuple[List[str], bool]:
+    """message DishAlerts - набір bool-прапорців (не список): назви лише активних (True)."""
+    if alerts_obj is None:
+        return [], False
+    active = [
+        name for name in ALERT_FIELD_NAMES
+        if name not in IGNORED_DISH_ALERTS and bool(getattr(alerts_obj, name, False))
+    ]
+    return active, bool(getattr(alerts_obj, "install_pending", False))
+
+
+def _router_update_fields(sw_stats: dict[str, Any]) -> tuple[str, float]:
+    """WifiSoftwareUpdateStats { state, software_download_progress, ... } -> (стан, прогрес %)."""
+    if not sw_stats:
+        return "", 0.0
+    raw_state = sw_stats.get("state")
+    if isinstance(raw_state, str) and raw_state.isascii() and raw_state.isdigit():
+        raw_state = int(raw_state)
+    progress = float(sw_stats.get("softwareDownloadProgress", 0.0) or 0.0)
+    return _state_name(raw_state, ROUTER_UPDATE_STATE_NAMES), round(progress * 100, 1)
+
+
+def _router_alerts(alerts_obj: dict[str, Any]) -> tuple[List[str], bool]:
+    """WifiAlerts - набір bool-прапорців (не список)."""
+    if not alerts_obj:
+        return [], False
+    active = [
+        name for name in ROUTER_ALERT_FIELD_NAMES
+        if name not in IGNORED_ROUTER_ALERTS and bool(alerts_obj.get(_snake_to_camel(name), False))
+    ]
+    return active, bool(alerts_obj.get("installPending", False))
+
+
+def _router_clients(wifi_status: dict[str, Any]) -> List[dict[str, Any]]:
+    """WifiClient[] - лише поля для відображення, без детальної телеметрії (fqcodelInfo, rxStats/txStats)."""
+    return [
+        {
+            "name": str(c.get("name", "") or c.get("macAddress", "невідомо")),
+            "mac": str(c.get("macAddress", "")),
+            "ip": str(c.get("ipAddress", "")),
+            "iface": str(c.get("iface", "")),
+            "signal": c.get("signalStrength"),
+            "role": str(c.get("role", "")),
+            "connected_s": c.get("associatedTimeS"),
+        }
+        for c in wifi_status.get("clients", []) or []
+    ]
+
+
 @dataclass
 class DishStatus:
     timestamp: float
@@ -244,7 +325,6 @@ class StarlinkClient:
             # resp - сирий protobuf DishGetStatusResponse. Поля читаємо напряму
             # (не через dict()/namedtuple - той API нестабільний між версіями).
             device_state = getattr(resp, "device_state", None)
-            device_info = getattr(resp, "device_info", None)
             obstruction_stats = getattr(resp, "obstruction_stats", None)
 
             downlink_bps = getattr(resp, "downlink_throughput_bps", 0.0) or 0.0
@@ -262,47 +342,17 @@ class StarlinkClient:
             if device_state is not None:
                 uptime_s = int(getattr(device_state, "uptime_s", 0) or 0)
 
-            software_version = ""
-            hardware_version = ""
-            dish_id = ""
-            if device_info is not None:
-                software_version = str(getattr(device_info, "software_version", "") or "")
-                hardware_version = str(getattr(device_info, "hardware_version", "") or "")
-                dish_id = str(getattr(device_info, "id", "") or "")
+            software_version, hardware_version, dish_id = _dish_identity(getattr(resp, "device_info", None))
 
             # "стан" dish як єдиний рядок для дашборду: беремо disablement_code,
             # якщо доступний і не "OKAY" - інакше "OKAY"
             disablement = str(getattr(resp, "disablement_code", "") or "")
             state = disablement if disablement and disablement != "OKAY" else "OKAY"
 
-            # Стан оновлення ПЗ: message SoftwareUpdateStats { software_update_state,
-            # software_update_progress, update_requires_reboot, reboot_scheduled_utc_time }
-            update_state = ""
-            update_progress_pct = 0.0
-            update_requires_reboot = False
-            sw_update_stats = getattr(resp, "software_update_stats", None)
-            if sw_update_stats is not None:
-                raw_state = getattr(sw_update_stats, "software_update_state", None)
-                # protobuf enum може прийти як int (значення) - мапимо через
-                # точну таблицю з grpcurl describe; якщо вже рядок - лишаємо як є.
-                if isinstance(raw_state, int):
-                    update_state = SOFTWARE_UPDATE_STATE_NAMES.get(raw_state, str(raw_state))
-                elif raw_state:
-                    update_state = str(raw_state)
-                progress_raw = getattr(sw_update_stats, "software_update_progress", 0.0) or 0.0
-                update_progress_pct = round(progress_raw * 100, 1)
-                update_requires_reboot = bool(getattr(sw_update_stats, "update_requires_reboot", False))
-
-            # Попередження: message DishAlerts - набір bool-прапорців (не список).
-            # Збираємо назви лише тих, що активні (True).
-            active_alerts = []
-            alerts_obj = getattr(resp, "alerts", None)
-            update_install_pending = False
-            if alerts_obj is not None:
-                for name in ALERT_FIELD_NAMES:
-                    if name not in IGNORED_DISH_ALERTS and bool(getattr(alerts_obj, name, False)):
-                        active_alerts.append(name)
-                update_install_pending = bool(getattr(alerts_obj, "install_pending", False))
+            update_state, update_progress_pct, update_requires_reboot = _dish_update_fields(
+                getattr(resp, "software_update_stats", None)
+            )
+            active_alerts, update_install_pending = _dish_alerts(getattr(resp, "alerts", None))
 
             result = DishStatus(
                 timestamp=time.time(),
@@ -385,47 +435,9 @@ class StarlinkClient:
             if not device_info:
                 return RouterInfo(timestamp=time.time(), online=False, error="empty deviceInfo in response")
 
-            # Стан оновлення ПЗ роутера: WifiSoftwareUpdateStats { state, software_download_progress, ... }
-            update_state = ""
-            update_progress_pct = 0.0
-            sw_stats = wifi_status.get("softwareUpdateStats", {})
-            if sw_stats:
-                raw_state = sw_stats.get("state")
-                if isinstance(raw_state, str) and raw_state.isascii() and raw_state.isdigit():
-                    raw_state = int(raw_state)
-                if isinstance(raw_state, int):
-                    update_state = ROUTER_UPDATE_STATE_NAMES.get(raw_state, str(raw_state))
-                elif raw_state:
-                    update_state = str(raw_state)
-                update_progress_pct = round(float(sw_stats.get("softwareDownloadProgress", 0.0) or 0.0) * 100, 1)
-
-            # Попередження: WifiAlerts - набір bool-прапорців (не список)
-            active_alerts = []
-            update_install_pending = False
-            alerts_obj = wifi_status.get("alerts", {})
-            if alerts_obj:
-                for name in ROUTER_ALERT_FIELD_NAMES:
-                    if name in IGNORED_ROUTER_ALERTS:
-                        continue
-                    camel = _snake_to_camel(name)
-                    if bool(alerts_obj.get(camel, False)):
-                        active_alerts.append(name)
-                update_install_pending = bool(alerts_obj.get("installPending", False))
-
-            # Клієнти, під'єднані до WiFi роутера (WifiClient[]) - беремо
-            # лише поля, потрібні для відображення, ігноруючи детальну
-            # телеметрію (fqcodelInfo, rxStats/txStats тощо)
-            clients = []
-            for c in wifi_status.get("clients", []) or []:
-                clients.append({
-                    "name": str(c.get("name", "") or c.get("macAddress", "невідомо")),
-                    "mac": str(c.get("macAddress", "")),
-                    "ip": str(c.get("ipAddress", "")),
-                    "iface": str(c.get("iface", "")),
-                    "signal": c.get("signalStrength"),
-                    "role": str(c.get("role", "")),
-                    "connected_s": c.get("associatedTimeS"),
-                })
+            update_state, update_progress_pct = _router_update_fields(wifi_status.get("softwareUpdateStats", {}))
+            active_alerts, update_install_pending = _router_alerts(wifi_status.get("alerts", {}))
+            clients = _router_clients(wifi_status)
 
             return RouterInfo(
                 timestamp=time.time(),
