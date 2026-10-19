@@ -200,7 +200,7 @@ backup у Telegram" (незалежно від автоматичного роз
   `DISH_METRICS_BATCH_INTERVAL_SEC`, типово 60 с). `200 ok` / `503
   degraded`, нічого не пише в журнал — безпечно опитувати часто.
 - **Встановлюваний дашборд (PWA)** — "Додати на головний екран" у
-  Chrome/Edge. Service worker кешує лише статику (CSS/JS/іконки) —
+  Chrome/Edge (по `http://<ip>` браузер створює лише ярлик). Service worker кешує лише статику (CSS/JS/іконки) —
   API-дані завжди наживо, service worker сам їх не кешує. Окремо:
   якщо Pi недосяжний з телефону (вийшов з WiFi-зони дії Pi) —
   дашборд показує останній відомий стан із браузерного `localStorage`
@@ -328,7 +328,7 @@ ruff check .
 
 ## ✅ Тести
 
-1116 тестів (`pytest-randomly` — стійкість до порядку виконання), 27
+1117 тестів (`pytest-randomly` — стійкість до порядку виконання), 27
 файли у `tests/`. Крім stateful-логіки (групування reboot-спаму,
 дедублікація сповіщень про target-версії прошивки, компаратор версій,
 eth0-fallback для Telegram) — і hardware-залежний код (GPIO/SPI-
@@ -366,7 +366,7 @@ starlink-monitor/
 ├── app/            # Python: моніторинг, Flask, Telegram, GPIO, дисплей, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/іконки
-├── tests/          # 1116 тестів (27 файлів), pytest-randomly
+├── tests/          # 1117 тестів (27 файлів), pytest-randomly
 ├── systemd/        # unit-файли сервісів
 ├── scripts/        # install/update/uninstall + системні перевірки
 ├── docs/           # architecture.md, index.md (повний опис кожного файлу), decisions-log.md, plan.md

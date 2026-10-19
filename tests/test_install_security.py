@@ -161,3 +161,8 @@ def test_root_units_do_not_load_the_user_writable_env_file():
 def test_healthcheck_restarts_monitor_only_on_503():
     text = (ROOT / "scripts" / "watchdog_healthcheck.sh").read_text(encoding="utf-8")
     assert '== "503"' in text and '!= "200"' not in text
+
+
+def test_install_removes_the_https_certificate_directory_left_by_earlier_versions():
+    assert "rm -rf /etc/starlink-monitor-tls" in INSTALL
+    assert "openssl" not in INSTALL

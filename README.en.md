@@ -200,7 +200,7 @@ safeguard in case the DB and backup remain on the same SD card.
   `DISH_METRICS_BATCH_INTERVAL_SEC`, 60 s by default). `200 ok` / `503
   degraded`, writes nothing to the log — safe to poll frequently.
 - **Installable dashboard (PWA)** — "Add to home screen" in
-  Chrome/Edge. The service worker caches only static assets
+  Chrome/Edge (over `http://<ip>` the browser only creates a shortcut). The service worker caches only static assets
   (CSS/JS/icons) — API data is always live, the service worker never
   caches it. Separately: if the Pi is unreachable from the phone
   (out of the Pi's WiFi range) — the dashboard shows the last known
@@ -324,7 +324,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-1116 tests (`pytest-randomly` — resilient to execution order), 27
+1117 tests (`pytest-randomly` — resilient to execution order), 27
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -364,7 +364,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 1116 tests (27 files), pytest-randomly
+├── tests/          # 1117 tests (27 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md, plan.md

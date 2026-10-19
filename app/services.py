@@ -3,8 +3,7 @@
 `send_latest_backup_to_telegram`, `check_db_integrity_and_notify`). Винесено з monitor.py (точка входу
 сервісу), щоб webapp і telegram_bot не імпортували його цілком (цикл monitor <-> telegram_bot, зайвий
 Watchdog у веб-процесі); тіла не змінено (перевірено AST), публічними стали component_text,
-COMPONENT_NAME, COMPONENT_UPDATE, format_firmware_change_message. Розбиття Watchdog на класи не
-рекомендовано (docs/decisions-log.md).
+COMPONENT_NAME, COMPONENT_UPDATE, format_firmware_change_message..
 """
 import json
 import logging

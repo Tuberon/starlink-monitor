@@ -197,6 +197,9 @@ fi
 chown -R "$RUN_USER:$RUN_USER" /etc/starlink-monitor
 chmod 600 /etc/starlink-monitor/env
 
+# Прибирає каталог сертифікатів (CA і ключ), який могла залишити попередня версія.
+rm -rf /etc/starlink-monitor-tls
+
 echo "==> Налаштовую обмежені sudo-права для сервісного користувача ($RUN_USER)"
 # ВАЖЛИВО: надаємо право виконувати ЛИШЕ конкретні команди без пароля,
 # необхідні для рестарту сервісів, reboot dish і reboot/shutdown самого Pi.
