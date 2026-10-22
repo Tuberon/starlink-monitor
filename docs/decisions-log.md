@@ -37,9 +37,11 @@
   однакових результатів підряд; `/run` недоступний за
   `ProtectSystem=strict` → `RuntimeDirectory=` +
   `RuntimeDirectoryPreserve=yes`.
-- `install.sh` пропонує вимкнути (не видаляти) `bluetooth`,
-  `avahi-daemon`, `triggerhappy`, `ModemManager` — кожну перевіряє
-  окремо; мережеві `ssh`, `NetworkManager`, `dhcpcd` не пропонуються
+- `install.sh` (лише install-режим) без запитів вимикає `bluetooth`,
+  `hciuart`, `triggerhappy`, `ModemManager` (кожну перевіряє окремо),
+  видаляє пакети `triggerhappy`/`modemmanager` і робить `apt-get
+  autoremove --purge`/`clean`. `avahi-daemon` не чіпає (інакше зникає
+  `raspberrypi.local`); `ssh`, `NetworkManager`, `dhcpcd` - ніколи
   (headless-пристрій без фізичного доступу).
 
 ## Процеси, systemd, привілеї і vendor-файл

@@ -424,73 +424,33 @@ if [[ "$MODE" == "install" ]]; then
 fi
 
 if [[ "$MODE" == "install" ]]; then
-  echo ""
-  echo "======================================================================"
-  echo " Зниження системного навантаження (опційно)"
-  echo "======================================================================"
-  echo " Деякі служби Raspberry Pi OS не потрібні для headless-моніторингу"
-  echo " (Bluetooth, mDNS/.local-резолюція, hotkey-демон) і лише споживають"
-  echo " RAM/CPU на Pi Zero 2W. Список нижче - ЛИШЕ ті, що реально активні"
-  echo " в цій системі; вимикаються (не видаляються) - легко повернути назад"
-  echo " через 'sudo systemctl enable --now <служба>'."
-  echo ""
-
-  # Кандидати перевіряються ІНДИВІДУАЛЬНО, не пропонуємо вимкнути те,
-  # чого немає - деякі images (напр. Lite) вже не мають частини з них.
-  # Мережеві служби (ssh/NetworkManager/wpa_supplicant/dhcpcd) та core
-  # systemd-юніти НІКОЛИ не пропонуються - headless-пристрій без
-  # фізичного доступу не можна ризикувати заблокувати від SSH.
-  DISABLE_CANDIDATES=()
-  for svc in bluetooth.service hciuart.service avahi-daemon.service avahi-daemon.socket triggerhappy.service ModemManager.service; do
-    if systemctl list-unit-files "$svc" 2>/dev/null | grep -q "^$svc"; then
-      if systemctl is-enabled "$svc" &>/dev/null || systemctl is-active "$svc" &>/dev/null; then
-        DISABLE_CANDIDATES+=("$svc")
+  echo "==> Вимикаю служби, непотрібні для headless-моніторингу"
+  # Кожна служба перевіряється окремо (на Lite-образах частини немає).
+  # НЕ чіпаємо: avahi-daemon (без нього перестає працювати raspberrypi.local),
+  # мережеві ssh/NetworkManager/wpa_supplicant/dhcpcd і core systemd-юніти -
+  # headless-пристрій без фізичного доступу не можна ризикувати втратити.
+  for svc in bluetooth.service hciuart.service triggerhappy.service ModemManager.service; do
+    if systemctl list-unit-files "$svc" 2>/dev/null | grep -q "^$svc" \
+       && { systemctl is-enabled "$svc" &>/dev/null || systemctl is-active "$svc" &>/dev/null; }; then
+      if systemctl disable --now "$svc" 2>/dev/null; then
+        echo "    вимкнено: $svc"
+      else
+        echo "    !! не вдалося вимкнути: $svc (пропускаю)"
       fi
     fi
   done
 
-  if [[ ${#DISABLE_CANDIDATES[@]} -eq 0 ]]; then
-    echo " Жодної з відомих непотрібних служб не знайдено активною в цій"
-    echo " системі (можливо, вже вимкнені чи це мінімальний образ) - пропускаю."
-  else
-    echo " Знайдено активні служби-кандидати:"
-    for svc in "${DISABLE_CANDIDATES[@]}"; do
-      echo "   - $svc"
-    done
-    echo ""
-    if printf '%s\n' "${DISABLE_CANDIDATES[@]}" | grep -q "^avahi-daemon"; then
-      echo " УВАГА: avahi-daemon забезпечує доступ через 'raspberrypi.local'"
-      echo " (mDNS). Якщо підключаєтесь до цього Pi за такою адресою (не по"
-      echo " IP) - НЕ вимикайте avahi, інакше ця адреса перестане працювати."
-      echo ""
-    fi
-    read -r -p " Вимкнути ці служби зараз? [т/N]: " DISABLE_SVC
-    DISABLE_SVC="$(echo "$DISABLE_SVC" | tr -d '[:space:]')"
-    if [[ "$DISABLE_SVC" =~ ^[TtYyТт] ]]; then
-      for svc in "${DISABLE_CANDIDATES[@]}"; do
-        if systemctl disable --now "$svc" 2>/dev/null; then
-          echo " ==> Вимкнено: $svc"
-        else
-          echo " !! Не вдалося вимкнути: $svc (пропускаю)"
-        fi
-      done
-    else
-      echo " Пропущено. Вимкнути пізніше вручну можна через"
-      echo " 'sudo systemctl disable --now <служба>'."
-    fi
+  # Пакети, які нічого не потребує (NetworkManager лише Recommends modemmanager).
+  PURGE_PKGS=()
+  for pkg in triggerhappy modemmanager; do
+    if dpkg -s "$pkg" &>/dev/null; then PURGE_PKGS+=("$pkg"); fi
+  done
+  if [[ ${#PURGE_PKGS[@]} -gt 0 ]]; then
+    echo "==> Видаляю непотрібні пакети: ${PURGE_PKGS[*]}"
+    apt-get purge -y "${PURGE_PKGS[@]}" || echo "    !! не вдалося видалити (пропускаю)"
   fi
-
-  echo ""
-  read -r -p " Прибрати кеш пакетів і сирітські залежності (apt autoremove/clean)? [т/N]: " APT_CLEAN
-  APT_CLEAN="$(echo "$APT_CLEAN" | tr -d '[:space:]')"
-  if [[ "$APT_CLEAN" =~ ^[TtYyТт] ]]; then
-    apt-get autoremove -y && apt-get clean
-    echo " ==> Готово."
-  else
-    echo " Пропущено."
-  fi
-  echo ""
-  echo "======================================================================"
+  apt-get autoremove -y --purge || true
+  apt-get clean
 fi
 
 echo ""

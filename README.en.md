@@ -11,7 +11,7 @@ Autonomous monitor and watchdog for Starlink Mini on Raspberry Pi Zero 2 W.
 [Telegram](#-telegram-notifications-and-commands) · [Backup](#-settings-backuprestore) ·
 [healthz/PWA](#-extra-healthz-pwa) · [Reliability](#️-reliability) ·
 [Manual update check](#-about-manual-update-checks) · [Network](#-important-network-notes) · [Security](#-security) ·
-[Load reduction](#-reducing-system-load-optional-during-installation) ·
+[Load reduction](#-reducing-system-load-automatic-during-installation) ·
 [Type checking](#-type-checking-mypy) · [Tests](#-tests) ·
 [Structure](#️-project-structure) · [Installation](#-installation-and-updates) ·
 [Configuration](#️-configuration) · [Dependencies](#-dependencies) · [License](#-license)
@@ -280,20 +280,19 @@ configuration required.
   the DB (data directory 700); it is masked in logs automatically. **A
   backup contains the token** — keep it as a secret.
 
-## 📉 Reducing system load (optional, during installation)
+## 📉 Reducing system load (automatic, during installation)
 
-`install.sh` (only on first installation) offers to disable services
-unnecessary for headless monitoring: `bluetooth`/`hciuart`,
-`avahi-daemon` (mDNS), `triggerhappy`, `ModemManager` — checks each
-individually (only the ones actually active), disables (doesn't
-remove, easy to restore with `systemctl enable --now`).
+`install.sh` (only on first installation) disables, without prompting,
+services unnecessary for headless monitoring: `bluetooth`/`hciuart`,
+`triggerhappy`, `ModemManager` — checks each individually (only the
+ones actually active; restore with `systemctl enable --now`). The
+`triggerhappy` and `modemmanager` packages are removed, followed by
+`apt-get autoremove --purge` and `clean`.
 
-**Careful with `avahi-daemon`**: disabling it removes access via
-`raspberrypi.local` (not by IP) — the script warns if it's active.
-
-Network services (`ssh`, `NetworkManager`, `dhcpcd`) are never
-offered — a headless device without physical access can't risk
-being locked out of SSH. Separately — `apt-get autoremove`/`clean`.
+`avahi-daemon` is **left alone**: disabling it breaks
+`raspberrypi.local`. Network services (`ssh`, `NetworkManager`,
+`dhcpcd`) are never touched either — a headless device without
+physical access can't risk being locked out of SSH.
 
 Conversely, `install.sh` enables `fstrim.timer` (periodic TRIM for the
 SD card; if the card doesn't support it, it does nothing and does no
@@ -324,7 +323,7 @@ decision — `docs/decisions-log.md`).
 
 ## ✅ Tests
 
-1117 tests (`pytest-randomly` — resilient to execution order), 27
+1120 tests (`pytest-randomly` — resilient to execution order), 27
 files in `tests/`. Besides stateful logic (reboot-spam grouping,
 target-version notification deduplication, version comparator,
 eth0 fallback for Telegram) — hardware-dependent code (GPIO/SPI
@@ -364,7 +363,7 @@ starlink-monitor/
 ├── app/            # Python: monitoring, Flask, Telegram, GPIO, display, i18n
 ├── templates/      # HTML (index, settings, stats)
 ├── static/         # JS/CSS/icons
-├── tests/          # 1117 tests (27 files), pytest-randomly
+├── tests/          # 1120 tests (27 files), pytest-randomly
 ├── systemd/        # service unit files
 ├── scripts/        # install/update/uninstall + system checks
 ├── docs/           # architecture.md, index.md (full description of every file), decisions-log.md, plan.md

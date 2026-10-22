@@ -171,23 +171,16 @@ eth0 і чекають повний timeout). Роутер
   (з підтвердженням, дефолти редаговані), вимикає конфліктуючий `dhcpcd`.
 
   **Зниження системного навантаження** (теж лише install-режим, після
-  мережевого блоку) — інтерактивна пропозиція `systemctl disable --now`
-  для короткого, добре перевіреного списку служб (`bluetooth`,
-  `hciuart`, `avahi-daemon`(+`.socket`), `triggerhappy`, `ModemManager`).
-  Кожен кандидат перевіряється **індивідуально** через `systemctl
-  list-unit-files`+`is-enabled`/`is-active` **перед** пропозицією — не
-  питає про службу, якої немає в системі (мінімальні образи вже можуть
-  бракувати частини списку). **Вимикає, не видаляє** пакети — уникає
-  ризику зламаних залежностей через `apt purge`, легко відновлюється
-  через `systemctl enable --now`. Явне попередження про `avahi-daemon`
-  (`.local`-mDNS-резолюція), якщо він серед виявлених кандидатів —
-  вимкнення могло б забрати доступ через `raspberrypi.local` для тих,
-  хто підключається так, не по IP. Мережеві служби (`ssh`,
-  `NetworkManager`, `wpa_supplicant`, `dhcpcd`) і core systemd-юніти
-  **ніколи не входять у список кандидатів** — на headless-пристрої без
+  мережевого блоку) - без запитів: `systemctl disable --now` для
+  `bluetooth`, `hciuart`, `triggerhappy`, `ModemManager` (кожна
+  перевіряється окремо через `list-unit-files`+`is-enabled`/`is-active`,
+  на мінімальних образах частини немає), `apt-get purge` пакетів
+  `triggerhappy`/`modemmanager` (якщо встановлені; NetworkManager лише
+  Recommends modemmanager) і `apt-get autoremove --purge`/`clean`.
+  `avahi-daemon` не чіпається (інакше зникає `raspberrypi.local`);
+  мережеві служби (`ssh`, `NetworkManager`, `wpa_supplicant`, `dhcpcd`)
+  і core systemd-юніти не чіпаються ніколи - на headless-пристрої без
   фізичного доступу заблокований SSH означає повну втрату контролю.
-  Окремий, незалежний крок (той самий блок) — опційний `apt-get
-  autoremove`/`clean` (дисковий простір, не RAM/CPU).
 - `scripts/update.sh` — ручне оновлення: sha256-перевірка архіву,
   розпакування, виклик install.sh.
 - `scripts/uninstall.sh` — зупиняє й видаляє сервіси, sudoers-правило,

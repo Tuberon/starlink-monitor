@@ -358,8 +358,9 @@ def api_set_auto_reboot() -> ResponseReturnValue:
     """Вмикає/вимикає автоматичний reboot dish/router при готовому
     оновленні. Зберігається в БД (не в env-файлі), тож застосовується
     одразу, без перезапуску сервісу."""
-    payload = _json_body()
-    enabled = bool(payload.get("enabled"))
+    enabled = _json_body().get("enabled")
+    if not isinstance(enabled, bool):       # раніше {} чи сміття мовчки ВИМИКАЛИ авто-reboot
+        return _bad_request("enabled")
     db.set_auto_reboot_enabled(enabled)
     db.insert_event(
         "auto_reboot_toggled",

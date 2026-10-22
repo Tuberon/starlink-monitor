@@ -147,19 +147,19 @@ def get_conn(durable: bool = False) -> Iterator[sqlite3.Connection]:
     _ensure_dir()
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
-    # WAL: monitor.service (пише кожні ~10с) і webui.service (читає щосекунди)
-    # - окремі процеси, що звертаються до одного файлу одночасно. У режимі
-    # за замовчуванням (rollback journal) запис блокує читання на час
-    # транзакції; WAL дозволяє паралельне читання під час запису.
-    conn.execute("PRAGMA journal_mode=WAL")
-    # NORMAL (не дефолтний FULL) - офіційно рекомендований режим для
-    # WAL (sqlite.org/pragma.html#pragma_synchronous): fsync лише при
-    # checkpoint, не на кожному commit - значно менше фізичних записів
-    # на SD-картку. БД лишається захищеною від пошкодження (WAL це
-    # гарантує); ризик - втрата лише кількох останніх транзакцій при
-    # раптовому вимкненні живлення, не критично для метрик моніторингу.
-    conn.execute("PRAGMA synchronous=FULL" if durable else "PRAGMA synchronous=NORMAL")
     try:
+        # WAL: monitor.service (пише кожні ~10с) і webui.service (читає щосекунди)
+        # - окремі процеси, що звертаються до одного файлу одночасно. У режимі
+        # за замовчуванням (rollback journal) запис блокує читання на час
+        # транзакції; WAL дозволяє паралельне читання під час запису.
+        conn.execute("PRAGMA journal_mode=WAL")
+        # NORMAL (не дефолтний FULL) - офіційно рекомендований режим для
+        # WAL (sqlite.org/pragma.html#pragma_synchronous): fsync лише при
+        # checkpoint, не на кожному commit - значно менше фізичних записів
+        # на SD-картку. БД лишається захищеною від пошкодження (WAL це
+        # гарантує); ризик - втрата лише кількох останніх транзакцій при
+        # раптовому вимкненні живлення, не критично для метрик моніторингу.
+        conn.execute("PRAGMA synchronous=FULL" if durable else "PRAGMA synchronous=NORMAL")
         yield conn
         conn.commit()
         # Лише ПІСЛЯ успішного commit (не при винятку/rollback) -
