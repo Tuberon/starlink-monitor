@@ -395,6 +395,8 @@ def api_set_telegram_config() -> ResponseReturnValue:
     enabled = payload.get("enabled")
     if token is not None and not isinstance(token, str):
         return _bad_request("token")
+    if enabled is not None and not isinstance(enabled, bool):    # "0" раніше вмикало Telegram
+        return _bad_request("enabled")
 
     chat_ids = None
     if chat_ids_raw is not None:
@@ -581,6 +583,10 @@ def api_settings_restore() -> ResponseReturnValue:
     payload = _json_body()
     if "format_version" not in payload:
         return jsonify({"success": False, "message": i18n.t("api_restore_bad_format")})
+    # Прапорці - лише справжні bool (раніше "0" вмикало Telegram/авто-reboot); перевірка ДО будь-якого запису
+    for flag in ("telegram_enabled", "auto_reboot_enabled"):
+        if flag in payload and not isinstance(payload[flag], bool) and not (flag == "telegram_enabled" and payload[flag] is None):
+            return _bad_request(flag)
 
     # (ключ перекладу, параметри): відповідь - мовою інтерфейсу, журнал - українською
     restored: list[tuple[str, dict[str, Any]]] = []
@@ -594,7 +600,7 @@ def api_settings_restore() -> ResponseReturnValue:
             restored.append(("rs_telegram", {}))
 
         if "auto_reboot_enabled" in payload:
-            db.set_auto_reboot_enabled(bool(payload["auto_reboot_enabled"]))
+            db.set_auto_reboot_enabled(payload["auto_reboot_enabled"])
             restored.append(("rs_auto_reboot", {}))
 
         if payload.get("dish_target_version"):
