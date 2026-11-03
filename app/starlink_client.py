@@ -37,10 +37,11 @@ IGNORED_DISH_ALERTS = frozenset({"obstruction_map_reset"})
 # не в monitor.py: там він двічі пропускав шляхи (check_updates_now(); Telegram /status показував "⚠️
 # Попереджень: 1" при порожньому списку на дашборді); у джерелі єдина точка для УСІХ читань стану
 # роутера.
-IGNORED_ROUTER_ALERTS = frozenset({"wired_mesh_not_using_wan_iface", "lan_eth_slow_link_100"})
+IGNORED_ROUTER_ALERTS = frozenset({"wired_mesh_not_using_wan_iface", "lan_eth_slow_link_100", "high_cable_ping_drop_rate"})
 # lan_eth_slow_link_100 (\"повільне LAN Ethernet з'єднання (100 Мбіт/с)\") - рішення користувача: не
 # виводити, не надсилати в Telegram і не записувати (БД, журнал, дашборд, дисплей). Лише варіант на
 # 100 Мбіт/с: lan_eth_slow_link_10 (10 Мбіт/с) НЕ ігнорується - це справжня деградація лінку.
+# high_cable_ping_drop_rate ("високі втрати пакетів на кабелі") - теж рішення користувача: не виводити й не надсилати.
 
 # Точна відповідність до enum SpaceX.API.Device.SoftwareUpdateState
 SOFTWARE_UPDATE_STATE_NAMES = {

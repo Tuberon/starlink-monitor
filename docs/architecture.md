@@ -423,7 +423,7 @@ user-налаштування.
 `check_updates_now()` — поза класом `Watchdog`, приймають `notify_fn`
 замість `self._notify`.
 
-**`IGNORED_ROUTER_ALERTS`** (`wired_mesh_not_using_wan_iface`, `lan_eth_slow_link_100`) —
+**`IGNORED_ROUTER_ALERTS`** (`wired_mesh_not_using_wan_iface`, `lan_eth_slow_link_100`, `high_cable_ping_drop_rate`) —
 відкидається в джерелі, `starlink_client.get_router_info()`, поруч з
 `IGNORED_DISH_ALERTS`. Одна точка в джерелі покриває всі читання (монітор, ручна перевірка, Telegram `/status`, що читає роутер напряму), включно з майбутніми.
 

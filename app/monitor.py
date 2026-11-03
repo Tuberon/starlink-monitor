@@ -269,7 +269,7 @@ class Watchdog:
         auto-reboot тимчасово призупиняються (журнал подій не зачіпається)."""
         if self.first_failure_ts is None:
             return False
-        return (time.time() - self.first_failure_ts) >= config.NOTIFICATIONS_MUTE_AFTER_SEC
+        return (time.monotonic() - self.first_failure_ts) >= config.NOTIFICATIONS_MUTE_AFTER_SEC
 
     def _notify_reboot(self, text: str) -> None:
         """Групування спаму reboot-сповіщень. На відміну від _notifications_muted() (приглушує одну тривалу
@@ -278,7 +278,7 @@ class Watchdog:
         сповіщень — мовчки групуємо (без окремого повідомлення про початок) до затишшя, тоді надсилаємо
         підсумок (_check_reboot_spam_recovery).
         """
-        now = time.time()
+        now = time.monotonic()
         self.reboot_notify_ts = [t for t in self.reboot_notify_ts if now - t < config.REBOOT_SPAM_WINDOW_SEC]
         self.reboot_notify_ts.append(now)
 
@@ -301,7 +301,7 @@ class Watchdog:
             return
         if not self.reboot_notify_ts:
             return
-        if time.time() - self.reboot_notify_ts[-1] < config.REBOOT_SPAM_WINDOW_SEC:
+        if time.monotonic() - self.reboot_notify_ts[-1] < config.REBOOT_SPAM_WINDOW_SEC:
             return
         total = self.muted_reboot_count
         self._notify(i18n.t("tg_reboot_spam_over", total=total))
@@ -315,7 +315,7 @@ class Watchdog:
         consecutive_failures (це не зависання тарілки), тож після
         увімкнення watchdog стартує з нуля."""
         if self.starlink_offline_since is None:
-            self.starlink_offline_since = self.first_failure_ts or time.time()
+            self.starlink_offline_since = self.first_failure_ts or time.monotonic()
             logger.info(
                 "Starlink недоступний (роутер %s теж не відповідає) - авто-reboot призупинено до відновлення",
                 self.client.router_addr,
@@ -333,7 +333,7 @@ class Watchdog:
         self.first_failure_ts = None
         if since is None:
             return
-        duration = time.time() - since
+        duration = time.monotonic() - since
         uk = i18n.translator("uk")
         logger.info("Starlink знову доступний (був недоступний %s)", format_duration(duration, uk))
         db.insert_event("starlink_online", f"Starlink знову доступний (був недоступний {format_duration(duration, uk)})", success=True)
@@ -408,7 +408,7 @@ class Watchdog:
             if self.starlink_offline_since is not None:
                 self._exit_starlink_offline()
             if self.consecutive_failures > 0:
-                downtime_sec = time.time() - self.first_failure_ts if self.first_failure_ts else 0
+                downtime_sec = time.monotonic() - self.first_failure_ts if self.first_failure_ts else 0
                 logger.info("Dish знову online після %d невдалих спроб", self.consecutive_failures)
                 if config.NOTIFY_DISH_RECOVERY:
                     if downtime_sec >= config.NOTIFICATIONS_MUTE_AFTER_SEC:
@@ -427,7 +427,7 @@ class Watchdog:
             self._maybe_reboot_for_update(status)
         elif not self.client.router_reachable():
             if self.first_failure_ts is None:
-                self.first_failure_ts = time.time()
+                self.first_failure_ts = time.monotonic()
             self._router_down_polls += 1
             if self.starlink_offline_since is not None or self._router_down_polls >= self.STARLINK_OFFLINE_CONFIRM_POLLS:
                 self._enter_starlink_offline()
@@ -440,7 +440,7 @@ class Watchdog:
                 # далі звичайний watchdog з нульового лічильника
                 self._exit_starlink_offline()
             if self.first_failure_ts is None:
-                self.first_failure_ts = time.time()
+                self.first_failure_ts = time.monotonic()
             self.consecutive_failures += 1
             logger.warning(
                 "Dish недоступний (%d/%d): %s",
